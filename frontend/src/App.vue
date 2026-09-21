@@ -28,14 +28,18 @@ import {
 const appStore = useAppStore();
 const SettingsDialog = defineAsyncComponent(() => import("./components/SettingsDialog.vue"));
 const isWindows = ref(System.IsWindows());
+// `window._wails.environment` 在部分 Wails 版本里要等 runtime ready 才注入，
+// 同步读会拿到 false，所以再补一条 UA 兼容路径（后面的 Environment() 会再校准一次）。
+const isMac = ref(System.IsMac() || /Macintosh|Mac OS X/.test(navigator.userAgent));
 const windowTitle = computed(() => appStore.activePage === "scheduledTasks"
   ? tr("scheduledTasks.title")
   : appStore.activeExtensionTitle || appStore.activeThread?.title || "Pi Desk");
 
 async function detectWindows() {
-  if (isWindows.value) return;
   try {
-    isWindows.value = (await System.Environment()).OS === "windows";
+    const environment = await System.Environment();
+    if (!isWindows.value) isWindows.value = environment.OS === "windows";
+    isMac.value = environment.OS === "darwin";
   } catch {
     isWindows.value = false;
   }
@@ -109,6 +113,7 @@ watch(() => appStore.interfaceFontSize, syncDocumentFontSize, { immediate: true 
     }"
     :class="{
       'is-windows': isWindows,
+      'is-mac': isMac,
       'is-sidebar-collapsed': appStore.sidebarCollapsed,
       'is-inspector-closed': !appStore.inspectorOpen || appStore.activePage === 'scheduledTasks',
       'is-inspector-open': appStore.inspectorOpen && appStore.activePage === 'task',

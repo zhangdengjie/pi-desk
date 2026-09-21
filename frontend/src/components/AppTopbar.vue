@@ -105,7 +105,7 @@ onBeforeUnmount(() => {
     class="topbar relative z-40 col-span-full row-start-1 grid h-[var(--topbar-height)] min-w-0 border-b border-[var(--border)] bg-[var(--bg-workspace)] max-[760px]:[grid-template-columns:var(--sidebar-collapsed-width)_minmax(0,1fr)]"
     :class="[ui.root, appStore.sidebarCollapsed ? '[grid-template-columns:var(--sidebar-collapsed-width)_minmax(0,1fr)]' : '[grid-template-columns:var(--sidebar-width)_minmax(0,1fr)]']"
   >
-    <div class="topbar-brand flex min-w-0 items-center gap-2 border-r border-[var(--border)] px-3" aria-label="Pi Desk">
+    <div class="topbar-brand flex min-w-0 items-center gap-2 border-r border-[var(--border)]" aria-label="Pi Desk">
       <span class="topbar-brand-mark grid size-6 shrink-0 place-items-center rounded-md bg-[var(--text)] text-xs font-bold tracking-tight text-[var(--bg-workspace)]" aria-hidden="true">Pi</span>
       <div v-if="!appStore.sidebarCollapsed" class="topbar-history flex items-center gap-0.5">
         <button class="icon-button topbar-history-button" type="button" :title="tr('sidebar.back')" :aria-label="tr('sidebar.back')" :disabled="!canNavigateBack" @click="navigateHistory(-1)"><ArrowLeft :size="18" :stroke-width="1.8" /></button>

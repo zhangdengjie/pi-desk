@@ -21,6 +21,13 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.inspector-header\s*{[^}]*min-height:\s*34px/s);
   });
 
+  it("keeps the brand cell clear of the macOS traffic lights", async () => {
+    const css = await workbenchText();
+    expect(css).toMatch(/--traffic-light-inset:\s*78px/);
+    expect(css).toMatch(/\.app-shell\.is-mac \.topbar-brand\s*{[^}]*padding-left:\s*var\(--traffic-light-inset\)/s);
+    expect(css).toMatch(/\.app-shell\.is-mac\.is-sidebar-collapsed \.topbar-brand\s*{[^}]*padding-left:\s*0/s);
+  });
+
   it("styles the workspace application control as a compact split button", async () => {
     const css = await workbenchText();
     expect(css).toMatch(/\.workspace-application-split\s*{[^}]*display:\s*inline-flex[^}]*border:\s*1px solid/s);

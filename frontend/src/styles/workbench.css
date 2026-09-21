@@ -12,6 +12,7 @@
   --topbar-height: 44px;
   --app-menu-height: 0px;
   --window-controls-width: 138px;
+  --traffic-light-inset: 78px;
 }
 
 .app-shell {
@@ -74,6 +75,24 @@
 .app-shell.is-sidebar-collapsed .topbar-brand {
   justify-content: center;
   padding: 0;
+}
+
+/* macOS runs with MacTitleBarHiddenInset: the traffic lights are drawn by the window
+   frame on top of the webview (x≈13-66 inside the 46px invisible titlebar), while
+   `.topbar` carries no padding, so the brand cell has to clear them itself.
+   Note: `AppTopbar.vue` must not put a Tailwind `px-*` utility back on `.topbar-brand` —
+   `padding-inline` from the utility beats this physical `padding-left` in WebKit. */
+.app-shell.is-mac .topbar-brand {
+  padding-left: var(--traffic-light-inset);
+}
+
+/* The collapsed rail is 48px wide and cannot clear the lights; leave that corner to them. */
+.app-shell.is-mac.is-sidebar-collapsed .topbar-brand {
+  padding-left: 0;
+}
+
+.app-shell.is-mac.is-sidebar-collapsed .topbar-brand-mark {
+  display: none;
 }
 
 .app-shell.is-sidebar-collapsed .topbar-brand strong {
@@ -1556,3 +1575,4 @@
     flex-basis: 148px !important;
   }
 }
+
