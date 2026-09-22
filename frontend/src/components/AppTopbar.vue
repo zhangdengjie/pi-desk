@@ -106,7 +106,11 @@ onBeforeUnmount(() => {
     :class="[ui.root, appStore.sidebarCollapsed ? '[grid-template-columns:var(--sidebar-collapsed-width)_minmax(0,1fr)]' : '[grid-template-columns:var(--sidebar-width)_minmax(0,1fr)]']"
   >
     <div class="topbar-brand flex min-w-0 items-center gap-2 border-r border-[var(--border)]" aria-label="Pi Desk">
-      <span class="topbar-brand-mark grid size-6 shrink-0 place-items-center rounded-md bg-[var(--text)] text-xs font-bold tracking-tight text-[var(--bg-workspace)]" aria-hidden="true">Pi</span>
+      <!-- No Tailwind layout utilities here: `tailwind.css` imports the framework `important`,
+           so a `grid`/`flex` class would emit `display: grid !important` inside
+           `@layer utilities` and no rule in `workbench.css` could hide the mark again.
+           Geometry and colour live in `styles/workbench.css` (`.topbar-brand-mark`). -->
+      <span class="topbar-brand-mark" aria-hidden="true">Pi</span>
       <div v-if="!appStore.sidebarCollapsed" class="topbar-history flex items-center gap-0.5">
         <button class="icon-button topbar-history-button" type="button" :title="tr('sidebar.back')" :aria-label="tr('sidebar.back')" :disabled="!canNavigateBack" @click="navigateHistory(-1)"><ArrowLeft :size="18" :stroke-width="1.8" /></button>
         <button class="icon-button topbar-history-button" type="button" :title="tr('sidebar.forward')" :aria-label="tr('sidebar.forward')" :disabled="!canNavigateForward" @click="navigateHistory(1)"><ArrowRight :size="18" :stroke-width="1.8" /></button>

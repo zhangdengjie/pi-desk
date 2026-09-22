@@ -91,6 +91,11 @@
   padding-left: 0;
 }
 
+/* Collapsed on macOS: the 48px rail cannot clear the traffic lights, so the mark leaves.
+   This only works while `AppTopbar.vue` keeps the mark free of Tailwind display utilities —
+   `@import "tailwindcss" important` puts every utility in `@layer utilities` with `!important`,
+   and per CSS Cascade an unlayered `!important` ranks *below* a layered one, so adding
+   `!important` here would still lose. Removing the utility is the only fix. */
 .app-shell.is-mac.is-sidebar-collapsed .topbar-brand-mark {
   display: none;
 }
@@ -153,11 +158,12 @@
   height: 24px;
   flex: 0 0 24px;
   place-items: center;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--text);
   color: var(--bg-workspace);
   font-size: var(--font-size-meta);
   font-weight: 700;
+  letter-spacing: -0.025em;
 }
 
 .topbar-task {

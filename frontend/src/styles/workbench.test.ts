@@ -10,6 +10,14 @@ async function workbenchText(): Promise<string> {
   return (await readFile("src/styles/workbench.css", "utf8")).replace(/\r\n?/g, "\n");
 }
 
+async function topbarText(): Promise<string> {
+  const moduleName = ["node", "fs/promises"].join(":");
+  const { readFile } = await import(/* @vite-ignore */ moduleName) as {
+    readFile(path: string, encoding: "utf8"): Promise<string>;
+  };
+  return (await readFile("src/components/AppTopbar.vue", "utf8")).replace(/\r\n?/g, "\n");
+}
+
 describe("responsive workbench layout", () => {
   it("uses one application topbar and a two-column shell", async () => {
     const css = await workbenchText();
@@ -26,6 +34,21 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/--traffic-light-inset:\s*78px/);
     expect(css).toMatch(/\.app-shell\.is-mac \.topbar-brand\s*{[^}]*padding-left:\s*var\(--traffic-light-inset\)/s);
     expect(css).toMatch(/\.app-shell\.is-mac\.is-sidebar-collapsed \.topbar-brand\s*{[^}]*padding-left:\s*0/s);
+  });
+
+  it("hides the collapsed macOS brand mark through the stylesheet, not through !important", async () => {
+    const css = await workbenchText();
+    const topbar = await topbarText();
+    // `styles/tailwind.css` imports the framework `important`, so every display utility ships as
+    // `display: … !important` inside `@layer utilities`. CSS Cascade ranks an unlayered
+    // `!important` *below* a layered one, which is why the old `display: none !important` here
+    // never took effect: the span has to stop carrying a display utility instead.
+    const markClass = topbar.match(/<span class="topbar-brand-mark([^"]*)"/);
+    expect(markClass, "topbar-brand-mark span not found in AppTopbar.vue").not.toBeNull();
+    expect(markClass![1].trim()).toBe("");
+    expect(css).toMatch(/\.app-shell\.is-mac\.is-sidebar-collapsed \.topbar-brand-mark\s*{\s*display:\s*none/s);
+    // Geometry the utilities used to own now lives here, with the same rendered values.
+    expect(css).toMatch(/\.topbar-brand-mark\s*{[^}]*display:\s*grid[^}]*width:\s*24px[^}]*border-radius:\s*var\(--radius-md\)[^}]*letter-spacing:\s*-0\.025em/s);
   });
 
   it("styles the workspace application control as a compact split button", async () => {
