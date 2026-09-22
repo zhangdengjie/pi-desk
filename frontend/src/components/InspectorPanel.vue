@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { ArrowLeft, Binary, ExternalLink, FileCode2, FileDiff, FolderOpen, LoaderCircle, PanelRightClose, RefreshCw, Search } from "lucide-vue-next";
+import { ArrowLeft, Binary, ExternalLink, FileCode2, FileDiff, FolderOpen, LoaderCircle, PanelRightClose, RefreshCw } from "lucide-vue-next";
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useAppStore } from "../stores/app";
 import { buildRepositoryTree } from "../utils/fileMentions";

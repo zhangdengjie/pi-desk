@@ -204,3 +204,26 @@ describe("model menu stability", () => {
     expect(firstRuleBody(layout, ".thinking-level-grid")).toMatch(/min-height:\s*62px/);
   });
 });
+
+describe("repository file tree hierarchy", () => {
+  it("indents by nesting so each level draws its own guide line", async () => {
+    const layout = await layoutText();
+    const children = firstRuleBody(layout, ".file-tree-children");
+    expect(children).toMatch(/margin-left:\s*7px/);
+    expect(children).toMatch(/padding-left:\s*5px/);
+    expect(children).toMatch(/border-left:\s*1px solid var\(--border\)/);
+    // The row must stop carrying a depth-based padding: the nesting is what positions it now.
+    expect(firstRuleBody(layout, ".file-tree-row")).not.toMatch(/--tree-depth/);
+    // Nothing may read the variable any more (prose in comments is fine).
+    expect(layout).not.toMatch(/var\(--tree-depth\)/);
+  });
+
+  it("keeps the row on the grid columns the tree was designed around", async () => {
+    const layout = await layoutText();
+    const row = firstRuleBody(layout, ".file-tree-row");
+    expect(row).toMatch(/display:\s*grid/);
+    expect(row).toMatch(/grid-template-columns:\s*18px 16px minmax\(0, 1fr\) 22px 26px/);
+    expect(row).toMatch(/color:\s*var\(--text-muted\)/);
+    expect(firstRuleBody(layout, ".file-tree-row:hover")).toMatch(/color:\s*var\(--text-secondary\)/);
+  });
+});

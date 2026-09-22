@@ -3952,20 +3952,44 @@
   padding: 2px 4px 12px;
 }
 
+.file-tree-node {
+  min-width: 0;
+}
+
 .file-tree-row {
   display: grid;
   min-height: 29px;
   grid-template-columns: 18px 16px minmax(0, 1fr) 22px 26px;
   align-items: center;
   gap: 4px;
-  padding: 0 2px 0 calc(var(--tree-depth) * 13px);
+  padding: 0 4px;
   border-radius: 4px;
   color: var(--text-muted);
+  text-align: left;
+}
+
+.file-tree-children {
+  /* Indentation comes from the nesting itself, so a guide line can sit at each level's edge: one
+     13px step per level, the same amount the old `--tree-depth` padding was supposed to apply. */
+  min-width: 0;
+  margin-left: 7px;
+  padding-left: 5px;
+  border-left: 1px solid var(--border);
 }
 
 .file-tree-row:hover {
   background: var(--bg-hover);
   color: var(--text-secondary);
+}
+
+.file-tree-row:active {
+  background: var(--bg-active);
+}
+
+@media (pointer: coarse) {
+  .file-tree-row {
+    min-height: 44px;
+  }
 }
 
 .file-tree-toggle {

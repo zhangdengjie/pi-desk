@@ -72,6 +72,11 @@ describe("InspectorPanel", () => {
     });
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
 
+    // layout.css owns the tree geometry; a Tailwind utility bundle on these elements out-ranks it
+    // (Tailwind is imported `important`) and flattened every level back to the left margin.
+    expect(wrapper.get(".file-tree-node").classes()).toEqual(["file-tree-node"]);
+    for (const row of wrapper.findAll(".file-tree-row")) expect(row.classes()).toEqual(["file-tree-row"]);
+
     expect(wrapper.findAll('[role="tab"]')[0].text()).toBe("Files");
     expect(wrapper.find('[title="Show branches"]').exists()).toBe(false);
     expect(wrapper.find('button[title="Preview src/main.go"]').exists()).toBe(true);

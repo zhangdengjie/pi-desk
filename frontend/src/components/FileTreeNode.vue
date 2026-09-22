@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ui } from "../ui/classes";
 import { AtSign, ChevronDown, ChevronRight, File, Folder, FolderOpen, Undo2 } from "lucide-vue-next";
 import { ref } from "vue";
 import type { RepositoryTreeNode } from "../utils/fileMentions";
@@ -37,8 +36,12 @@ function forwardRollback(path: string) {
 </script>
 
 <template>
-  <div class="file-tree-node" :class="ui.root">
-    <div class="file-tree-row" :class="ui.listItem" :style="{ '--tree-depth': depth || 0 }">
+  <!-- Geometry belongs to layout.css: `ui.listItem` carries `px-2.5`, `gap-2`, `min-h-9` and
+       `flex`, and `ui.root` carries `text-[var(--text)]`. Tailwind is imported `important`
+       (`styles/tailwind.css:9`), so those utilities beat every unlayered `.file-tree-*` rule and
+       flattened the indentation, the grid columns and the muted/hover text colours. -->
+  <div class="file-tree-node">
+    <div class="file-tree-row">
       <button v-if="node.directory" class="file-tree-toggle" type="button" :title="open ? 'Collapse folder' : 'Expand folder'" @click="open = !open">
         <ChevronDown v-if="open" :size="13" />
         <ChevronRight v-else :size="13" />
