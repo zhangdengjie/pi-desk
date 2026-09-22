@@ -216,7 +216,7 @@ watch(() => appStore.activeRepositoryFilePreviewPath, () => { markdownRendered.v
       <button class="icon-button ml-auto hidden size-8 shrink-0 place-items-center rounded-lg border border-transparent bg-transparent text-[var(--text-muted)] hover:border-[var(--border)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] max-[520px]:inline-grid" :class="ui.iconButton" type="button" :title="tr('topbar.closeInspector')" :aria-label="tr('topbar.closeInspector')" @click="appStore.toggleInspector()"><PanelRightClose :size="17" /></button>
     </div>
 
-    <div v-if="appStore.inspectorTab === 'changes' && appStore.activeRepositoryFilePreviewPath" class="inspector-content file-preview-panel">
+    <div v-if="appStore.inspectorTab === 'changes' && appStore.activeRepositoryFilePreviewPath" class="inspector-content file-preview-panel pr-4">
       <div class="inspector-file-header file-preview-toolbar">
         <button class="icon-button file-preview-toolbar-button" :class="ui.iconButton" type="button" :title="tr('files.closePreview')" @click="appStore.closeRepositoryFilePreview()"><ArrowLeft :size="15" /></button>
         <FileCode2 :size="14" aria-hidden="true" />
