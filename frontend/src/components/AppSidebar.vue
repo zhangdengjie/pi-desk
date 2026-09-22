@@ -342,7 +342,7 @@ onBeforeUnmount(() => {
       </button>
     </nav>
 
-    <div v-if="!appStore.sidebarCollapsed && appStore.searchOpen" class="sidebar-search mx-3 mt-3 grid h-9 grid-cols-[18px_minmax(0,1fr)_28px] items-center gap-1.5 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-workspace)] px-2 text-[var(--text-muted)] shadow-sm focus-within:border-[var(--text-secondary)] focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-[var(--text)]">
+    <div v-if="!appStore.sidebarCollapsed && appStore.searchOpen" class="sidebar-search mx-3 mt-3 h-9 grid-cols-[18px_minmax(0,1fr)_28px] items-center gap-1.5 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-workspace)] px-2 text-[var(--text-muted)] shadow-sm focus-within:border-[var(--text-secondary)] focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-[var(--text)]">
       <Search :size="14" />
       <input class="h-full min-w-0 border-0 bg-transparent p-0 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]" ref="searchInput" v-model="appStore.searchQuery" type="search" :placeholder="tr('sidebar.searchTasks')" :aria-label="tr('sidebar.searchTasks')" />
       <button class="icon-button inline-grid size-7 place-items-center rounded-md border-0 bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-[var(--text)]" type="button" :title="tr('sidebar.closeSearch')" @click="toggleSearch"><X :size="14" /></button>
@@ -425,7 +425,7 @@ onBeforeUnmount(() => {
       <p v-else-if="appStore.searchQuery.trim() && workspaceGroups.length === 0" class="sidebar-empty mx-2 my-1 text-xs leading-relaxed text-[var(--text-secondary)]">{{ tr("sidebar.noMatches") }}</p>
     </div>
 
-    <div v-if="!appStore.sidebarCollapsed" class="sidebar-footer flex h-11 shrink-0 items-center gap-2 border-t border-[var(--border)] px-3 text-xs text-[var(--text-secondary)]">
+    <div v-if="!appStore.sidebarCollapsed" class="sidebar-footer h-11 shrink-0 items-center gap-2 border-t border-[var(--border)] px-3 text-xs text-[var(--text-secondary)]">
       <RuntimeBadge />
       <button class="icon-button inline-grid size-8 place-items-center rounded-lg border border-transparent bg-transparent text-[var(--text-muted)] hover:border-[var(--border)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)]" :class="ui.iconButton" type="button" :title="tr('sidebar.settings')" @click="appStore.openSettings()">
         <Settings :size="17" />

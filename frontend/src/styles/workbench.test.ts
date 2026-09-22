@@ -11,11 +11,32 @@ async function workbenchText(): Promise<string> {
 }
 
 async function topbarText(): Promise<string> {
+  return vueText("src/components/AppTopbar.vue");
+}
+
+async function vueText(path: string): Promise<string> {
   const moduleName = ["node", "fs/promises"].join(":");
   const { readFile } = await import(/* @vite-ignore */ moduleName) as {
     readFile(path: string, encoding: "utf8"): Promise<string>;
   };
-  return (await readFile("src/components/AppTopbar.vue", "utf8")).replace(/\r\n?/g, "\n");
+  return (await readFile(path, "utf8")).replace(/\r\n?/g, "\n");
+}
+
+// Tailwind utilities that emit `display: … !important` under `@import "tailwindcss" important`.
+const DISPLAY_UTILS = new Set(["grid", "flex", "inline-flex", "inline-grid", "block", "inline-block", "table", "inline", "contents"]);
+
+function hiddenTargets(css: string): Set<string> {
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const names = new Set<string>();
+  for (const rule of bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!/display:\s*none/.test(rule[2])) continue;
+    for (const sel of rule[1].split(",")) {
+      const rightmost = sel.trim().split(/\s+/).pop() ?? "";
+      const last = rightmost.match(/\.([a-z0-9_-]+)(?![\w-])/);
+      if (last) names.add(last[1]);
+    }
+  }
+  return names;
 }
 
 describe("responsive workbench layout", () => {
@@ -49,6 +70,29 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.app-shell\.is-mac\.is-sidebar-collapsed \.topbar-brand-mark\s*{\s*display:\s*none/s);
     // Geometry the utilities used to own now lives here, with the same rendered values.
     expect(css).toMatch(/\.topbar-brand-mark\s*{[^}]*display:\s*grid[^}]*width:\s*24px[^}]*border-radius:\s*var\(--radius-md\)[^}]*letter-spacing:\s*-0\.025em/s);
+  });
+
+  it("leaves display utilities off every element the workbench stylesheet hides", async () => {
+    const css = await workbenchText();
+    const sources = await Promise.all([
+      vueText("src/components/AppTopbar.vue"),
+      vueText("src/components/AppSidebar.vue"),
+      vueText("src/App.vue"),
+    ]);
+    const hidden = hiddenTargets(css);
+    expect(hidden.has("workspace-chip"), "fixture: workspace-chip must still be a hide target").toBe(true);
+    const offenders = new Set<string>();
+    sources.forEach((text, index) => {
+      for (const match of text.matchAll(/class="([^"]*)"/g)) {
+        const tokens = match[1].trim().split(/\s+/);
+        const displays = tokens.filter((token) => DISPLAY_UTILS.has(token));
+        if (!displays.length) continue;
+        for (const token of tokens) {
+          if (hidden.has(token)) offenders.add(`${["AppTopbar", "AppSidebar", "App"][index]}.${token} carries ${displays.join("|")}`);
+        }
+      }
+    });
+    expect([...offenders]).toEqual([]);
   });
 
   it("styles the workspace application control as a compact split button", async () => {

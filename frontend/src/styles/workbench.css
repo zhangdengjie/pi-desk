@@ -116,11 +116,22 @@
 }
 
 .topbar-sidebar-toggle {
+  display: inline-grid;
+  place-items: center;
   width: 28px;
   height: 28px;
   flex: 0 0 28px;
   margin-left: auto;
   padding: 0;
+}
+
+/* Same cascade trap as `.topbar-brand-mark`: every hide rule below lives in an unlayered
+   stylesheet, so it can only win while the element carries no Tailwind display utility
+   (`tailwind.css` imports the framework `important`). Declaring the display here keeps
+   `max-width: 520px / 760px / 1050px` hiding reachable for these controls. */
+.inspector-toggle {
+  display: inline-grid;
+  place-items: center;
 }
 
 .topbar-history {

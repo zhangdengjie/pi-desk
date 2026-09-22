@@ -111,13 +111,13 @@ onBeforeUnmount(() => {
            `@layer utilities` and no rule in `workbench.css` could hide the mark again.
            Geometry and colour live in `styles/workbench.css` (`.topbar-brand-mark`). -->
       <span class="topbar-brand-mark" aria-hidden="true">Pi</span>
-      <div v-if="!appStore.sidebarCollapsed" class="topbar-history flex items-center gap-0.5">
+      <div v-if="!appStore.sidebarCollapsed" class="topbar-history">
         <button class="icon-button topbar-history-button" type="button" :title="tr('sidebar.back')" :aria-label="tr('sidebar.back')" :disabled="!canNavigateBack" @click="navigateHistory(-1)"><ArrowLeft :size="18" :stroke-width="1.8" /></button>
         <button class="icon-button topbar-history-button" type="button" :title="tr('sidebar.forward')" :aria-label="tr('sidebar.forward')" :disabled="!canNavigateForward" @click="navigateHistory(1)"><ArrowRight :size="18" :stroke-width="1.8" /></button>
       </div>
       <button
         v-if="!appStore.sidebarCollapsed"
-        class="icon-button topbar-sidebar-toggle ml-auto inline-grid size-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[var(--text-muted)] transition-colors duration-150 ease-out hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
+        class="icon-button topbar-sidebar-toggle ml-auto size-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[var(--text-muted)] transition-colors duration-150 ease-out hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
         type="button"
         :title="tr('sidebar.collapse')"
         :aria-label="tr('sidebar.collapse')"
@@ -132,7 +132,7 @@ onBeforeUnmount(() => {
         <CalendarClock v-if="appStore.activePage === 'scheduledTasks'" :size="17" class="text-[var(--text-muted)]" />
         <strong class="min-w-0 max-w-[min(42vw,540px)] truncate font-display text-[calc(15px+var(--font-size-delta))] font-semibold tracking-[-0.01em] text-[var(--text)]" :title="appStore.activePage === 'scheduledTasks' ? tr('scheduledTasks.title') : appStore.activeThread?.title || 'Pi Desk'">{{ appStore.activePage === "scheduledTasks" ? tr("scheduledTasks.title") : appStore.activeThread?.title || "Pi Desk" }}</strong>
         <span v-if="appStore.activePage === 'task' && appStore.activeExtensionTitle" class="extension-window-title min-w-0 truncate text-xs text-[var(--text-secondary)]" :title="appStore.activeExtensionTitle">{{ appStore.activeExtensionTitle }}</span>
-        <span v-if="appStore.activePage === 'task' && appStore.activeThread" class="workspace-chip inline-flex min-w-0 max-w-56 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-app)] px-2 py-1 text-xs text-[var(--text-secondary)]" :title="appStore.activeThread.workspacePath">
+        <span v-if="appStore.activePage === 'task' && appStore.activeThread" class="workspace-chip min-w-0 max-w-56 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-app)] px-2 py-1 text-xs text-[var(--text-secondary)]" :title="appStore.activeThread.workspacePath">
           <FolderGit2 :size="14" />
           <span>{{ appStore.activeThread.workspace }}</span>
         </span>
@@ -185,7 +185,7 @@ onBeforeUnmount(() => {
         </div>
         <button
           v-if="appStore.activePage === 'task'"
-          class="icon-button inspector-toggle inline-grid size-7 shrink-0 place-items-center rounded-md border border-transparent bg-transparent text-[var(--text-muted)] transition-colors duration-150 ease-out hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)] max-[520px]:hidden"
+          class="icon-button inspector-toggle size-7 shrink-0 place-items-center rounded-md border border-transparent bg-transparent text-[var(--text-muted)] transition-colors duration-150 ease-out hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)] max-[520px]:hidden"
           type="button"
           :title="appStore.inspectorOpen ? tr('topbar.closeInspector') : tr('topbar.openInspector')"
           :aria-label="appStore.inspectorOpen ? tr('topbar.closeInspector') : tr('topbar.openInspector')"
