@@ -568,6 +568,29 @@
   line-height: 1.55;
 }
 
+/* Workspace file filter row (`InspectorPanel.vue`). Geometry lives here, not as template
+   utilities: `tailwind.css` imports the framework `important`, so a utility here could later
+   out-rank an unlayered hide rule in this stylesheet. */
+.file-filter-row {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.file-filter-row input {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.file-filter-count {
+  font-size: var(--font-size-meta);
+  white-space: nowrap;
+}
+
 .terminal-toolbar {
   min-height: 40px;
   font-size: var(--font-size-control);

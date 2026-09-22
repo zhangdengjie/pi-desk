@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { ArrowLeft, Binary, ExternalLink, FileCode2, FileDiff, FolderOpen, LoaderCircle, PanelRightClose, RefreshCw } from "lucide-vue-next";
+import { ArrowLeft, Binary, ExternalLink, FileCode2, FileDiff, FolderOpen, LoaderCircle, PanelRightClose, RefreshCw, Search } from "lucide-vue-next";
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useAppStore } from "../stores/app";
 import { buildRepositoryTree } from "../utils/fileMentions";
+import { fuzzyScore } from "../utils/fuzzySearch";
 import CodePreview from "./CodePreview.vue";
 import FileTreeNode from "./FileTreeNode.vue";
 import MarkdownBody from "./MarkdownBody.vue";
@@ -59,12 +60,24 @@ const normalizedChangedFiles = computed(() => changedFiles.value.map((file) => (
 const changeStatusByPath = computed<Record<string, string>>(() => Object.fromEntries(
   normalizedChangedFiles.value.map((file) => [file.path, reviewChangeLabel(file)]),
 ));
+// Matches the backend ceiling (`internal/repository/repository.go:25` `maxFiles`). The old 500 cut
+// the list alphabetically, so the tail — including every non-ASCII filename — was unreachable,
+// and with no filter box there was no way to reach it at all.
+const FILE_LIST_LIMIT = 5000;
+const fileFilter = ref("");
+watch(() => appStore.activeThreadId, () => { fileFilter.value = ""; });
 const filePaths = computed(() => [...new Set([
   ...repositoryFiles.value.map((file) => file.path.replaceAll("\\", "/")),
   ...normalizedChangedFiles.value.map((file) => file.path),
 ])]);
-const visibleFiles = computed(() => filePaths.value.slice(0, 500));
-const fileListTruncated = computed(() => filePaths.value.length > visibleFiles.value.length || Boolean(repository.value?.truncated));
+// Filtered over the whole list, before the cap, and in the original path order so the tree stays grouped.
+const fileMatches = computed(() => {
+  const needle = fileFilter.value.trim();
+  if (!needle) return filePaths.value;
+  return filePaths.value.filter((path) => fuzzyScore(path, needle) >= 0);
+});
+const visibleFiles = computed(() => fileMatches.value.slice(0, FILE_LIST_LIMIT));
+const fileListTruncated = computed(() => fileMatches.value.length > visibleFiles.value.length || Boolean(repository.value?.truncated));
 const fileTree = computed(() => buildRepositoryTree(visibleFiles.value));
 
 function changeLabel(indexStatus: string, worktreeStatus: string): string {
@@ -266,10 +279,18 @@ watch(() => appStore.activeRepositoryFilePreviewPath, () => { markdownRendered.v
         <div v-if="appStore.activeRepositoryStale && repository" class="diff-notice error-text">Repository data is stale. Refresh after reconnecting.</div>
         <div v-if="appStore.activeRepositoryLoading && !repository" class="repository-state" :class="ui.empty"><LoaderCircle :size="18" class="is-spinning" /></div>
         <div v-else-if="appStore.activeRepositoryError && !repository" class="repository-state error-text" :class="ui.empty">{{ appStore.activeRepositoryError }}</div>
-        <template v-else-if="fileTree.length">
+        <template v-else>
+          <div v-if="filePaths.length" class="file-filter-row">
+            <Search :size="14" aria-hidden="true" />
+            <input v-model="fileFilter" type="search" :class="ui.input" :placeholder="tr('inspector.filterFiles')" :aria-label="tr('inspector.filterFiles')" />
+            <span v-if="fileFilter" class="file-filter-count">{{ tr("inspector.filterMatches", { count: fileMatches.length }) }}</span>
+          </div>
           <div v-if="sessionChangesError" class="diff-notice error-text">{{ sessionChangesError }}</div>
-          <div v-if="fileListTruncated" class="diff-notice">{{ tr("inspector.firstFiles", { count: visibleFiles.length }) }}</div>
-          <div class="file-tree">
+          <div v-if="fileListTruncated" class="diff-notice">{{ repository?.truncated
+            ? tr("inspector.filesCapReached", { count: visibleFiles.length })
+            : tr("inspector.showingFiles", { shown: visibleFiles.length, total: fileMatches.length }) }}</div>
+          <template v-if="fileTree.length">
+            <div class="file-tree">
             <FileTreeNode
               v-for="node in fileTree"
               :key="`${node.directory}-${node.path}`"
@@ -284,10 +305,11 @@ watch(() => appStore.activeRepositoryFilePreviewPath, () => { markdownRendered.v
             />
           </div>
         </template>
-        <div v-else class="repository-state flex min-h-32 flex-1 items-center justify-center gap-2 text-xs text-[var(--text-secondary)]" :class="ui.empty">
-          <span>{{ tr("inspector.noFiles") }}</span>
-        </div>
-      </template>
+            <div v-else class="repository-state flex min-h-32 flex-1 items-center justify-center gap-2 text-xs text-[var(--text-secondary)]" :class="ui.empty">
+              <span>{{ fileFilter ? tr("inspector.noMatches") : tr("inspector.noFiles") }}</span>
+            </div>
+          </template>
+        </template>
     </div>
 
     <div v-else-if="appStore.inspectorTab === 'context'" class="inspector-content context-panel">

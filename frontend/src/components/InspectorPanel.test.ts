@@ -89,7 +89,8 @@ describe("InspectorPanel", () => {
     expect(wrapper.find(".inspector-file-header").exists()).toBe(false);
 
     expect(wrapper.find(".repository-file-controls").exists()).toBe(false);
-    expect(wrapper.find('input[type="search"]').exists()).toBe(false);
+    // The panel has exactly one search control now: the file filter added on top of the tree.
+    expect(wrapper.findAll('input[type="search"]')).toHaveLength(1);
     expect(wrapper.find('button[title="Preview README.md"]').exists()).toBe(true);
     expect(wrapper.find('button[title="Preview src/main.go"]').exists()).toBe(true);
     await wrapper.get('button[title="Mention file"]').trigger("click");
@@ -120,6 +121,79 @@ describe("InspectorPanel", () => {
     expect(contextRows[2].text()).toContain("SessionAudit");
     expect(contextRows[3].text()).toContain("Session IDCreated on first prompt");
     expect(wrapper.text()).not.toContain("All files");
+  });
+
+  it("lists every workspace file up to the backend cap instead of the first 500", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    const paths = Array.from({ length: 1200 }, (_unused, index) => `src/file-${String(index).padStart(4, "0")}.go`);
+    paths.push("收尾.md");
+    store.$patch({
+      threads: [{
+        id: "thread-cap", title: "Cap", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-cap",
+      repositoryByWorkspace: { "d:/repo": {
+        files: paths.map((path) => ({ path, name: path.split("/").pop() ?? path })),
+        git: { isRepository: true, files: [] },
+      } },
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+
+    // The old `slice(0, 500)` cut the list alphabetically, so the tail was unreachable — and that
+    // tail always contained every non-ASCII filename.
+    const previewed = () => wrapper.findAll('button[title^="Preview "]').map((node) => node.attributes("title"));
+    expect(previewed()).toHaveLength(1201);
+    expect(previewed()).toContain("Preview src/file-0900.go");
+    expect(previewed()).toContain("Preview 收尾.md");
+    expect(wrapper.find(".diff-notice").exists()).toBe(false);
+  });
+
+  it("filters the whole file list, including entries beyond the cap", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    const paths = [
+      "src/main.go", "src/WearCaliber.java", "src/WearCaliberTest.java",
+      ...Array.from({ length: 600 }, (_unused, index) => `src/filler${index}.go`),
+    ];
+    store.$patch({
+      threads: [{
+        id: "thread-filter", title: "Filter", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-filter",
+      repositoryByWorkspace: { "d:/repo": {
+        files: paths.map((path) => ({ path, name: path.split("/").pop() ?? path })),
+        git: { isRepository: true, files: [] },
+      } },
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    const previewed = () => wrapper.findAll('button[title^="Preview "]').map((node) => node.attributes("title"));
+    // Nothing is hidden, so the panel shows no truncation notice at all.
+    expect(wrapper.find(".diff-notice").exists()).toBe(false);
+    expect(previewed()).toHaveLength(paths.length);
+
+    await wrapper.get(".file-filter-row input").setValue("wearcaliber");
+
+    expect(previewed()).toEqual([
+      "Preview src/WearCaliber.java",
+      "Preview src/WearCaliberTest.java",
+    ]);
+    expect(wrapper.get(".file-filter-count").text()).toContain("2");
+
+    await wrapper.get(".file-filter-row input").setValue("zzzznotatype");
+    expect(previewed()).toEqual([]);
+    expect(wrapper.get(".repository-state").text()).not.toBe("");
+
+    await wrapper.get(".file-filter-row input").setValue("");
+    expect(previewed()).toHaveLength(paths.length);
   });
 
   it("renders renamed, loading, error, and binary diff states", async () => {
