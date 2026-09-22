@@ -226,4 +226,14 @@ describe("repository file tree hierarchy", () => {
     expect(row).toMatch(/color:\s*var\(--text-muted\)/);
     expect(firstRuleBody(layout, ".file-tree-row:hover")).toMatch(/color:\s*var\(--text-secondary\)/);
   });
+
+  it("keeps a visible scrollbar on the long file list", async () => {
+    const layout = await layoutText();
+    const tree = firstRuleBody(layout, ".file-tree");
+    // The list holds up to 5000 rows now; the platform overlay scrollbar hides itself until you
+    // scroll, which reads as "the list cannot scroll". Same treatment the terminal viewport uses.
+    expect(tree).toMatch(/overflow-y:\s*auto/);
+    expect(tree).toMatch(/scrollbar-width:\s*thin/);
+    expect(tree).toMatch(/scrollbar-color:\s*var\(--border-strong\) transparent/);
+  });
 });
