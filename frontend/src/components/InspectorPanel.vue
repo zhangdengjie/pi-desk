@@ -71,10 +71,18 @@ const filePaths = computed(() => [...new Set([
   ...normalizedChangedFiles.value.map((file) => file.path),
 ])]);
 // Filtered over the whole list, before the cap, and in the original path order so the tree stays grouped.
+// Primary rule is a case-insensitive substring of the full relative path, so directories and extensions
+// work and depth cannot dilute the match; the file name is fuzzy-scored as a typo fallback only.
+// Do NOT fuzzy-score the whole path alone: `utils/fuzzySearch.ts:13` charges one point per skipped
+// character and another `length / 100` at the end, which scored `wear` at -2.58 against a 62-char
+// Java path — the file disappeared from a search for its own name.
 const fileMatches = computed(() => {
-  const needle = fileFilter.value.trim();
+  const needle = fileFilter.value.trim().toLowerCase();
   if (!needle) return filePaths.value;
-  return filePaths.value.filter((path) => fuzzyScore(path, needle) >= 0);
+  return filePaths.value.filter((path) => {
+    const lower = path.toLowerCase();
+    return lower.includes(needle) || fuzzyScore(lower.slice(lower.lastIndexOf("/") + 1), needle) >= 0;
+  });
 });
 const visibleFiles = computed(() => fileMatches.value.slice(0, FILE_LIST_LIMIT));
 const fileListTruncated = computed(() => fileMatches.value.length > visibleFiles.value.length || Boolean(repository.value?.truncated));

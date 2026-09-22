@@ -196,6 +196,49 @@ describe("InspectorPanel", () => {
     expect(previewed()).toHaveLength(paths.length);
   });
 
+  it("finds deep paths by their own file name, not only by short ones", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-deep", title: "Deep", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-deep",
+      repositoryByWorkspace: { "d:/repo": {
+        files: [
+          "src/main/java/com/iot/platform/service/WearCaliberService.java",
+          "src/main/resources/mapper/WearCaliberMapper.xml",
+          "src/main/java/com/iot/platform/service/OrderService.java",
+        ].map((path) => ({ path, name: path.split("/").pop() ?? path })),
+        git: { isRepository: true, files: [] },
+      } },
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    const expandFolders = async () => {
+      for (let round = 0; round < 6; round += 1) {
+        const toggles = wrapper.findAll('button[title="Expand folder"]');
+        if (!toggles.length) return;
+        for (const toggle of toggles) await toggle.trigger("click");
+      }
+    };
+    await wrapper.get(".file-filter-row input").setValue("wear");
+    await expandFolders();
+
+    // The 62-character path used to score below zero against its own name, so only the short
+    // mapper path survived a `wear` search.
+    expect(wrapper.findAll('button[title^="Preview "]').map((node) => node.attributes("title"))).toEqual([
+      "Preview src/main/java/com/iot/platform/service/WearCaliberService.java",
+      "Preview src/main/resources/mapper/WearCaliberMapper.xml",
+    ]);
+
+    await wrapper.get(".file-filter-row input").setValue("src/main/resources");
+    expect(wrapper.get(".file-filter-count").text()).toContain("1");
+  });
+
   it("renders renamed, loading, error, and binary diff states", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
