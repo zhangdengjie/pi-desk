@@ -50,7 +50,7 @@ function forwardRollback(path: string) {
       <FolderOpen v-if="node.directory && open" :size="14" />
       <Folder v-else-if="node.directory" :size="14" />
       <File v-else :size="14" />
-      <span v-if="node.directory" class="file-tree-name" :title="node.path">{{ node.name }}</span>
+      <span v-if="node.directory" class="file-tree-name" :title="node.path" @click="open = !open">{{ node.name }}</span>
       <button
         v-else
         class="file-tree-name file-tree-open"
