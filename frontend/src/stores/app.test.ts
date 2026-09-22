@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RuntimeState } from "../../bindings/pi-desk/internal/domain";
+import { setAppLanguage, tr } from "../i18n";
 
 const mocks = vi.hoisted(() => ({
   getBootstrapState: vi.fn(),
@@ -2565,7 +2566,23 @@ describe("app store", () => {
     await store.createThread("D:\\work\\private", "deny");
     await store.refreshActiveRepository();
     expect(mocks.snapshotRepository).toHaveBeenCalledTimes(1);
+    expect(store.activeRepositoryError).toBe(tr("inspector.workspaceAccessDisabled"));
+  });
+
+  it("translates the workspace trust gate message in both languages", async () => {
+    const store = useAppStore();
+    mocks.addWorkspace.mockResolvedValueOnce({ id: "workspace-i18n", name: "gate", path: "D:\\work\\gate", trust: "deny" });
+    await store.createThread("D:\\work\\gate", "deny");
+
+    setAppLanguage("en");
+    await store.refreshActiveRepository();
     expect(store.activeRepositoryError).toBe("Workspace access is disabled");
+
+    setAppLanguage("zh-CN");
+    await store.refreshActiveRepository();
+    expect(store.activeRepositoryError).toBe("工作区访问已禁用");
+
+    setAppLanguage("en");
   });
 
   it("keeps context-change invalidation scoped to one workspace", () => {
@@ -2700,7 +2717,7 @@ describe("app store", () => {
 
     expect(store.activeRepository).toBeUndefined();
     expect(store.activeRepositoryStale).toBe(true);
-    expect(store.activeRepositoryError).toBe("Workspace access is disabled");
+    expect(store.activeRepositoryError).toBe(tr("inspector.workspaceAccessDisabled"));
   });
 
   it("drops a late Repository diff after the same file is reopened", async () => {

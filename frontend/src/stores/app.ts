@@ -1500,7 +1500,9 @@ export const useAppStore = defineStore("app", {
         this.repositoryRefreshGenerationByWorkspace[key] = (this.repositoryRefreshGenerationByWorkspace[key] ?? 0) + 1;
         this.repositoryLoadingByWorkspace[key] = false;
         this.repositoryByWorkspace[key] = undefined;
-        this.repositoryErrorByWorkspace[key] = "Workspace access is disabled";
+        // Kept in the store as a translated string, same as `workspaceApplicationError` above:
+        // this value surfaces verbatim in the workspace files panel.
+        this.repositoryErrorByWorkspace[key] = tr("inspector.workspaceAccessDisabled");
         this.repositoryStaleByWorkspace[key] = true;
         this.sessionChangesByThread[thread.id] = undefined;
         this.sessionChangesErrorByThread[thread.id] = "";
