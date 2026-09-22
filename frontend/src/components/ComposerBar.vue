@@ -2,7 +2,7 @@
 import { ui } from "../ui/classes";
 import { ArrowDownToLine, ArrowUp, ArrowUpFromLine, BrainCircuit, Check, ChevronDown, CornerDownRight, Database, File, FilePlus2, Forward, Gauge, ImagePlus, LoaderCircle, Pencil, ShieldAlert, ShieldCheck, Slash, SlidersHorizontal, Square, Trash2, X } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useAppStore, type PiModel, type SettingsSection, type SlashCommand } from "../stores/app";
+import { consumeMentionInsert, useAppStore, type PiModel, type SettingsSection, type SlashCommand } from "../stores/app";
 import { MAX_ATTACHED_IMAGES, MAX_IMAGE_BASE64_CHARS, prepareImage, type PreparedImage } from "../utils/imageAttachments";
 import { formatFileMention } from "../utils/fileMentions";
 import { rankFuzzy } from "../utils/fuzzySearch";
@@ -151,7 +151,8 @@ watch(draft, (value, previousValue) => {
   commandIndex.value = 0;
   mentionIndex.value = 0;
   commandDismissed.value = false;
-  mentionDismissed.value = false;
+  // A mention inserted by the file panel or the picker must not reopen the `@` menu on top of it.
+  mentionDismissed.value = consumeMentionInsert(value);
   if (/(^|\s)\/[^\s]*$/.test(value) && !/(^|\s)\/[^\s]*$/.test(previousValue)) void refreshSlashCommands();
 });
 
@@ -353,8 +354,17 @@ function chooseFileMention(path: string) {
 
 async function insertPickedFile() {
   externalFileNotice.value = "";
+  const before = draft.value;
   const picked = await appStore.pickFileMention();
-  if (picked?.external) externalFileNotice.value = tr("composer.externalFileMention", { path: picked.path });
+  if (!picked) return;
+  if (picked.external) externalFileNotice.value = tr("composer.externalFileMention", { path: picked.path });
+  // The store only changed the draft string; pushing it back through the editor is what focuses the
+  // input and puts the caret after the mention, so typing can start immediately (same path the `@`
+  // popup uses in chooseFileMention).
+  if (draft.value !== before) {
+    await nextTick();
+    updateEditorMarkdown(draft.value);
+  }
 }
 
 function toggleCommandMenu() {

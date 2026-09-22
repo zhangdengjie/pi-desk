@@ -157,7 +157,7 @@ vi.mock("../services/terminal", () => ({
     return vi.fn();
   },
 }));
-import { useAppStore } from "./app";
+import { consumeMentionInsert, useAppStore } from "./app";
 
 describe("app store", () => {
   beforeEach(() => {
@@ -3748,6 +3748,29 @@ describe("app store", () => {
     await expect(store.pickFileMention()).resolves.toBeUndefined();
 
     expect(store.activeDraft).toBe("Keep this ");
+  });
+
+  it("marks only the just-inserted mention draft as a programmatic insert", async () => {
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-mention",
+    });
+
+    store.insertFileMention("src/main.go");
+    const inserted = store.activeDraft;
+
+    expect(inserted).toBe("@src/main.go ");
+    expect(consumeMentionInsert(inserted)).toBe(true);
+    // Single-shot: the next keystroke has to bring completion back.
+    expect(consumeMentionInsert(inserted)).toBe(false);
+
+    store.insertFileMention("src/other.go");
+    expect(consumeMentionInsert("unrelated draft")).toBe(false);
+    expect(consumeMentionInsert(store.activeDraft)).toBe(true);
   });
 
   it("refuses the local file picker for remote workspaces", async () => {

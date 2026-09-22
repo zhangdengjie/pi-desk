@@ -41,6 +41,37 @@ describe("ComposerBar", () => {
     vi.mocked(repositoryService.clipboardFiles).mockReset().mockResolvedValue([]);
   });
 
+  it("keeps the @ completion menu closed after a mention is inserted for the user", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{ id: "menu", title: "Menu", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
+      activeThreadId: "menu",
+      repositoryByWorkspace: { "d:/repo": {
+        files: [{ path: "src/main.ts", name: "main.ts" }, { path: "src/view.ts", name: "view.ts" }],
+        git: { isRepository: true, files: [] },
+      } },
+    });
+    const wrapper = mount(ComposerBar, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    // `@src/main.ts ` still matches the trigger regex, so without the guard the popup reopens on top
+    // of the pick and Enter selects a candidate instead of sending.
+    store.insertFileMention("src/main.ts");
+    await flushPromises();
+    await flushPromises();
+
+    expect(store.activeDraft).toBe("@src/main.ts ");
+    expect(wrapper.find(".file-completion-menu").exists()).toBe(false);
+
+    store.updateDraft("ping @src/m");
+    await flushPromises();
+
+    expect(wrapper.find(".file-completion-menu").exists()).toBe(true);
+    wrapper.unmount();
+  });
+
   it("mentions a picked file and flags it when it is outside the workspace", async () => {
     const store = useAppStore();
     store.$patch({

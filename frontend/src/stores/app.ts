@@ -752,6 +752,20 @@ function copyMessages(messages: TimelineMessage[]): TimelineMessage[] {
   }));
 }
 
+let lastMentionDraft = "";
+
+/**
+ * Single-shot: true only for the exact draft a programmatic mention insert just produced.
+ * `@path ` still matches the composer's trigger regex, so inserting a mention reopened the `@`
+ * completion menu over a choice the user had just made, and Enter then picked a candidate instead
+ * of sending. Consumed on first read so the next keystroke restores normal completion.
+ */
+export function consumeMentionInsert(value: string): boolean {
+  if (!lastMentionDraft || lastMentionDraft !== value) return false;
+  lastMentionDraft = "";
+  return true;
+}
+
 export const useAppStore = defineStore("app", {
   state: () => ({
     sidebarCollapsed: false,
@@ -1510,7 +1524,12 @@ export const useAppStore = defineStore("app", {
       if (!this.activeThreadId) return;
       const current = this.activeDraft;
       const separator = current && !/\s$/.test(current) ? " " : "";
-      this.updateDraft(`${current}${separator}${formatFileMention(path, directory)} `);
+      // One trailing space, never a newline: `MarkdownEditorCore.applyMarkdown` re-inserts trailing
+      // spaces as text because the Markdown parser drops them, but it has no such rescue for a line
+      // break — a serialised hard break leaks a literal backslash into the prompt sent to Pi.
+      const next = `${current}${separator}${formatFileMention(path, directory)} `;
+      lastMentionDraft = next;
+      this.updateDraft(next);
     },
     async pickFileMention(): Promise<{ path: string; external: boolean } | undefined> {
       const thread = this.threads.find((item) => item.id === this.activeThreadId);
