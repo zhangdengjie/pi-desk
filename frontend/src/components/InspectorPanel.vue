@@ -288,8 +288,7 @@ watch(() => appStore.activeRepositoryFilePreviewPath, () => { markdownRendered.v
         <div v-if="appStore.activeRepositoryLoading && !repository" class="repository-state" :class="ui.empty"><LoaderCircle :size="18" class="is-spinning" /></div>
         <div v-else-if="appStore.activeRepositoryError && !repository" class="repository-state error-text" :class="ui.empty">{{ appStore.activeRepositoryError }}</div>
         <template v-else>
-          <div v-if="filePaths.length" class="file-filter-row">
-            <Search :size="14" aria-hidden="true" />
+          <div v-if="filePaths.length" class="file-filter-row mt-3">
             <input v-model="fileFilter" type="search" :class="ui.input" :placeholder="tr('inspector.filterFiles')" :aria-label="tr('inspector.filterFiles')" />
             <span v-if="fileFilter" class="file-filter-count">{{ tr("inspector.filterMatches", { count: fileMatches.length }) }}</span>
           </div>
