@@ -2918,6 +2918,11 @@
   overflow-wrap: anywhere;
 }
 
+/* The external-file heads-up reuses the error row geometry but is not an error. */
+.attachment-error.composer-notice {
+  color: var(--text-muted);
+}
+
 .completion-menu {
   right: 10px;
   bottom: 48px;

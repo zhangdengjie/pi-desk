@@ -41,6 +41,42 @@ describe("ComposerBar", () => {
     vi.mocked(repositoryService.clipboardFiles).mockReset().mockResolvedValue([]);
   });
 
+  it("mentions a picked file and flags it when it is outside the workspace", async () => {
+    const store = useAppStore();
+    store.$patch({
+      threads: [{ id: "pick", title: "Pick", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
+      activeThreadId: "pick",
+    });
+    store.pickFileMention = vi.fn().mockResolvedValue({ path: "D:/notes/runbook.md", external: true });
+    const wrapper = mount(ComposerBar);
+    await flushPromises();
+
+    await wrapper.get("button.composer-file-button").trigger("click");
+    await flushPromises();
+
+    expect(store.pickFileMention).toHaveBeenCalledTimes(1);
+    expect(wrapper.get(".composer-notice").text()).toContain("D:/notes/runbook.md");
+
+    // A workspace-local pick must not leave the heads-up behind.
+    store.pickFileMention = vi.fn().mockResolvedValue({ path: "D:/repo/main.go", external: false });
+    await wrapper.get("button.composer-file-button").trigger("click");
+    await flushPromises();
+    expect(wrapper.find(".composer-notice").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("disables the file picker for remote workspaces", async () => {
+    const store = useAppStore();
+    store.workspaces = [{ id: "ws-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    store.threads = [{ id: "pick", title: "Pick", workspace: "remote", workspaceId: "ws-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
+    store.activeThreadId = "pick";
+    const wrapper = mount(ComposerBar);
+    await flushPromises();
+
+    expect(wrapper.get("button.composer-file-button").attributes("disabled")).toBeDefined();
+    wrapper.unmount();
+  });
+
   it("pastes file references into the queue editor selection", async () => {
     const store = useAppStore();
     store.$patch({

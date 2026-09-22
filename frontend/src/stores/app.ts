@@ -887,6 +887,16 @@ export const useAppStore = defineStore("app", {
     activeThread(state): ThreadSummary | undefined {
       return state.threads.find((thread) => thread.id === state.activeThreadId);
     },
+    // The native picker runs on this machine, so an SSH workspace would produce a local path the
+    // remote Pi cannot read; the composer button is disabled for those.
+    activeWorkspaceIsRemote(state): boolean {
+      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      if (!thread) return false;
+      const workspace = state.workspaces.find((item) => (thread.workspaceId
+        ? item.id === thread.workspaceId
+        : pathKey(item.path) === pathKey(thread.workspacePath)));
+      return workspace?.kind === "ssh";
+    },
     remoteReconnectThread(state): ThreadSummary | undefined {
       return state.threads.find((thread) => thread.id === state.remoteReconnectThreadId);
     },
@@ -1501,6 +1511,19 @@ export const useAppStore = defineStore("app", {
       const current = this.activeDraft;
       const separator = current && !/\s$/.test(current) ? " " : "";
       this.updateDraft(`${current}${separator}${formatFileMention(path, directory)} `);
+    },
+    async pickFileMention(): Promise<{ path: string; external: boolean } | undefined> {
+      const thread = this.threads.find((item) => item.id === this.activeThreadId);
+      if (!thread || this.activeWorkspaceIsRemote) return undefined;
+      const root = thread.workspacePath.replaceAll("\\", "/").replace(/\/+$/, "");
+      const picked = await repositoryService.pickFile({ title: tr("composer.pickFile"), directory: root });
+      if (!picked) return undefined;
+      const normalized = picked.replaceAll("\\", "/");
+      // Inside the workspace we keep the mention relative so it reads like the file panel; a path the
+      // repository listing hides (gitignored) still lands here, which is part of why the picker exists.
+      const inside = Boolean(root) && (normalized === root || normalized.startsWith(`${root}/`));
+      this.insertFileMention(inside ? normalized.slice(root.length + 1) : normalized);
+      return { path: normalized, external: !inside };
     },
     async refreshActiveRepository(threadID?: string) {
       const thread = this.threads.find((item) => item.id === (threadID || this.activeThreadId));

@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => ({
   openRepositoryFileWith: vi.fn(),
   previewRepositoryFile: vi.fn(),
   revealRepositoryFile: vi.fn(),
+  pickFile: vi.fn(),
   resumeRemoteWorkspace: vi.fn(),
   disconnectRemoteTarget: vi.fn(),
   eventHandler: undefined as ((event: unknown) => void) | undefined,
@@ -142,6 +143,7 @@ vi.mock("../services/repository", () => ({
     openFileWith: mocks.openRepositoryFileWith,
     previewFile: mocks.previewRepositoryFile,
     revealFile: mocks.revealRepositoryFile,
+    pickFile: mocks.pickFile,
     sessionFileChanges: mocks.sessionFileChanges,
     rollbackSessionFile: mocks.rollbackSessionFile,
   },
@@ -3694,5 +3696,70 @@ describe("app store", () => {
 
     expect(mocks.sessionFileChanges).not.toHaveBeenCalled();
     expect(store.sessionChangesByThread["t2"]).toBeUndefined();
+  });
+
+  it("mentions a picked workspace file with a relative path", async () => {
+    const store = useAppStore();
+    store.$patch({
+      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }],
+      threads: [{
+        id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-mention",
+    });
+    mocks.pickFile.mockResolvedValue("D:\\work\\repo\\src\\main.go");
+
+    await expect(store.pickFileMention()).resolves.toEqual({ path: "D:/work/repo/src/main.go", external: false });
+
+    expect(mocks.pickFile).toHaveBeenCalledWith({ title: tr("composer.pickFile"), directory: "D:/work/repo" });
+    expect(store.activeDraft).toBe("@src/main.go ");
+  });
+
+  it("mentions a picked file outside the workspace with an absolute path", async () => {
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-mention",
+    });
+    mocks.pickFile.mockResolvedValue("C:\\notes\\run book.md");
+
+    await expect(store.pickFileMention()).resolves.toEqual({ path: "C:/notes/run book.md", external: true });
+
+    // Spaces need the quoted mention form, which formatFileMention already handles.
+    expect(store.activeDraft).toBe('@"C:/notes/run book.md" ');
+  });
+
+  it("keeps the draft untouched when the file picker is cancelled", async () => {
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-mention",
+      draftsByThread: { "thread-mention": "Keep this " },
+    });
+    mocks.pickFile.mockResolvedValue(undefined);
+
+    await expect(store.pickFileMention()).resolves.toBeUndefined();
+
+    expect(store.activeDraft).toBe("Keep this ");
+  });
+
+  it("refuses the local file picker for remote workspaces", async () => {
+    const store = useAppStore();
+    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
+    store.activeThreadId = "thread-remote";
+    mocks.pickFile.mockResolvedValue("C:\\notes\\runbook.md");
+
+    await expect(store.pickFileMention()).resolves.toBeUndefined();
+
+    expect(store.activeWorkspaceIsRemote).toBe(true);
+    expect(mocks.pickFile).not.toHaveBeenCalled();
   });
 });

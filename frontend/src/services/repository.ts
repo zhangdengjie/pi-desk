@@ -43,6 +43,26 @@ export const repositoryService = {
   revealFile(workspacePath: string, path: string): Promise<void> {
     return RepositoryService.RevealFile({ workspacePath, path });
   },
+  /**
+   * Native single-file picker. Deliberately not restricted to the workspace: the composer mention it
+   * feeds accepts any path Pi can read, and the repository listing hides ignored files anyway.
+   */
+  async pickFile(options: { title?: string; directory?: string } = {}): Promise<string | undefined> {
+    const picked = await Dialogs.OpenFile({
+      Title: options.title ?? "Choose a file",
+      CanChooseFiles: true,
+      CanChooseDirectories: false,
+      CanCreateDirectories: false,
+      AllowsMultipleSelection: false,
+      AllowsOtherFiletypes: true,
+      ResolvesAliases: true,
+      ShowHiddenFiles: true,
+      Directory: options.directory || undefined,
+      Filters: [],
+    });
+    const path = typeof picked === "string" ? picked : picked[0];
+    return path?.trim() ? path.trim() : undefined;
+  },
   async saveFileAs(workspacePath: string, path: string, absolutePath: string): Promise<string | undefined> {
     const filename = absolutePath.split(/[\\/]/).pop() || "file";
     const extension = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";

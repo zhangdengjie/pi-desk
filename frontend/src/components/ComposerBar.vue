@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { ArrowDownToLine, ArrowUp, ArrowUpFromLine, BrainCircuit, Check, ChevronDown, CornerDownRight, Database, File, Forward, Gauge, ImagePlus, LoaderCircle, Pencil, ShieldAlert, ShieldCheck, Slash, SlidersHorizontal, Square, Trash2, X } from "lucide-vue-next";
+import { ArrowDownToLine, ArrowUp, ArrowUpFromLine, BrainCircuit, Check, ChevronDown, CornerDownRight, Database, File, FilePlus2, Forward, Gauge, ImagePlus, LoaderCircle, Pencil, ShieldAlert, ShieldCheck, Slash, SlidersHorizontal, Square, Trash2, X } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useAppStore, type PiModel, type SettingsSection, type SlashCommand } from "../stores/app";
 import { MAX_ATTACHED_IMAGES, MAX_IMAGE_BASE64_CHARS, prepareImage, type PreparedImage } from "../utils/imageAttachments";
@@ -35,6 +35,7 @@ const mentionIndex = ref(0);
 const commandDismissed = ref(false);
 const mentionDismissed = ref(false);
 const attachmentError = ref("");
+const externalFileNotice = ref("");
 const previewImage = ref<PreparedImage>();
 const processingImages = ref(false);
 const pastingFiles = ref(false);
@@ -175,6 +176,7 @@ watch([commandMenuOpen, mentionMenuOpen, commandButtonOpen], async () => {
 
 watch(() => appStore.activeThreadId, () => {
   previewImage.value = undefined;
+  externalFileNotice.value = "";
 });
 
 watch(() => [appStore.activeThreadId, appStore.activeThread?.workspaceId, appStore.activeThread?.workspacePath, appStore.activeThread?.trust], () => {
@@ -347,6 +349,12 @@ function chooseFileMention(path: string) {
   if (!match) return;
   const prefix = `${draft.value.slice(0, match.index)}${match[1]}`;
   updateEditorMarkdown(`${prefix}${formatFileMention(path)} `);
+}
+
+async function insertPickedFile() {
+  externalFileNotice.value = "";
+  const picked = await appStore.pickFileMention();
+  if (picked?.external) externalFileNotice.value = tr("composer.externalFileMention", { path: picked.path });
 }
 
 function toggleCommandMenu() {
@@ -659,6 +667,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div v-if="attachmentError" class="attachment-error" role="alert">{{ attachmentError }}</div>
+      <div v-if="externalFileNotice" class="attachment-error composer-notice" role="status">{{ externalFileNotice }}</div>
       <div class="composer-editor" @keydown.capture="onKeydown" @paste.capture="onPaste">
         <MarkdownEditor
           ref="markdownEditor"
@@ -709,6 +718,16 @@ onBeforeUnmount(() => {
             @click="toggleCommandMenu"
           >
             <Slash :size="15" />
+          </button>
+          <button
+            class="tool-button composer-file-button"
+            type="button"
+            :title="appStore.activeWorkspaceIsRemote ? tr('composer.pickFileRemoteBlocked') : tr('composer.pickFile')"
+            :aria-label="tr('composer.pickFile')"
+            :disabled="!appStore.activeThread || appStore.activeWorkspaceIsRemote"
+            @click="void insertPickedFile()"
+          >
+            <FilePlus2 :size="15" />
           </button>
           <span v-if="piStarting" class="composer-starting" role="status" :title="tr('composer.modelsStarting')">
             <LoaderCircle :size="13" class="is-spinning" />
