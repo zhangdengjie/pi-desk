@@ -9,6 +9,7 @@ import { tr } from "../i18n";
 
 const appStore = useAppStore();
 const request = computed(() => appStore.extensionRequestByThread[appStore.activeThreadId]);
+const pendingCount = computed(() => appStore.extensionRequestsPendingByThread[appStore.activeThreadId]?.length ?? 0);
 const value = ref("");
 const dialog = ref<HTMLElement | null>(null);
 const dialogTitle = computed(() => request.value?.method === "batch_ask"
@@ -39,6 +40,7 @@ onBeforeUnmount(() => {
         <button class="icon-button" :class="ui.iconButton" type="button" :title="tr('extension.cancel')" @click="appStore.respondToExtension(undefined, true)"><X :size="17" /></button>
       </header>
       <div class="dialog-body" :class="[ui.dialogBody, { 'batch-question-dialog-body': request.method === 'batch_ask' }]">
+        <p v-if="pendingCount" class="extension-pending text-xs text-[var(--text-muted)]">{{ tr("extension.pendingCount", { count: pendingCount }) }}</p>
         <BatchQuestionForm
           v-if="request.method === 'batch_ask' && request.batchQuestions"
           :key="request.id"

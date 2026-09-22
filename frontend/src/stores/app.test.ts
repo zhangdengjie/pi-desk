@@ -2248,6 +2248,130 @@ describe("app store", () => {
     expect(store.extensionRequestByThread[thread.id]).toBeUndefined();
   });
 
+  it("queues a second parallel extension prompt instead of dropping it", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "deny");
+    const thread = store.activeThread!;
+    thread.generation = 2;
+    thread.started = true;
+    const emit = (id: string, extra: Record<string, unknown> = {}) => store.handlePiEvent({
+      threadId: thread.id,
+      event: { generation: 2, type: "extension_ui_request", payload: { id, method: "confirm", title: `Confirm ${id}`, message: "Proceed", ...extra } },
+    });
+
+    emit("ui-a");
+    emit("ui-b");
+
+    // Pi may emit several dialogs for one turn (parallel tool calls). Before the queue existed,
+    // the second frame overwrote the first, its id became unanswerable, and the session hung.
+    expect(store.extensionRequestByThread[thread.id]?.id).toBe("ui-a");
+    expect(store.extensionRequestsPendingByThread[thread.id]?.map((pending) => pending.id)).toEqual(["ui-b"]);
+
+    emit("ui-a");
+    expect(store.extensionRequestsPendingByThread[thread.id]).toHaveLength(1);
+
+    await store.respondToExtension(true);
+    expect(mocks.respondExtensionUI).toHaveBeenLastCalledWith({ threadId: thread.id, requestId: "ui-a", value: undefined, confirmed: true, cancelled: undefined });
+    expect(store.extensionRequestByThread[thread.id]?.id).toBe("ui-b");
+
+    await store.respondToExtension(false);
+    expect(mocks.respondExtensionUI).toHaveBeenLastCalledWith({ threadId: thread.id, requestId: "ui-b", value: undefined, confirmed: false, cancelled: undefined });
+    expect(store.extensionRequestByThread[thread.id]).toBeUndefined();
+    expect(store.extensionRequestsPendingByThread[thread.id]).toEqual([]);
+  });
+
+  it("prompts the next queued request even when answering the current one fails", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "deny");
+    const thread = store.activeThread!;
+    thread.generation = 2;
+    thread.started = true;
+    const emit = (id: string) => store.handlePiEvent({
+      threadId: thread.id,
+      event: { generation: 2, type: "extension_ui_request", payload: { id, method: "confirm", title: `Confirm ${id}`, message: "Proceed" } },
+    });
+    emit("ui-a");
+    emit("ui-b");
+    mocks.respondExtensionUI.mockRejectedValueOnce(new Error("rpc closed"));
+
+    await store.respondToExtension(true);
+
+    expect(store.extensionRequestByThread[thread.id]?.id).toBe("ui-b");
+    expect(store.activeMessages.at(-1)?.text).toContain("rpc closed");
+  });
+
+  it("cancels every outstanding prompt when the user stops the session", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "deny");
+    const thread = store.activeThread!;
+    thread.generation = 2;
+    thread.started = true;
+    const emit = (id: string) => store.handlePiEvent({
+      threadId: thread.id,
+      event: { generation: 2, type: "extension_ui_request", payload: { id, method: "confirm", title: `Confirm ${id}`, message: "Proceed" } },
+    });
+    emit("ui-a");
+    emit("ui-b");
+    mocks.respondExtensionUI.mockClear();
+
+    await store.abortActiveThread();
+
+    // `abort` alone cannot free a tool awaiting `ctx.ui.confirm` without a signal, so every
+    // known request id gets an explicit cancellation first.
+    expect(mocks.respondExtensionUI.mock.calls.map((call) => call[0])).toEqual([
+      { threadId: thread.id, requestId: "ui-a", cancelled: true },
+      { threadId: thread.id, requestId: "ui-b", cancelled: true },
+    ]);
+    expect(mocks.abort).toHaveBeenCalledWith(thread.id);
+    expect(store.extensionRequestByThread[thread.id]).toBeUndefined();
+    expect(store.extensionRequestsPendingByThread[thread.id]).toEqual([]);
+    expect(store.activeMessages.at(-1)?.text).toContain("2");
+  });
+
+  it("drops a queued prompt without promoting over the visible one", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "deny");
+    const thread = store.activeThread!;
+    thread.generation = 2;
+    thread.started = true;
+    const emit = (id: string) => store.handlePiEvent({
+      threadId: thread.id,
+      event: { generation: 2, type: "extension_ui_request", payload: { id, method: "confirm", title: `Confirm ${id}`, message: "Proceed" } },
+    });
+    emit("ui-a");
+    emit("ui-b");
+
+    store.dismissExtensionRequest("ui-b");
+    expect(store.extensionRequestsPendingByThread[thread.id]).toEqual([]);
+    expect(store.extensionRequestByThread[thread.id]?.id).toBe("ui-a");
+
+    store.dismissExtensionRequest("ui-a");
+    expect(store.extensionRequestByThread[thread.id]).toBeUndefined();
+  });
+
+  it("skips a queued prompt whose own timeout already elapsed in Pi", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "deny");
+    const thread = store.activeThread!;
+    thread.generation = 2;
+    thread.started = true;
+    const emit = (id: string) => store.handlePiEvent({
+      threadId: thread.id,
+      event: { generation: 2, type: "extension_ui_request", payload: { id, method: "confirm", title: `Confirm ${id}`, message: "Proceed", timeout: 5000 } },
+    });
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    emit("ui-a");
+    emit("ui-b");
+
+    // Pi resolves a timed-out dialog itself, so promoting the stale copy would show a dead dialog.
+    now.mockReturnValue(10_000);
+    await store.respondToExtension(true);
+
+    expect(store.extensionRequestByThread[thread.id]).toBeUndefined();
+    expect(store.extensionRequestsPendingByThread[thread.id]).toEqual([]);
+    now.mockRestore();
+  });
+
   it("projects the ask_question batch envelope instead of exposing transport JSON", async () => {
     const store = useAppStore();
     await store.createThread("D:\\work\\repo", "deny");

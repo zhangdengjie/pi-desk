@@ -30,6 +30,16 @@ function setup(request: ExtensionUIRequest) {
 describe("ExtensionDialog", () => {
   afterEach(() => vi.useRealTimers());
 
+  it("shows how many more prompts are waiting behind the visible one", async () => {
+    const { store, wrapper } = setup({ id: "a", method: "confirm", title: "A", message: "Proceed" });
+    expect(wrapper.find(".extension-pending").exists()).toBe(false);
+
+    store.extensionRequestsPendingByThread["thread-1"] = [{ id: "b", method: "confirm" }, { id: "c", method: "confirm" }];
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.get(".extension-pending").text()).toContain("2");
+  });
+
   it("responds to select, input, editor, confirm, and cancel controls", async () => {
     const { store, wrapper } = setup({ id: "select", method: "select", title: "Pick", options: ["Allow", "Block"] });
     await wrapper.findAll(".select-options button")[0].trigger("click");

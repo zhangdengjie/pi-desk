@@ -274,6 +274,13 @@ export interface ExtensionUIRequest {
   text?: string;
   batchQuestions?: BatchAskQuestion[];
   batchReview?: boolean;
+  /**
+   * Set when the request is parked in the queue instead of being shown right away.
+   * Used to drop a queued prompt whose own `timeout` has already elapsed in Pi: Pi
+   * resolves those on its own, so answering a stale id would be a no-op and re-showing
+   * it would be a dead dialog.
+   */
+  receivedAt?: number;
 }
 
 export interface ExtensionStatus {
@@ -857,6 +864,9 @@ export const useAppStore = defineStore("app", {
     interfaceFontSize: 14,
     piProcessOrder: [] as string[],
     extensionRequestByThread: {} as Record<string, ExtensionUIRequest | undefined>,
+    // Pi may emit several `extension_ui_request` frames for one turn (parallel tool calls).
+    // Only the head is shown; the rest wait here so no request is ever silently dropped.
+    extensionRequestsPendingByThread: {} as Record<string, ExtensionUIRequest[]>,
     extensionStatusesByThread: {} as Record<string, Record<string, string>>,
     extensionWidgetsByThread: {} as Record<string, Record<string, ExtensionWidget>>,
     extensionTitleByThread: {} as Record<string, string | undefined>,
@@ -1996,6 +2006,12 @@ export const useAppStore = defineStore("app", {
     async abortActiveThread() {
       const thread = this.activeThread;
       if (!thread?.started) return;
+      // An extension dialog that Pi is waiting on is never freed by `abort` alone: the tool's
+      // `await ctx.ui.confirm(...)` only settles when a matching response arrives (or the
+      // extension passed an abort signal). Answer everything we know about first, otherwise
+      // "Stop" leaves the session spinning behind a dialog nobody can reach.
+      const cancelled = await this.cancelPendingExtensionRequests(thread.id);
+      if (cancelled) this.appendSystem(thread.id, tr("extension.cancelledOnStop", { count: cancelled }));
       try {
         await agentService.abort(thread.id);
       } catch (error) {
@@ -2206,7 +2222,7 @@ export const useAppStore = defineStore("app", {
         this.sessionStatsByThread, this.sessionStatsRefreshGenerationByThread,
         this.compactionEstimatesByThread, this.latestCompactionEstimateByThread,
         this.modelsByThread, this.thinkingLevelsByThread, this.thinkingLevelsRefreshGenerationByThread, this.commandsByThread,
-        this.queueByThread, this.pendingPromptsByThread, this.retryByThread, this.extensionRequestByThread, this.extensionStatusesByThread,
+        this.queueByThread, this.pendingPromptsByThread, this.retryByThread, this.extensionRequestByThread, this.extensionRequestsPendingByThread, this.extensionStatusesByThread,
         this.extensionWidgetsByThread, this.extensionTitleByThread, this.transcriptStateByThread,
         this.sessionBranchesByThread, this.sessionBranchesErrorByThread, this.sessionOperationByThread, this.pendingModelByThread,
         this.modelSelectionGenerationByThread,
@@ -2754,22 +2770,82 @@ export const useAppStore = defineStore("app", {
       await agentService.setAutoRetry({ threadId: thread.id, enabled });
       this.autoRetryEnabledByThread[thread.id] = enabled;
     },
+    queueExtensionRequest(threadId: string, request: ExtensionUIRequest) {
+      const head = this.extensionRequestByThread[threadId];
+      if (!head) {
+        this.extensionRequestByThread[threadId] = request;
+        return;
+      }
+      if (head.id === request.id) return;
+      const queue = this.extensionRequestsPendingByThread[threadId] ?? (this.extensionRequestsPendingByThread[threadId] = []);
+      if (queue.some((pending) => pending.id === request.id)) return;
+      queue.push({ ...request, receivedAt: Date.now() });
+    },
+    promoteNextExtensionRequest(threadId: string) {
+      if (this.extensionRequestByThread[threadId]) return;
+      const queue = this.extensionRequestsPendingByThread[threadId];
+      if (!queue?.length) return;
+      const now = Date.now();
+      while (queue.length) {
+        const next = queue.shift()!;
+        if (next.timeout && next.receivedAt && now - next.receivedAt >= next.timeout) continue;
+        this.extensionRequestByThread[threadId] = next;
+        return;
+      }
+    },
+    pendingExtensionRequests(threadId: string): ExtensionUIRequest[] {
+      const head = this.extensionRequestByThread[threadId];
+      const queue = this.extensionRequestsPendingByThread[threadId] ?? [];
+      return head ? [head, ...queue] : [...queue];
+    },
+    clearExtensionRequests(threadId: string) {
+      this.extensionRequestByThread[threadId] = undefined;
+      this.extensionRequestsPendingByThread[threadId] = [];
+    },
+    async cancelPendingExtensionRequests(threadId: string): Promise<number> {
+      const pending = this.pendingExtensionRequests(threadId);
+      if (!pending.length) return 0;
+      this.clearExtensionRequests(threadId);
+      for (const request of pending) {
+        try {
+          await agentService.respondExtensionUI({ threadId, requestId: request.id, cancelled: true });
+        } catch {
+          // The runtime may already be gone. A prompt that cannot be answered must not block stopping.
+        }
+      }
+      return pending.length;
+    },
     async respondToExtension(value: string | boolean | undefined, cancelled = false) {
       const thread = this.activeThread;
       const request = thread ? this.extensionRequestByThread[thread.id] : undefined;
       if (!thread || !request) return;
-      await agentService.respondExtensionUI({
-        threadId: thread.id,
-        requestId: request.id,
-        value: typeof value === "string" ? value : undefined,
-        confirmed: typeof value === "boolean" ? value : undefined,
-        cancelled: cancelled || undefined,
-      });
+      // Release the head slot *before* awaiting the round trip: a response that Pi never
+      // acknowledges used to keep the dialog (and every request queued behind it) on screen forever.
       this.extensionRequestByThread[thread.id] = undefined;
+      this.promoteNextExtensionRequest(thread.id);
+      try {
+        await agentService.respondExtensionUI({
+          threadId: thread.id,
+          requestId: request.id,
+          value: typeof value === "string" ? value : undefined,
+          confirmed: typeof value === "boolean" ? value : undefined,
+          cancelled: cancelled || undefined,
+        });
+      } catch (error) {
+        this.appendSystem(thread.id, `Unable to answer the extension prompt: ${errorMessage(error)}`, errorMessage(error));
+      }
     },
     dismissExtensionRequest(requestID: string) {
-      const request = this.extensionRequestByThread[this.activeThreadId];
-      if (request?.id === requestID) this.extensionRequestByThread[this.activeThreadId] = undefined;
+      const threadId = this.activeThreadId;
+      if (this.extensionRequestByThread[threadId]?.id === requestID) {
+        this.extensionRequestByThread[threadId] = undefined;
+        this.promoteNextExtensionRequest(threadId);
+        return;
+      }
+      const queue = this.extensionRequestsPendingByThread[threadId];
+      if (!queue) return;
+      const index = queue.findIndex((pending) => pending.id === requestID);
+      if (index >= 0) queue.splice(index, 1);
     },
     startThreadInBackground(threadId: string, explicit = false) {
       const thread = this.threads.find((candidate) => candidate.id === threadId);
@@ -3386,7 +3462,7 @@ export const useAppStore = defineStore("app", {
           if (["select", "confirm", "input", "editor"].includes(request.method)) {
             const projected = blockingExtensionRequest(payload);
             if (projected) {
-              this.extensionRequestByThread[thread.id] = projected;
+              this.queueExtensionRequest(thread.id, projected);
             } else if (request.placeholder === BATCH_ASK_PLACEHOLDER) {
               const requestID = boundedExtensionText(request.id, 256).trim();
               delete this.extensionRequestByThread[thread.id];
@@ -3442,6 +3518,7 @@ export const useAppStore = defineStore("app", {
           this.queueByThread[thread.id] = { steering: [], followUp: [] };
           this.retryByThread[thread.id] = undefined;
           this.extensionRequestByThread[thread.id] = undefined;
+          this.extensionRequestsPendingByThread[thread.id] = [];
           this.extensionStatusesByThread[thread.id] = {};
           this.extensionWidgetsByThread[thread.id] = {};
           this.extensionTitleByThread[thread.id] = undefined;

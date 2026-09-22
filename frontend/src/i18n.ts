@@ -892,6 +892,7 @@ const messages = {
     },
     extension: {
       title: "Pi extension", cancel: "Cancel", no: "No", yes: "Yes", submit: "Submit",
+      pendingCount: "{count} more pending", cancelledOnStop: "Cancelled {count} pending extension prompt(s) while stopping.",
       batchTitle: "Questions ({count})", batchProgress: "{done} of {total} answered", batchTabs: "Question navigation",
       batchQuestion: "Question {current} of {total}", batchReviewTab: "Review", batchReviewTitle: "Review your answers",
       batchReviewHint: "Check every answer before submitting.", batchIncomplete: "Answer every question before submitting.",
@@ -1805,6 +1806,7 @@ const messages = {
     },
     extension: {
       title: "Pi 扩展", cancel: "取消", no: "否", yes: "是", submit: "提交",
+      pendingCount: "还有 {count} 项待确认", cancelledOnStop: "停止时已取消 {count} 项待确认。",
       batchTitle: "问卷（{count} 题）", batchProgress: "已回答 {done}/{total}", batchTabs: "问题导航",
       batchQuestion: "第 {current}/{total} 题", batchReviewTab: "提交审阅", batchReviewTitle: "确认全部回答",
       batchReviewHint: "请检查每项回答，确认无误后再提交。", batchIncomplete: "请先回答全部问题。",
