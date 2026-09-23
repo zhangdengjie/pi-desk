@@ -238,6 +238,27 @@ describe("MarkdownEditor", () => {
     wrapper.unmount();
   });
 
+  it("turns a Shift+Enter break into a plain newline, not a markdown escape", async () => {
+    const wrapper = mount(MarkdownEditor, { props: { modelValue: "A", placeholder: "Write", ariaLabel: "Prompt" } });
+    await flushPromises();
+    const setup = wrapper.findComponent(MarkdownEditorCore).vm.$ as unknown as { setupState: { get(): Editor | undefined } };
+    const view = setup.setupState.get()?.action((ctx) => ctx.get(editorViewCtx));
+    if (!view) throw new Error("Milkdown editor did not start");
+
+    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
+    view.someProp("handleKeyDown", (handler) => handler(view, new KeyboardEvent("keydown", { key: "Enter", shiftKey: true })));
+    view.dispatch(view.state.tr.insertText("B"));
+
+    // remark-stringify writes the hard break as `A\` + newline; that backslash used to be sent to Pi.
+    const draft = String(wrapper.emitted("update:modelValue")?.at(-1)?.[0]);
+    expect(draft).toBe("A\nB");
+
+    // Re-parsing must keep the break, otherwise the composer would show one glued-together line.
+    await wrapper.setProps({ modelValue: draft });
+    expect(view.state.doc.toString()).toContain("hardbreak");
+    wrapper.unmount();
+  });
+
   it("replays the newest model value when it changes during startup", async () => {
     const wrapper = mount(MarkdownEditor, {
       props: { modelValue: "old draft", placeholder: "Write", ariaLabel: "Prompt" },

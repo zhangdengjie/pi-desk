@@ -50,6 +50,16 @@ export function normalizeMarkdownBreakTags(value: string): string {
       continue;
     }
 
+    // A Markdown hard break serialised as `\` + line ending. Both call sites already treat a bare
+    // newline as a break (`breaks: true` in the renderer, and the editor parses `A\nB` back into a
+    // hardbreak node), so the escape is pure noise - and it leaked into the prompt sent to Pi as a
+    // literal backslash. Leave an escaped `\\` alone; code spans and fences were consumed above.
+    if (value[cursor] === "\\" && value[cursor + 1] === "\n" && value[cursor - 1] !== "\\") {
+      normalized += "\n";
+      cursor += 2;
+      continue;
+    }
+
     normalized += value[cursor];
     cursor += 1;
   }
