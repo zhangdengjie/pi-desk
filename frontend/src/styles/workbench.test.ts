@@ -155,6 +155,8 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.file-markdown-preview\s*{[^}]*padding:\s*32px max\(28px, calc\(\(100% - var\(--conversation-content-width\)\) \/ 2\)\) 72px[^}]*scrollbar-gutter:\s*stable/s);
     expect(css).toMatch(/\.file-markdown-preview h1\s*{[^}]*font-size:\s*calc\(24px \+ var\(--font-size-delta\)\)[^}]*letter-spacing:\s*-0\.02em/s);
     expect(css).toMatch(/\.file-markdown-preview h2\s*{[^}]*margin:\s*32px 0 12px[^}]*font-size:\s*calc\(19px \+ var\(--font-size-delta\)\)/s);
+    // The scroll wrapper, not the <table>, owns the vertical gap in file previews.
+    expect(css).toMatch(/\.file-markdown-preview \.markdown-table-scroll\s*{[^}]*margin:\s*0 0 14px/s);
   });
 
   it("keeps the inspector resize target on the panel edge without a visible rail", async () => {

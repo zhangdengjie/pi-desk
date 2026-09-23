@@ -787,9 +787,16 @@
   font-weight: 650;
 }
 
-.file-markdown-preview :is(p, ul, ol, blockquote, pre, table) {
+.file-markdown-preview :is(p, ul, ol, blockquote, pre) {
   margin-top: 0;
   margin-bottom: 14px;
+}
+
+/* Vertical rhythm for tables lives on the scroll wrapper, because the <table>
+   inside it is as wide as its content and its own margin would be clipped by the
+   overflow box. */
+.file-markdown-preview .markdown-table-scroll {
+  margin: 0 0 14px;
 }
 
 .file-markdown-preview :is(ul, ol) {

@@ -18,6 +18,9 @@
   --line-height-compact: 1.3;
   --line-height-body: 1.5;
   --line-height-reading: 1.62;
+  /* Ceiling for a single markdown table cell: without it a table sized to
+     max-content renders one whole sentence per line. */
+  --markdown-cell-max-width: 340px;
   font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;

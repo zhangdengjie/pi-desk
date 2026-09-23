@@ -49,6 +49,29 @@ markdown.renderer.rules.link_open = (tokens, index, options, environment, render
     : renderer.renderToken(tokens, index, options);
 };
 
+// markdown-it emits bare <table>. A table can only scroll sideways if some box
+// around it owns the overflow, and a <table> cannot be that box without losing
+// its own table layout (see .markdown-table-scroll in layout.css). So every
+// rendered table gets a scroll wrapper here, in the one place markdown becomes
+// HTML, which also keeps streamed reasoning and file previews on the same shape.
+markdown.renderer.rules.table_open = (tokens, index, options, _env, self) =>
+  `<div class="markdown-table-scroll">${self.renderToken(tokens, index, options)}`;
+markdown.renderer.rules.table_close = (tokens, index, options, _env, self) =>
+  `${self.renderToken(tokens, index, options)}</div>`;
+
+// Measured in both engines (WebKit = the one this app renders with, plus Blink as
+// control): a bare text cell ignores max-width on <th>/<td> — WebKit laid the column
+// out at 490px for a 340px cap. A block child inside the cell fixes it (340px in both
+// engines). So every cell gets one wrapper and the ceiling lives on that wrapper.
+markdown.renderer.rules.th_open = (tokens, index, options, _env, self) =>
+  `${self.renderToken(tokens, index, options)}<div class="markdown-cell">`;
+markdown.renderer.rules.td_open = (tokens, index, options, _env, self) =>
+  `${self.renderToken(tokens, index, options)}<div class="markdown-cell">`;
+markdown.renderer.rules.th_close = (tokens, index, options, _env, self) =>
+  `</div>${self.renderToken(tokens, index, options)}`;
+markdown.renderer.rules.td_close = (tokens, index, options, _env, self) =>
+  `</div>${self.renderToken(tokens, index, options)}`;
+
 const renderMarkdown = computed(() => props.text.length <= MAX_MARKDOWN_CHARS);
 
 function highlightRenderedHtml(html: string, query: string, active: boolean): string {

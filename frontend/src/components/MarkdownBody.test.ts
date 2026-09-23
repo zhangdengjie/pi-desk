@@ -52,6 +52,21 @@ describe("MarkdownBody", () => {
     wrapper.unmount();
   });
 
+  it("wraps every rendered table in a horizontal scroll container", () => {
+    const { wrapper } = mountMarkdown("| 组件 | 说明 |\n| --- | --- |\n| Build | 中文长文本，宽度有限时不允许垂直堆叠 |\n");
+
+    const scroll = wrapper.get(".markdown-table-scroll");
+    expect(scroll.element.tagName).toBe("DIV");
+    expect(scroll.element.firstElementChild?.tagName).toBe("TABLE");
+    expect(wrapper.findAll("table")).toHaveLength(1);
+    expect(scroll.text()).toContain("组件");
+    // Each cell carries the block child that holds the width ceiling: WebKit ignores
+    // max-width on a th/td with bare text, so this DOM shape is part of the contract.
+    expect(wrapper.findAll("th .markdown-cell")).toHaveLength(2);
+    expect(wrapper.findAll("td .markdown-cell")).toHaveLength(2);
+    wrapper.unmount();
+  });
+
   it("renders legacy browser break tags as line breaks instead of text", () => {
     const { wrapper } = mountMarkdown("first</br>second<br>third<br/>fourth");
 

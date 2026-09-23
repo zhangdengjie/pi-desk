@@ -1,13 +1,21 @@
 import layoutFile from "./layout.css?inline";
 import { describe, expect, it } from "vitest";
 
-async function layoutText(): Promise<string> {
-  if (layoutFile.includes(".workspace-shell")) return layoutFile.replace(/\r\n?/g, "\n");
+async function readStyle(name: string): Promise<string> {
   const moduleName = ["node", "fs/promises"].join(":");
   const { readFile } = await import(/* @vite-ignore */ moduleName) as {
     readFile(path: string, encoding: "utf8"): Promise<string>;
   };
-  return (await readFile("src/styles/layout.css", "utf8")).replace(/\r\n?/g, "\n");
+  return (await readFile(`src/styles/${name}`, "utf8")).replace(/\r\n?/g, "\n");
+}
+
+async function layoutText(): Promise<string> {
+  if (layoutFile.includes(".workspace-shell")) return layoutFile.replace(/\r\n?/g, "\n");
+  return readStyle("layout.css");
+}
+
+async function tokensText(): Promise<string> {
+  return readStyle("tokens.css");
 }
 
 function ruleBodies(layout: string, selector: string): string[] {
@@ -115,6 +123,27 @@ describe("message editor theme colors", () => {
     const layout = await layoutText();
     expect(firstRuleBody(layout, ".markdown-body ol")).toMatch(/list-style-type:\s*decimal/);
     expect(firstRuleBody(layout, ".markdown-body ul")).toMatch(/list-style-type:\s*disc/);
+  });
+
+  it("scrolls wide Markdown tables sideways instead of stacking one glyph per line", async () => {
+    const layout = await layoutText();
+    const scroll = firstRuleBody(layout, ".markdown-body .markdown-table-scroll");
+    expect(scroll).toMatch(/max-width:\s*100%/);
+    expect(scroll).toMatch(/overflow-x:\s*auto/);
+    const table = firstRuleBody(layout, ".markdown-body table");
+    expect(table).toMatch(/width:\s*max-content/);
+    // Stretching to the pane would distribute width over the columns and break the cell ceiling.
+    expect(table).not.toMatch(/min-width/);
+    // display:block on the table itself is what squeezed CJK cells into vertical text.
+    expect(table).not.toMatch(/display:/);
+    expect(table).not.toMatch(/overflow/);
+    const cell = firstRuleBody(layout, ".markdown-body .markdown-cell");
+    expect(cell).toMatch(/max-width:\s*var\(--markdown-cell-max-width\)/);
+    expect(cell).toMatch(/overflow-wrap:\s*anywhere/);
+    // The ceiling is a token, so themes/densities can retune it in one place.
+    expect(await tokensText()).toMatch(/--markdown-cell-max-width:\s*340px/);
+    // And it must not move onto the cell itself — WebKit ignores it there.
+    expect(firstRuleBody(layout, ".markdown-body th,\n.markdown-body td")).not.toMatch(/max-width/);
   });
 
   it("uses defined foreground and background tokens in light and dark themes", async () => {

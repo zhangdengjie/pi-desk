@@ -1770,11 +1770,21 @@
   color: var(--text-secondary);
 }
 
-.markdown-body table {
-  display: block;
+/* CJK cells have no soft-wrap opportunity, so squeezing a wide table into the
+   column width used to stack one glyph per line ("vertical text"). The table is
+   now sized to max-content and the scroll wrapper emitted by MarkdownBody.vue
+   owns the horizontal overflow. */
+.markdown-body .markdown-table-scroll {
   max-width: 100%;
   margin: 9px 0;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* Stretching the table to the pane would distribute the extra space over the
+   columns and break the per-cell ceiling, so it stays at its content width. */
+.markdown-body table {
+  width: max-content;
   border-collapse: collapse;
 }
 
@@ -1783,6 +1793,14 @@
   padding: 5px 8px;
   border: 1px solid var(--border-strong);
   text-align: left;
+}
+
+/* Per-column ceiling: without it a table sized to max-content renders a whole
+   sentence on one line. It has to sit on this block child — WebKit ignores
+   max-width on a <th>/<td> whose content is bare text (see MarkdownBody.vue). */
+.markdown-body .markdown-cell {
+  max-width: var(--markdown-cell-max-width);
+  overflow-wrap: anywhere;
 }
 
 .thinking-block,
