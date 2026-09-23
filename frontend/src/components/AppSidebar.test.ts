@@ -435,4 +435,38 @@ describe("AppSidebar", () => {
     await deleteAction.trigger("click");
     expect(store.requestDeleteThread).toHaveBeenCalledWith("thread-1");
   });
+
+  it("offers a Pi resource reload only while a Pi process is running", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      catalogLoading: false,
+      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
+      threads: [{
+        id: "thread-1", title: "Running task", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
+        status: "idle", started: true, generation: 3, sessionFile: "one.jsonl",
+      }],
+      activeThreadId: "thread-1",
+    });
+    store.reloadThreadResources = vi.fn().mockResolvedValue(true);
+    const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
+
+    await wrapper.get(".thread-row").trigger("contextmenu", { clientX: 40, clientY: 60 });
+    const items = wrapper.get(".thread-context-menu").findAll('[role="menuitem"]');
+    expect(items.map((item) => item.text())).toEqual([
+      "Show in File Explorer",
+      "Rename task",
+      "Session branches",
+      "Clone task",
+      "Export HTML",
+      "Compact context",
+      "Reload Pi resources",
+      "Close Pi process",
+      "Delete task",
+    ]);
+
+    await items.find((item) => item.text() === "Reload Pi resources")!.trigger("click");
+    expect(store.reloadThreadResources).toHaveBeenCalledWith("thread-1");
+  });
 });

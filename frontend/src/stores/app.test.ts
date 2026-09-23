@@ -767,6 +767,32 @@ describe("app store", () => {
     expect(store.threads[0].started).toBe(false);
   });
 
+  it("reloads Pi resources by rebuilding the process and keeps the transcript", async () => {
+    const store = useAppStore();
+    store.threads = [{ id: "thread-reload", title: "Reload", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 4, sessionFile: "keep.jsonl" }];
+    store.messagesByThread["thread-reload"] = [];
+    const started: string[] = [];
+    store.startThreadInBackground = vi.fn((threadId: string) => { started.push(threadId); });
+
+    expect(await store.reloadThreadResources("thread-reload")).toBe(true);
+    expect(mocks.stopSession).toHaveBeenCalledWith("thread-reload");
+    expect(started).toEqual(["thread-reload"]);
+    // The remembered session file is what makes the restart non-destructive.
+    expect(store.threads[0].sessionFile).toBe("keep.jsonl");
+  });
+
+  it("does not start a fresh Pi process when the old one refuses to close", async () => {
+    const store = useAppStore();
+    store.threads = [{ id: "thread-reload", title: "Reload", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 4 }];
+    store.messagesByThread["thread-reload"] = [];
+    mocks.stopSession.mockRejectedValueOnce(new Error("Pi did not stop cleanly"));
+    const started = vi.fn();
+    store.startThreadInBackground = started;
+
+    expect(await store.reloadThreadResources("thread-reload")).toBe(false);
+    expect(started).not.toHaveBeenCalled();
+  });
+
   it("marks a remote target stale when Pi stop reports revoked capability", async () => {
     const store = useAppStore();
     store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];

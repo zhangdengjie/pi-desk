@@ -2198,6 +2198,20 @@ export const useAppStore = defineStore("app", {
     async stopActiveSession() {
       if (this.activeThread) await this.stopThread(this.activeThread.id);
     },
+    /**
+     * Desktop equivalent of Pi's `/reload`. Pi only implements that command in its interactive TUI
+     * and inside an extension's command context (`dist/modes/rpc/rpc-mode.js:233`
+     * `commandContextActions`); there is no inbound RPC frame, so typing `/reload` in the composer
+     * just sends that word to the model. Rebuilding the process reloads the same set of resources -
+     * extensions, skills, prompt templates, themes, settings, context files - and keeps the transcript.
+     */
+    async reloadThreadResources(threadId: string): Promise<boolean> {
+      const thread = this.threads.find((candidate) => candidate.id === threadId);
+      if (!thread) return false;
+      if (thread.started && !await this.stopThread(threadId)) return false;
+      this.startThreadInBackground(threadId);
+      return true;
+    },
     async stopAllSessions(): Promise<boolean> {
       const threadIDs = this.threads.filter((thread) => thread.started).map((thread) => thread.id);
       let stopped = true;
