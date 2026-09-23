@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -64,9 +65,102 @@ func TestScannerUsesGitIgnoreAndReturnsWorkingTreeState(t *testing.T) {
 	for _, file := range snapshot.Files {
 		paths[file.Path] = true
 	}
-	if !paths["tracked.txt"] || !paths["untracked.txt"] || paths["ignored.txt"] {
-		t.Fatalf("git ignore semantics were not preserved: %#v", paths)
+	if !paths["tracked.txt"] || !paths["untracked.txt"] || !paths["ignored.txt"] {
+		t.Fatalf("listing lost paths: %#v", paths)
 	}
+	if snapshot.Truncated {
+		t.Fatalf("unexpected truncation: %#v", snapshot)
+	}
+	files := indexFiles(snapshot.Files)
+	if !files["ignored.txt"].Ignored || files["ignored.txt"].Directory {
+		t.Fatalf("ignored path lost its marker: %#v", files["ignored.txt"])
+	}
+	if files["tracked.txt"].Ignored || files["untracked.txt"].Ignored {
+		t.Fatalf("non-ignored paths must not be marked: %#v", snapshot.Files)
+	}
+}
+
+// TestScannerExpandsFoldersIgnoredByGitInfoExclude reproduces the reported symptom: a plan folder
+// excluded through `.git/info/exclude` (how the pi agent keeps its notes out of the repository)
+// was invisible, because `git ls-files -co` skips ignored paths entirely.
+func TestScannerExpandsFoldersIgnoredByGitInfoExclude(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	root := t.TempDir()
+	runGitTest(t, root, "init", "-q")
+	writeTestFile(t, root, ".git/info/exclude", "# comment\n/.pi/plans/\n")
+	writeTestFile(t, root, "README.md", "# hi\n")
+	writeTestFile(t, root, ".pi/README.md", "tracked soon\n")
+	writeTestFile(t, root, ".pi/plans/2026-09-23.md", "plan\n")
+	writeTestFile(t, root, ".pi/plans/topics/deep.md", "note\n")
+
+	snapshot, err := New().Snapshot(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := indexFiles(snapshot.Files)
+	for _, path := range []string{".pi/plans/2026-09-23.md", ".pi/plans/topics/deep.md"} {
+		file, ok := files[path]
+		if !ok {
+			t.Fatalf("excluded plan %s missing from %#v", path, keysOf(files))
+		}
+		if !file.Ignored || file.Directory {
+			t.Fatalf("%s should be an ignored file: %#v", path, file)
+		}
+	}
+	folder, ok := files[".pi/plans"]
+	if !ok || !folder.Directory || !folder.Ignored {
+		t.Fatalf("Git folds the folder in --directory mode, so it must arrive as an ignored folder: %#v", folder)
+	}
+	if file, ok := files["README.md"]; !ok || file.Ignored {
+		t.Fatalf("tracked file regressed: %#v", file)
+	}
+}
+
+// TestScannerLeavesDependencyFoldersCollapsed guards the ceiling: expanding `node_modules` can push
+// the git output past internal/gitexec's 4 MiB limit, which used to discard the whole ignored listing.
+func TestScannerLeavesDependencyFoldersCollapsed(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	root := t.TempDir()
+	runGitTest(t, root, "init", "-q")
+	writeTestFile(t, root, ".gitignore", "node_modules/\n")
+	writeTestFile(t, root, "node_modules/dep/index.js", "module.exports = 1\n")
+	writeTestFile(t, root, "notes.md", "# notes\n")
+
+	snapshot, err := New().Snapshot(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := indexFiles(snapshot.Files)
+	folder, ok := files["node_modules"]
+	if !ok || !folder.Directory || !folder.Ignored {
+		t.Fatalf("node_modules should show up as a collapsed ignored folder: %#v", files)
+	}
+	for path := range files {
+		if strings.HasPrefix(path, "node_modules/") {
+			t.Fatalf("node_modules must not be expanded: %s", path)
+		}
+	}
+}
+
+func indexFiles(files []File) map[string]File {
+	indexed := make(map[string]File, len(files))
+	for _, file := range files {
+		indexed[file.Path] = file
+	}
+	return indexed
+}
+
+func keysOf(indexed map[string]File) []string {
+	keys := make([]string, 0, len(indexed))
+	for key := range indexed {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func TestScannerReturnsStagedWorkingAndUntrackedDiffs(t *testing.T) {

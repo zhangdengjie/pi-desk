@@ -725,6 +725,14 @@ export interface RenameWorkspaceRequest {
 export interface RepositoryFile {
     "path": string;
     "name": string;
+
+    /**
+     * Ignored: Git excludes this path (.gitignore / .git/info/exclude / core.excludesFile).
+     * Directory: folder entry without listed children, because the scan was capped or the folder is
+     * deliberately not expanded (node_modules). Only ignored entries ever carry it.
+     */
+    "ignored"?: boolean;
+    "directory"?: boolean;
 }
 
 export interface RepositoryFileDiff {

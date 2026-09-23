@@ -149,7 +149,9 @@ func (service *RepositoryService) Snapshot(request domain.RepositoryRequest) (do
 		},
 	}
 	for _, file := range snapshot.Files {
-		result.Files = append(result.Files, domain.RepositoryFile{Path: file.Path, Name: file.Name})
+		result.Files = append(result.Files, domain.RepositoryFile{
+			Path: file.Path, Name: file.Name, Ignored: file.Ignored, Directory: file.Directory,
+		})
 	}
 	for _, file := range snapshot.Git.Files {
 		result.Git.Files = append(result.Git.Files, domain.GitChangedFile{

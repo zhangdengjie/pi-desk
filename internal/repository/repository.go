@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"pi-desk/internal/gitexec"
@@ -27,13 +28,29 @@ const (
 	maxDiffBytes  = 1 << 20
 	maxFileBytes  = 1 << 20
 	maxMediaBytes = 10 << 20
+
+	// Ceilings for the ignored listing only. They are deliberately separate from `maxFiles`: a
+	// repository with one huge ignored folder must not be able to evict tracked files from the tree.
+	maxIgnoredFiles        = 1000
+	maxIgnoredPerDirectory = 300
+	maxIgnoredDirectories  = 60
 )
 
-var ErrOutputTooLarge = gitexec.ErrOutputTooLarge
+// neverExpandedIgnoredDirectories are still listed as folders, but their contents are not.
+// `node_modules` is routinely tens of thousands of entries, which pushes the single `git ls-files`
+// call past the 4 MiB command ceiling in internal/gitexec and would then discard the whole ignored
+// listing - including the small, interesting folders like `.pi/plans`.
+var neverExpandedIgnoredDirectories = map[string]bool{"node_modules": true, ".git": true}
 
 type File struct {
 	Path string
 	Name string
+	// Ignored marks paths Git excludes (.gitignore, .git/info/exclude, core.excludesFile). The
+	// listing used to be `git ls-files -co` only, so those were invisible in the file tree.
+	Ignored bool
+	// Directory marks a folder entry with no listed children: either the scan was capped or the
+	// folder is on neverExpandedIgnoredDirectories. The tree still renders it.
+	Directory bool
 }
 
 type ChangedFile struct {
@@ -191,9 +208,88 @@ func (scanner *Scanner) listFiles(ctx context.Context, root string, isRepository
 		if err != nil {
 			return nil, false, fmt.Errorf("list repository files: %w", err)
 		}
-		return parseFiles(output)
+		files, truncated, err := parseFiles(output)
+		if err != nil {
+			return nil, false, err
+		}
+		files = append(files, scanner.listIgnoredFiles(ctx, root)...)
+		sort.Slice(files, func(i, j int) bool { return strings.ToLower(files[i].Path) < strings.ToLower(files[j].Path) })
+		return files, truncated, nil
 	}
 	return walkFiles(ctx, root)
+}
+
+// listIgnoredFiles returns the paths Git excludes, so the tree matches the workspace on disk. It
+// never fails the snapshot: every error (including the output ceiling) degrades to fewer entries.
+// The first pass uses `--directory`, which collapses a fully ignored folder into one `name/` entry
+// and keeps that pass cheap no matter how much the folder holds; each collapsed folder is then
+// expanded in its own bounded call so one oversized dependency tree cannot take the rest down.
+func (scanner *Scanner) listIgnoredFiles(ctx context.Context, root string) []File {
+	if err := ctx.Err(); err != nil {
+		return nil
+	}
+	// The listing is a bonus on top of the tracked files, so it gets its own budget instead of
+	// eating the 15s the snapshot has left for status and diff.
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	output, err := scanner.runner.Run(ctx, root, "ls-files", "-io", "--exclude-standard", "--directory", "-z")
+	if err != nil {
+		return nil
+	}
+	files := make([]File, 0, 64)
+	directories := make([]string, 0, 16)
+	for _, raw := range bytes.Split(output, []byte{0}) {
+		entry := filepath.ToSlash(string(raw))
+		if entry == "" {
+			continue
+		}
+		if directory := strings.TrimSuffix(entry, "/"); directory != entry {
+			directories = append(directories, directory)
+			continue
+		}
+		if file, ok := ignoredFile(entry); ok && len(files) < maxIgnoredFiles {
+			files = append(files, file)
+		}
+	}
+	for index, directory := range directories {
+		if index >= maxIgnoredDirectories || len(files) >= maxIgnoredFiles || ctx.Err() != nil {
+			break
+		}
+		// The folder itself is always reported, even when the expansion below is refused.
+		if folder, ok := ignoredFile(directory + "/"); ok {
+			files = append(files, folder)
+		}
+		if neverExpandedIgnoredDirectories[strings.SplitN(directory, "/", 2)[0]] {
+			continue
+		}
+		children, err := scanner.runner.Run(ctx, root, "ls-files", "-io", "--exclude-standard", "-z",
+			"--", ":(top,literal)"+directory+"/")
+		if err != nil {
+			continue
+		}
+		listed := 0
+		for _, raw := range bytes.Split(children, []byte{0}) {
+			if listed >= maxIgnoredPerDirectory || len(files) >= maxIgnoredFiles {
+				break
+			}
+			if file, ok := ignoredFile(filepath.ToSlash(string(raw))); ok && !file.Directory {
+				files = append(files, file)
+				listed++
+			}
+		}
+	}
+	return files
+}
+
+// ignoredFile turns one `git ls-files -i` entry into a File. A trailing slash from `--directory`
+// becomes the Directory marker, so a capped or deliberately skipped folder still renders as one.
+func ignoredFile(raw string) (File, bool) {
+	path := filepath.ToSlash(raw)
+	name := strings.TrimSuffix(path, "/")
+	if name == "" || !validRelativePath(name) {
+		return File{}, false
+	}
+	return File{Path: name, Name: filepath.Base(filepath.FromSlash(name)), Ignored: true, Directory: strings.HasSuffix(path, "/")}, true
 }
 
 func parseFiles(output []byte) ([]File, bool, error) {

@@ -45,6 +45,11 @@ type RollbackSessionFileRequest struct {
 type RepositoryFile struct {
 	Path string `json:"path"`
 	Name string `json:"name"`
+	// Ignored: Git excludes this path (.gitignore / .git/info/exclude / core.excludesFile).
+	// Directory: folder entry without listed children, because the scan was capped or the folder is
+	// deliberately not expanded (node_modules). Only ignored entries ever carry it.
+	Ignored   bool `json:"ignored,omitempty"`
+	Directory bool `json:"directory,omitempty"`
 }
 
 type GitChangedFile struct {
