@@ -993,6 +993,31 @@
   height: 168px;
 }
 
+/* Floating "back to the tail" control: the transcript only follows output while
+   pinned, so once the reader scrolls away they need a way to re-pin it. */
+.timeline-jump-latest {
+  position: absolute;
+  z-index: 12;
+  bottom: calc(var(--composer-overlay-reserve) + 16px);
+  left: 50%;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 14%);
+  cursor: pointer;
+  transform: translateX(-50%);
+}
+
+.timeline-jump-latest:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
 .conversation-outline-scroll {
   width: 48px;
   height: 100%;

@@ -92,6 +92,16 @@ describe("reasoning window and tail control", () => {
     expect(firstRuleBody(layout, ".thinking-block .thinking-body.is-live")).toMatch(/height:\s*168px/);
   });
 
+  it("floats the jump-to-latest control above the composer overlay reserve", async () => {
+    const layout = await layoutText();
+    const jump = firstRuleBody(layout, ".timeline-jump-latest");
+    expect(jump).toMatch(/position:\s*absolute/);
+    expect(jump).toMatch(/bottom:\s*calc\(var\(--composer-overlay-reserve\) \+ 16px\)/);
+    expect(jump).toMatch(/transform:\s*translateX\(-50%\)/);
+    expect(jump).not.toMatch(/\btop:/);
+  });
+});
+
 describe("message editor theme colors", () => {
   it("restores Markdown list markers after the global CSS reset", async () => {
     const layout = await layoutText();

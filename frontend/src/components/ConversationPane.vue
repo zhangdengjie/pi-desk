@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
 import { useVirtualizer } from "@tanstack/vue-virtual";
-import { ChevronDown, ChevronUp, CircleDot, History, LoaderCircle, Search, X } from "lucide-vue-next";
+import { ArrowDown, ChevronDown, ChevronUp, CircleDot, History, LoaderCircle, Search, X } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from "vue";
 import ComposerBar from "./ComposerBar.vue";
 import ConversationMessage from "./ConversationMessage.vue";
@@ -157,6 +157,14 @@ function onTimelineWheel(event: WheelEvent) {
   // so releasing the follow would be wrong.
   if (nestedScrollerCanGoUp(event.target, timeline.value)) return;
   stickToBottom.value = false;
+}
+
+// The follow only resumes on an actual arrival at the bottom, so the reader
+// needs one click to get back to a streaming tail instead of dragging.
+function followLatest() {
+  stickToBottom.value = true;
+  scrollToBottom();
+  updateActiveNavigation();
 }
 
 function updateActiveNavigation() {
@@ -451,6 +459,16 @@ onBeforeUnmount(() => {
         <LoaderCircle :size="14" class="is-spinning" aria-hidden="true" />
       </div>
       </div>
+      <button
+        v-if="!stickToBottom && messages.length"
+        class="timeline-jump-latest"
+        type="button"
+        :title="tr('conversation.jumpToLatest')"
+        :aria-label="tr('conversation.jumpToLatest')"
+        @click="followLatest"
+      >
+        <ArrowDown :size="16" aria-hidden="true" />
+      </button>
     </div>
     <ComposerBar v-if="appStore.activeThread" ref="composerBar" />
   </section>

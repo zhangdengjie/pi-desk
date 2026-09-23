@@ -201,6 +201,24 @@ describe("ConversationPane", () => {
     wrapper.unmount();
   });
 
+  it("offers a one-click return to the tail after the reader scrolls away", async () => {
+    const { wrapper, timeline, stream } = await mountPinnedTail();
+    expect(wrapper.find(".timeline-jump-latest").exists()).toBe(false);
+
+    timeline.scrollTop = 1160;
+    await wrapper.get(".timeline").trigger("wheel", { deltaY: -30 });
+    await stream("Message 3 is still writing", 1900);
+
+    expect(wrapper.find(".timeline-jump-latest").exists()).toBe(true);
+    await wrapper.get(".timeline-jump-latest").trigger("click");
+    expect(timeline.scrollTop).toBe(1900);
+    expect(wrapper.find(".timeline-jump-latest").exists()).toBe(false);
+
+    await stream("Message 3 finished writing", 2020);
+    expect(timeline.scrollTop).toBe(2020);
+    wrapper.unmount();
+  });
+
   it("keeps an opened reasoning block across the row remount a new assistant message causes", async () => {
     const store = useAppStore();
     store.threads = [{
