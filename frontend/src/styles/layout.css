@@ -1839,6 +1839,26 @@
   color: var(--text-activity);
 }
 
+/* Reasoning rows used to render as a raw <pre>, so markdown that models emit
+   inside a thinking block (tables above all) showed up as literal pipes and
+   broke on word boundaries. They share MarkdownBody now, which brings real
+   <table> styling from .markdown-body; this keeps the old "dim, small, one
+   scroll container" feel without going back to pre semantics. */
+.thinking-block .thinking-body {
+  max-height: 300px;
+  padding: 2px 10px 10px;
+  overflow: auto;
+  color: var(--text-secondary);
+  font-size: calc(12.5px + var(--font-size-delta));
+  line-height: 1.6;
+}
+
+/* The shared .thinking-block pre rule caps code fences at 280px; inside an
+   already scrollable thinking body that means a scrollbar within a scrollbar. */
+.thinking-block .thinking-body pre {
+  max-height: none;
+}
+
 .thinking-block pre,
 .tool-call pre {
   max-height: 280px;

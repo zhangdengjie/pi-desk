@@ -74,22 +74,22 @@ describe("ConversationMessage", () => {
       global: { plugins: [pinia] },
     });
 
-    expect(wrapper.get(".markdown-body").text()).toBe("Final answer");
+    expect(wrapper.get(".message-content > .markdown-body").text()).toBe("Final answer");
     expect(wrapper.text()).not.toContain(`<${tag}>`);
     expect(wrapper.get(".execution-process").attributes("open")).toBeUndefined();
     await wrapper.get(".execution-process > summary").trigger("click");
-    expect(wrapper.get(".thinking-block pre").text()).toBe("Inspect the existing UI");
+    expect(wrapper.get(".thinking-block .thinking-body").text()).toBe("Inspect the existing UI");
 
     await wrapper.setProps({ message: {
       ...wrapper.props("message"), text: `<${tag}>Still inspecting`, streaming: true,
     } });
     expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
-    expect(wrapper.get(".thinking-block pre").text()).toBe("Still inspecting");
+    expect(wrapper.get(".thinking-block .thinking-body").text()).toBe("Still inspecting");
     await wrapper.setProps({ message: {
       ...wrapper.props("message"), text: `<${tag}>Still inspecting</${tag}>Done`, streaming: true,
     } });
     expect(wrapper.get(".thinking-block").attributes("open")).toBeUndefined();
-    expect(wrapper.get(".markdown-body").text()).toBe("Done");
+    expect(wrapper.get(".message-content > .markdown-body").text()).toBe("Done");
   });
 
   it("renders tagged reasoning from JSONL snapshots after merging assistant fragments", () => {
@@ -114,8 +114,40 @@ describe("ConversationMessage", () => {
     const wrapper = mount(ConversationMessage, { props: { message }, global: { stubs: { ToolCallPanel: true } } });
     expect(wrapper.findAll(".thinking-block")).toHaveLength(2);
     expect(wrapper.get(".execution-process > summary").text()).toContain("2 thoughts");
-    expect(wrapper.findAll(".markdown-body").map(body => body.text()).filter(Boolean)).toEqual(["Done"]);
+    const reasoningBodies = wrapper.findAll(".thinking-block .thinking-body");
+    expect(reasoningBodies).toHaveLength(2);
+    // A raw <pre> would have no <strong>; finding one proves reasoning goes through MarkdownBody.
+    expect(reasoningBodies.map((body) => body.findAll("strong").length)).toEqual([1, 1]);
+    expect(reasoningBodies.map((body) => body.text())).toEqual([
+      "Inspecting cleanupLogs panic and applying bounds fix****Checking logcleanup source",
+      "Planning changes****Checking results",
+    ]);
+    expect(wrapper.get(".message-content > .markdown-body").text()).toBe("Done");
     expect(wrapper.text()).not.toContain("<think>");
+    wrapper.unmount();
+  });
+
+  it("renders markdown tables inside reasoning instead of literal pipes", () => {
+    const pinia = createPinia();
+    const wrapper = mount(ConversationMessage, {
+      props: {
+        message: {
+          id: "assistant-thinking-table", role: "assistant", text: "Done", thinking: "",
+          timestamp: "10:05", streaming: false, tools: [],
+          executionSteps: [{
+            id: "thinking-table",
+            kind: "thinking",
+            text: "旧结论 | 现在\n--- | ---\n面板 gate 要改成读 catalog | 不用",
+          }],
+        },
+      },
+      global: { plugins: [pinia] },
+    });
+
+    const table = wrapper.get(".thinking-block .thinking-body table");
+    expect(table.findAll("th").map((cell) => cell.text())).toEqual(["旧结论", "现在"]);
+    expect(table.findAll("td").map((cell) => cell.text())).toEqual(["面板 gate 要改成读 catalog", "不用"]);
+    expect(wrapper.get(".thinking-block .thinking-body").text()).not.toContain("--- | ---");
     wrapper.unmount();
   });
 

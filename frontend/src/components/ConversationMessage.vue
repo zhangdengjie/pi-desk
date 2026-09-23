@@ -312,7 +312,13 @@ function stepThinking(step: ExecutionStep): string {
                 <BrainCircuit class="thinking-icon" :size="15" aria-hidden="true" />
                 <span class="thinking-summary">{{ tr("conversation.reasoning") }}</span>
               </summary>
-              <pre>{{ stepThinking(step) }}</pre>
+              <MarkdownBody
+                class="thinking-body"
+                :text="stepThinking(step)"
+                :streaming="false"
+                :search-query="searchQuery"
+                :search-active="searchActive"
+              />
             </details>
             <template v-else-if="step.kind === 'tools'">
               <ToolCallPanel v-for="tool in step.tools" :key="tool.id" :tool="tool" />
