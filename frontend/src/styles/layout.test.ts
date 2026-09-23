@@ -132,18 +132,23 @@ describe("message editor theme colors", () => {
     expect(scroll).toMatch(/overflow-x:\s*auto/);
     const table = firstRuleBody(layout, ".markdown-body table");
     expect(table).toMatch(/width:\s*max-content/);
-    // Stretching to the pane would distribute width over the columns and break the cell ceiling.
-    expect(table).not.toMatch(/min-width/);
+    // A two-column table should fill a maximised preview; the cell ceiling is
+    // relative to the pane, so stretching can no longer break it.
+    expect(table).toMatch(/min-width:\s*100%/);
     // display:block on the table itself is what squeezed CJK cells into vertical text.
     expect(table).not.toMatch(/display:/);
     expect(table).not.toMatch(/overflow/);
+    expect(scroll).toMatch(/container-type:\s*inline-size/);
     const cell = firstRuleBody(layout, ".markdown-body .markdown-cell");
-    expect(cell).toMatch(/max-width:\s*var\(--markdown-cell-max-width\)/);
+    expect(cell).toMatch(/max-width:\s*max\(var\(--markdown-cell-wrap-min\),\s*65cqi\)/);
     expect(cell).toMatch(/overflow-wrap:\s*anywhere/);
     // The ceiling is a token, so themes/densities can retune it in one place.
-    expect(await tokensText()).toMatch(/--markdown-cell-max-width:\s*340px/);
+    expect(await tokensText()).toMatch(/--markdown-cell-wrap-min:\s*340px/);
     // And it must not move onto the cell itself — WebKit ignores it there.
     expect(firstRuleBody(layout, ".markdown-body th,\n.markdown-body td")).not.toMatch(/max-width/);
+    // Code blocks keep their own alignment instead of re-wrapping box-drawing output.
+    expect(firstRuleBody(layout, ".markdown-body pre")).toMatch(/white-space:\s*pre;/);
+    expect(firstRuleBody(layout, ".oversized-message")).toMatch(/white-space:\s*pre-wrap/);
   });
 
   it("uses defined foreground and background tokens in light and dark themes", async () => {

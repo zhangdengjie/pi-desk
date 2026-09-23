@@ -1754,6 +1754,17 @@
   font-family: "Cascadia Code", Consolas, monospace;
   font-size: calc(11px + var(--font-size-delta));
   line-height: 1.55;
+}
+
+/* Code blocks must not re-wrap: box-drawing diagrams (+---+, │, ├) and any aligned
+   output turn to mush once the line breaks. They scroll sideways instead, which
+   the overflow above already provides. */
+.markdown-body pre {
+  white-space: pre;
+}
+
+/* The whole-message fallback is prose, not aligned output, so it keeps wrapping. */
+.oversized-message {
   white-space: pre-wrap;
 }
 
@@ -1779,12 +1790,17 @@
   margin: 9px 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  /* Query container for the cell ceiling: cqi resolves against this box's visible
+     width, so a wide preview gets wide cells and a narrow one still scrolls. */
+  container-type: inline-size;
 }
 
-/* Stretching the table to the pane would distribute the extra space over the
-   columns and break the per-cell ceiling, so it stays at its content width. */
+/* Stretching the table to the pane is what makes a two-column table fill a wide
+   preview; the per-cell ceiling below is relative to that pane, so stretching can
+   no longer push a column past it. */
 .markdown-body table {
   width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
 }
 
@@ -1796,10 +1812,12 @@
 }
 
 /* Per-column ceiling: without it a table sized to max-content renders a whole
-   sentence on one line. It has to sit on this block child — WebKit ignores
-   max-width on a <th>/<td> whose content is bare text (see MarkdownBody.vue). */
+   sentence on one line. Relative to the scroll pane (floored at 340px) so a
+   two-column table in a maximised preview does not stack text into a narrow strip.
+   It has to sit on this block child — WebKit ignores max-width on a <th>/<td> whose
+   content is bare text (see MarkdownBody.vue). */
 .markdown-body .markdown-cell {
-  max-width: var(--markdown-cell-max-width);
+  max-width: max(var(--markdown-cell-wrap-min), 65cqi);
   overflow-wrap: anywhere;
 }
 
