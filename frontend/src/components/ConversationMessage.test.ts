@@ -127,6 +127,31 @@ describe("ConversationMessage", () => {
     wrapper.unmount();
   });
 
+  it("keeps a reader's expanded reasoning open when the next run message remounts the row", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const message = (id: string, text: string) => ({
+      id, role: "assistant" as const, text, thinking: "", timestamp: "10:06", streaming: true,
+      tools: [], executionSteps: [{ id: "reasoning-remount", kind: "thinking" as const, text: "Reading the scroll code" }],
+    });
+    const wrapper = mount(ConversationMessage, { props: { message: message("run-a", "Working") }, global: { plugins: [pinia] } });
+
+    const block = wrapper.get(".thinking-block");
+    expect(block.attributes("open")).toBeUndefined();
+    (block.element as HTMLDetailsElement).open = true;
+    await block.trigger("toggle");
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
+    wrapper.unmount();
+
+    // The same step id under a new merged message id is what ConversationPane's
+    // v-for key produces when the next Pi message lands: a fresh instance.
+    const remounted = mount(ConversationMessage, { props: { message: message("run-b", "Still working") }, global: { plugins: [pinia] } });
+
+    expect(remounted.get(".thinking-block").attributes("open")).toBeDefined();
+    expect(remounted.get(".thinking-block .thinking-body").text()).toBe("Reading the scroll code");
+    remounted.unmount();
+  });
+
   it("renders markdown tables inside reasoning instead of literal pipes", () => {
     const pinia = createPinia();
     const wrapper = mount(ConversationMessage, {

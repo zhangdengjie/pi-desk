@@ -10,6 +10,7 @@ import { resolveWorkspaceFileLink, type WorkspaceFileLink } from "../utils/fileL
 import { mergeToolDiffs } from "../utils/toolDiff";
 import { parseSkillInvocation, replaceSkillInvocationUserMessage, skillInvocationCommandText } from "../utils/skillInvocation";
 import { splitTaggedThinking } from "../utils/taggedThinking";
+import { isPanelPinnedOpen, pinPanelOpen } from "../utils/detailsOpenState";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 import MarkdownBody from "./MarkdownBody.vue";
 import ToolCallPanel from "./ToolCallPanel.vue";
@@ -262,6 +263,26 @@ async function deleteMessage() {
 function stepThinking(step: ExecutionStep): string {
   return step.text ?? "";
 }
+
+// Reasoning panels have to remember the reader's choice outside the DOM: a
+// merged run is keyed by its final message id, so every new Pi message in the
+// same turn remounts the row and a native <details> would open/close with it.
+// `renderedOpen` records what this instance last asked for, which is how the
+// toggle handler tells "the reader clicked" apart from "Vue wrote the prop".
+const renderedOpen = new Map<string, boolean>();
+
+function reasoningOpen(step: ExecutionStep): boolean {
+  // The live step still opens by itself; anything else is the reader's call.
+  const open = step.active === true || isPanelPinnedOpen(step.id);
+  renderedOpen.set(step.id, open);
+  return open;
+}
+
+function syncReasoningOpen(step: ExecutionStep, event: Event) {
+  const details = event.currentTarget as HTMLDetailsElement;
+  if (details.open === renderedOpen.get(step.id)) return;
+  pinPanelOpen(step.id, details.open);
+}
 </script>
 
 <template>
@@ -306,7 +327,7 @@ function stepThinking(step: ExecutionStep): string {
         </summary>
         <div class="execution-process-details">
           <template v-for="step in executionSteps" :key="step.id">
-            <details v-if="step.kind === 'thinking'" class="thinking-block" :open="step.active">
+            <details v-if="step.kind === 'thinking'" class="thinking-block" :open="reasoningOpen(step)" @toggle="syncReasoningOpen(step, $event)">
               <summary>
                 <ChevronRight class="disclosure-icon" :size="13" aria-hidden="true" />
                 <BrainCircuit class="thinking-icon" :size="15" aria-hidden="true" />
