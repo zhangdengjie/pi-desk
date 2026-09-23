@@ -390,6 +390,14 @@ func TestPiExtensionServiceManagesGlobalAndTrustedProjectPackages(t *testing.T) 
 	if err := os.MkdirAll(filepath.Join(project, ".pi"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// `workspace.CanonicalDirectory` runs Abs + EvalSymlinks, so the service hands the runner the
+	// resolved path. On macOS `t.TempDir()` sits under `/var`, which is a link to `/private/var`
+	// -> the raw path can never match what the runner received. Compare like for like.
+	canonical, err := filepath.EvalSymlinks(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project = canonical
 	if err := os.MkdirAll(agent, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +438,7 @@ func TestPiExtensionServiceManagesGlobalAndTrustedProjectPackages(t *testing.T) 
 		t.Fatal(err)
 	}
 	if runner.directory != project || strings.Join(runner.args, " ") != "install npm:new -l" {
-		t.Fatalf("unexpected project package command dir=%q args=%q", runner.directory, runner.args)
+		t.Fatalf("unexpected project package command dir=%q want=%q args=%q want=args %q", runner.directory, project, runner.args, "install npm:new -l")
 	}
 }
 
