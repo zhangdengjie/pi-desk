@@ -781,6 +781,49 @@ describe("app store", () => {
     expect(store.threads[0].sessionFile).toBe("keep.jsonl");
   });
 
+  it("settles the in-flight turn the moment a running thread is closed", async () => {
+    const store = useAppStore();
+    store.threads = [{ id: "thread-stop", title: "Stop", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "running", started: true, generation: 7 }];
+    store.messagesByThread["thread-stop"] = [{
+      id: "a-1", role: "assistant", text: "half", thinking: "hm", timestamp: "10:00",
+      streaming: true, activeExecution: "thinking", tools: [],
+    }];
+    store.activeAssistantByThread["thread-stop"] = "a-1";
+    store.waitingForOutputByThread["thread-stop"] = true;
+    store.bashRunningByThread["thread-stop"] = true;
+    store.extensionRequestByThread["thread-stop"] = { id: "req-1", threadId: "thread-stop", method: "confirm" } as never;
+
+    expect(await store.stopThread("thread-stop")).toBe(true);
+
+    const [message] = store.messagesByThread["thread-stop"];
+    expect(message.streaming).toBe(false);
+    expect(message.activeExecution).toBeUndefined();
+    expect(store.waitingForOutputByThread["thread-stop"]).toBe(false);
+    expect(store.bashRunningByThread["thread-stop"]).toBeFalsy();
+    // No process left that could ever answer the prompt.
+    expect(store.extensionRequestByThread["thread-stop"]).toBeUndefined();
+  });
+
+  it("keeps the transcript settled when a reload restarts the process before the exit event lands", async () => {
+    const store = useAppStore();
+    store.threads = [{ id: "thread-reload", title: "Reload", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "running", started: true, generation: 7 }];
+    store.messagesByThread["thread-reload"] = [{
+      id: "a-1", role: "assistant", text: "half", thinking: "hm", timestamp: "10:00",
+      streaming: true, activeExecution: "tool", tools: [],
+    }];
+    store.activeAssistantByThread["thread-reload"] = "a-1";
+    // The restart bumps the generation, which is exactly what makes the old runtime_exit event
+    // get filtered out - the spinner may not depend on it.
+    store.startThreadInBackground = vi.fn(() => { store.threads[0].generation = 9; });
+
+    expect(await store.reloadThreadResources("thread-reload")).toBe(true);
+
+    expect(store.messagesByThread["thread-reload"][0].streaming).toBe(false);
+    expect(store.messagesByThread["thread-reload"][0].activeExecution).toBeUndefined();
+    store.handlePiEvent({ threadId: "thread-reload", event: { generation: 7, type: "runtime_exit" } });
+    expect(store.messagesByThread["thread-reload"][0].streaming).toBe(false);
+  });
+
   it("does not start a fresh Pi process when the old one refuses to close", async () => {
     const store = useAppStore();
     store.threads = [{ id: "thread-reload", title: "Reload", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 4 }];

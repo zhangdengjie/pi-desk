@@ -2184,6 +2184,15 @@ export const useAppStore = defineStore("app", {
         await agentService.stopSession(thread.id);
         thread.started = false;
         thread.status = "idle";
+        // Nobody will ever send the finish event for the turn that was in flight, and the
+        // `runtime_exit` that would normally settle it gets filtered out when a reload bumps the
+        // generation first (`handlePiEvent`) - so close the turn here, at stop time.
+        this.finishAssistant(thread.id);
+        this.waitingForOutputByThread[thread.id] = false;
+        this.bashRunningByThread[thread.id] = false;
+        this.extensionRequestByThread[thread.id] = undefined;
+        this.extensionRequestsPendingByThread[thread.id] = [];
+        this.extensionStatusesByThread[thread.id] = {};
         this.piProcessOrder = this.piProcessOrder.filter((id) => id !== thread.id);
         this.queueByThread[thread.id] = { steering: [], followUp: [] };
         this.retryByThread[thread.id] = undefined;
