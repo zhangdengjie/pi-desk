@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"log"
+	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -64,7 +65,35 @@ const (
 	defaultWindowHeight = 900
 	minimumWindowWidth  = 980
 	minimumWindowHeight = 680
+	// singleInstanceID names the flock file Wails keeps in the temp directory.
+	singleInstanceID = "com.pidesk.desktop"
 )
+
+// singleInstanceOptions keeps a second Pi Desk from starting. Two processes share one state.json
+// but each holds its own in-memory workspace catalog, so whichever writes last silently drops the
+// other's registrations - that is the "workspace is not registered" report of 2026-09-22.
+// Wails uses flock(LOCK_EX|LOCK_NB), so a crashed process releases the lock with no stale file to
+// clean up. PI_DESK_ALLOW_MULTI_INSTANCE opts out, which is also how you verify this by hand.
+func singleInstanceOptions() *application.SingleInstanceOptions {
+	if os.Getenv("PI_DESK_ALLOW_MULTI_INSTANCE") != "" {
+		return nil
+	}
+	return &application.SingleInstanceOptions{
+		UniqueID: singleInstanceID,
+		OnSecondInstanceLaunch: func(application.SecondInstanceData) {
+			// The second process exits right after delivering this; the user gets the window back.
+			window, found := application.Get().Window.GetByName("main")
+			if !found {
+				return
+			}
+			if window.IsMinimised() {
+				window.Restore()
+			}
+			window.Show()
+			window.Focus()
+		},
+	}
+}
 
 func constrainWindowState(state domain.WindowState, screens []*application.Screen) domain.WindowState {
 	if !state.Valid || state.Width <= 0 || state.Height <= 0 {
@@ -218,8 +247,9 @@ func main() {
 	catalogService := appservice.NewCatalogService(catalog, sessionIndex, remoteCatalog)
 
 	app := application.New(application.Options{
-		Name:        "Pi Desk",
-		Description: "A desktop interface for the Pi coding agent",
+		Name:           "Pi Desk",
+		Description:    "A desktop interface for the Pi coding agent",
+		SingleInstance: singleInstanceOptions(),
 		Services: []application.Service{
 			application.NewService(notificationService),
 			application.NewService(desktopService),

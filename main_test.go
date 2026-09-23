@@ -112,3 +112,22 @@ func TestConstrainWindowStateLeavesInvalidStateUntouched(t *testing.T) {
 		t.Fatalf("invalid state changed from %#v to %#v", state, got)
 	}
 }
+
+func TestSingleInstanceOptionsBlocksSecondProcessUnlessOptedOut(t *testing.T) {
+	t.Setenv("PI_DESK_ALLOW_MULTI_INSTANCE", "")
+	options := singleInstanceOptions()
+	if options == nil {
+		t.Fatal("expected a second Pi Desk process to be refused by default")
+	}
+	if options.UniqueID == "" {
+		t.Fatal("expected a stable unique id for the lock file")
+	}
+	if options.OnSecondInstanceLaunch == nil {
+		t.Fatal("expected the existing window to be raised when a second launch is refused")
+	}
+
+	t.Setenv("PI_DESK_ALLOW_MULTI_INSTANCE", "1")
+	if got := singleInstanceOptions(); got != nil {
+		t.Fatalf("expected the opt-out to disable the lock, got %+v", got)
+	}
+}
