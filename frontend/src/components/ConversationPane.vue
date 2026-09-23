@@ -112,7 +112,28 @@ const searchResultLabel = computed(() => searchMatches.value.length
 const activeSearchMessageId = computed(() => currentSearchMatch.value?.messageId ?? "");
 
 function measureVirtualRow(element: Element | ComponentPublicInstance | null) {
-  if (element instanceof Element) virtualizer.value.measureElement(element);
+  if (!(element instanceof Element)) return;
+  virtualizer.value.measureElement(element);
+  observeRowOutput(element);
+}
+
+// A panel closing above a streaming answer shrinks the document between two
+// frames, and the browser clamps scrollTop in that same frame; a rAF re-pin
+// therefore lands one painted frame late, which is the flick readers see when
+// a reasoning window collapses. ResizeObserver runs after layout and before
+// paint, so it is where the correction belongs.
+let rowObserver: ResizeObserver | undefined;
+
+function observeRowOutput(element: Element) {
+  rowObserver ??= new ResizeObserver(() => {
+    if (stickToBottom.value) scrollToBottom();
+  });
+  rowObserver.observe(element);
+}
+
+function observeTranscriptRow(ref: Element | ComponentPublicInstance | null) {
+  const element = ref instanceof Element ? ref : ref?.$el instanceof Element ? ref.$el : null;
+  if (element) observeRowOutput(element);
 }
 
 function scrollToBottom() {
@@ -341,6 +362,7 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   if (autoScrollFrame) cancelAnimationFrame(autoScrollFrame);
+  rowObserver?.disconnect();
   document.removeEventListener("keydown", onDocumentKeydown, true);
   hideHoveredNavigation();
 });
@@ -448,7 +470,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <ConversationMessage v-else v-for="message in messages" :key="message.turnKey ?? message.id" :message="message" :search-query="searchQuery" :search-active="message.id === activeSearchMessageId" />
+      <ConversationMessage v-else v-for="message in messages" :key="message.turnKey ?? message.id" :ref="observeTranscriptRow" :message="message" :search-query="searchQuery" :search-active="message.id === activeSearchMessageId" />
       <div
         v-if="appStore.activeWaitingForOutput && !appStore.activeRetry"
         class="waiting-for-output mt-3 inline-flex size-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-raised)] text-[var(--text-secondary)] shadow-sm"

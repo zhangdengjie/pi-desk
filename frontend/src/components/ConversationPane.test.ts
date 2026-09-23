@@ -219,6 +219,79 @@ describe("ConversationPane", () => {
     wrapper.unmount();
   });
 
+  it("re-pins the tail in the same frame a panel above it collapses", async () => {
+    const frames: FrameRequestCallback[] = [];
+    const observers: Array<{ callback: () => void; targets: Element[]; disconnect: () => void }> = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.stubGlobal("ResizeObserver", class {
+      record: { callback: () => void; targets: Element[]; disconnect: () => void };
+      constructor(callback: () => void) {
+        this.record = { callback, targets: [], disconnect: vi.fn() };
+        observers.push(this.record);
+      }
+      observe(target: Element) { this.record.targets.push(target); }
+      unobserve() {}
+      disconnect() { this.record.disconnect(); }
+    });
+    const wrapper = mountTranscript(4);
+    await flushPromises();
+
+    const sizes = { clientHeight: 600, scrollHeight: 1800 };
+    const timeline = wrapper.get(".timeline").element as HTMLElement;
+    Object.defineProperties(timeline, {
+      clientHeight: { configurable: true, get: () => sizes.clientHeight },
+      scrollHeight: { configurable: true, get: () => sizes.scrollHeight },
+    });
+    timeline.scrollTop = 1200;
+    await wrapper.get(".timeline").trigger("scroll");
+    const rowObserver = observers.find((entry) => entry.targets.some((target) => target.classList.contains("stub-message")));
+    expect(rowObserver).toBeDefined();
+
+    // The reasoning window closes: the document loses its 168px and the browser
+    // has already clamped scrollTop down before anything repaints.
+    sizes.scrollHeight = 1632;
+    timeline.scrollTop = 1032;
+    rowObserver!.callback();
+
+    expect(timeline.scrollTop).toBe(1632);
+    wrapper.unmount();
+    expect(rowObserver!.disconnect).toHaveBeenCalled();
+  });
+
+  it("leaves the reader's place alone when a collapsed panel grows above them", async () => {
+    const frames: FrameRequestCallback[] = [];
+    const observers: Array<{ callback: () => void; targets: Element[] }> = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.stubGlobal("ResizeObserver", class {
+      record: { callback: () => void; targets: Element[] };
+      constructor(callback: () => void) {
+        this.record = { callback, targets: [] };
+        observers.push(this.record);
+      }
+      observe(target: Element) { this.record.targets.push(target); }
+      unobserve() {}
+      disconnect() {}
+    });
+    const wrapper = mountTranscript(4);
+    await flushPromises();
+
+    const timeline = wrapper.get(".timeline").element as HTMLElement;
+    Object.defineProperties(timeline, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 1800 },
+    });
+    timeline.scrollTop = 1160;
+    await wrapper.get(".timeline").trigger("wheel", { deltaY: -30 });
+    const rowObserver = observers.find((entry) => entry.targets.some((target) => target.classList.contains("stub-message")))!;
+
+    rowObserver.callback();
+
+    expect(timeline.scrollTop).toBe(1160);
+    wrapper.unmount();
+  });
+
   it("keeps an opened reasoning block across the row remount a new assistant message causes", async () => {
     const store = useAppStore();
     store.threads = [{
