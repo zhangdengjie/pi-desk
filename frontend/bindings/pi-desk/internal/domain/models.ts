@@ -34,6 +34,12 @@ export interface BootstrapState {
     "workingDirectory": string;
     "runtime": PiRuntimeStatus;
     "window": WindowState;
+
+    /**
+     * ProviderEnvIssues is the startup precheck: providers whose `$VAR` API key never reached this
+     * process. A .app opened from Finder does not read ~/.zshrc, so Pi silently drops them.
+     */
+    "providerEnvIssues"?: ProviderEnvIssue[] | null;
 }
 
 export interface BrowserClickRequest {
@@ -684,6 +690,16 @@ export interface PromptTemplateSummary {
     "description"?: string;
     "argumentHint"?: string;
     "path": string;
+}
+
+/**
+ * ProviderEnvIssue names one provider whose API key is an environment reference ($VAR / ${VAR}) that
+ * the running Pi Desk process cannot resolve, so Pi drops the provider and every model under it.
+ * It exists because a .app launched by Finder never reads ~/.zshrc.
+ */
+export interface ProviderEnvIssue {
+    "provider": string;
+    "variable": string;
 }
 
 export interface QueueModeRequest {

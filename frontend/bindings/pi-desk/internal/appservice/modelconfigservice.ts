@@ -41,6 +41,16 @@ export function GetModelsConfig(): $CancellablePromise<domain$0.ModelConfigSnaps
     return $Call.ByID(1396541851);
 }
 
+/**
+ * MissingProviderEnv reports every provider whose API key is an environment reference this process
+ * cannot resolve. Pi drops such a provider silently, so the only symptom is
+ * `Model not found: bailian/qwen3.8-flash` plus a blank thinking-level list - and a .app started by
+ * Finder never reads ~/.zshrc, which is where those variables usually live.
+ */
+export function MissingProviderEnv(): $CancellablePromise<domain$0.ProviderEnvIssue[] | null> {
+    return $Call.ByID(3241379253);
+}
+
 export function TestModel(request: domain$0.TestModelConfigRequest): $CancellablePromise<domain$0.ModelTestResult> {
     return $Call.ByID(838171198, request);
 }

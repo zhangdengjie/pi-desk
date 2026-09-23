@@ -2978,6 +2978,12 @@
   color: var(--text-muted);
 }
 
+/* The credential precheck is about the environment, not a failed action: amber, not red. Geometry
+   comes from `.attachment-error`; the template carries no layout utility (AGENTS.md §4). */
+.attachment-error.composer-notice.provider-env-notice {
+  color: var(--amber);
+}
+
 .completion-menu {
   right: 10px;
   bottom: 48px;

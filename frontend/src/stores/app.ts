@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { RuntimeState, type BootstrapState, type DesktopState, type SessionSnapshot, type WorkspaceApplication, type WorkspaceSummary as HostWorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
+import { RuntimeState, type BootstrapState, type DesktopState, type ProviderEnvIssue, type SessionSnapshot, type WorkspaceApplication, type WorkspaceSummary as HostWorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
 import { agentService, onPiEvent, type PiSessionEvent, type SessionBranches } from "../services/agent";
 import { catalogService } from "../services/catalog";
 import { checkForUpdates, checkRuntime as checkRuntimeStatus, getBootstrapState, notifyDesktop } from "../services/desktop";
@@ -1006,6 +1006,18 @@ export const useAppStore = defineStore("app", {
     },
     activeExtensionTitle(state): string {
       return state.extensionTitleByThread[state.activeThreadId] ?? "";
+    },
+    // Providers whose `$VAR` API key never reached this process. The backend computes it during
+    // bootstrap (`internal/appservice/desktop.go` + `modelconfig.go MissingProviderEnv`) because a
+    // .app opened from Finder does not read ~/.zshrc, and Pi drops such a provider in silence.
+    providerEnvIssues(state): ProviderEnvIssue[] {
+      return state.bootstrap?.providerEnvIssues ?? [];
+    },
+    providerEnvHint(state): (provider: string) => string {
+      return (provider: string) => {
+        const issue = (state.bootstrap?.providerEnvIssues ?? []).find((item) => item.provider === provider);
+        return issue ? tr("composer.providerEnvMissing", { provider: issue.provider, variable: issue.variable }) : "";
+      };
     },
     activeRepository(state): RepositorySnapshot | undefined {
       const thread = state.threads.find((item) => item.id === state.activeThreadId);
@@ -2842,7 +2854,13 @@ export const useAppStore = defineStore("app", {
         await this.applyPendingModel(thread);
       } catch (error) {
         if (this.modelSelectionGenerationByThread[thread.id] === selectionGeneration) {
-          this.appendSystem(thread.id, `Unable to apply selected model: ${errorMessage(error)}`, errorMessage(error));
+          const detail = errorMessage(error);
+          // "Model not found" for a provider the precheck flagged means the credential variable never
+          // reached this process - Pi really does not have the model. Say that instead of echoing
+          // Pi's one-liner, which sends people off debugging the wrong layer.
+          const hint = detail.includes("Model not found") ? this.providerEnvHint(model.provider) : "";
+          const message = hint ? `${detail} ${hint}` : detail;
+          this.appendSystem(thread.id, `Unable to apply selected model: ${message}`, message);
         }
         return;
       }

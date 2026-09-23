@@ -330,6 +330,21 @@ describe("app store", () => {
     expect(store.bootstrap?.runtime).toMatchObject({ state: "ready", message: "Pi RPC session is running" });
   });
 
+  it("names the environment variable behind an invisible provider", () => {
+    const store = useAppStore();
+    store.bootstrap = {
+      productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3.0.0-beta.16",
+      workingDirectory: "D:\\work\\repo", runtime: { state: RuntimeState.RuntimeChecking },
+      window: { x: 0, y: 0, width: 0, height: 0, maximized: false, valid: false },
+      providerEnvIssues: [{ provider: "bailian", variable: "DASHSCOPE_API_KEY" }],
+    };
+
+    expect(store.providerEnvIssues.map((issue) => issue.provider)).toEqual(["bailian"]);
+    // The whole point: the message has to carry the variable name, or the reader cannot act on it.
+    expect(store.providerEnvHint("bailian")).toContain("DASHSCOPE_API_KEY");
+    expect(store.providerEnvHint("deepseek")).toBe("");
+  });
+
   it("restores and persists desktop behavior preferences", async () => {
     mocks.getDesktopState.mockResolvedValueOnce({
       threads: [],

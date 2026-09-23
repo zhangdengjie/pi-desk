@@ -2,6 +2,7 @@ package appservice
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -131,5 +132,24 @@ func TestCheckForUpdatesUsesSemanticVersionOrdering(t *testing.T) {
 	manifest = `{"version":"release-next"}`
 	if result := service.CheckForUpdates(); result.Status != "error" {
 		t.Fatalf("expected an invalid semantic version error, got %#v", result)
+	}
+}
+
+func TestGetBootstrapStateCarriesProviderEnvIssues(t *testing.T) {
+	service := NewDesktopService(fakeProber{status: domain.PiRuntimeStatus{State: domain.RuntimeReady}})
+	SetProviderEnvProbe(service, func() ([]domain.ProviderEnvIssue, error) {
+		return []domain.ProviderEnvIssue{{Provider: "bailian", Variable: "DASHSCOPE_API_KEY"}}, nil
+	})
+
+	state := service.GetBootstrapState()
+
+	if len(state.ProviderEnvIssues) != 1 || state.ProviderEnvIssues[0].Provider != "bailian" || state.ProviderEnvIssues[0].Variable != "DASHSCOPE_API_KEY" {
+		t.Fatalf("bootstrap lost the credential precheck: %#v", state.ProviderEnvIssues)
+	}
+
+	// A failing probe is advisory: the bootstrap the whole UI waits on must still come back.
+	SetProviderEnvProbe(service, func() ([]domain.ProviderEnvIssue, error) { return nil, errors.New("models.json is unreadable") })
+	if issues := service.GetBootstrapState().ProviderEnvIssues; len(issues) != 0 {
+		t.Fatalf("a failed probe must report nothing, got %#v", issues)
 	}
 }

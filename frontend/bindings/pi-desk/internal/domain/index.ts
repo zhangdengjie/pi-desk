@@ -96,6 +96,7 @@ export type {
     PromptTemplateRequest,
     PromptTemplateSnapshot,
     PromptTemplateSummary,
+    ProviderEnvIssue,
     QueueModeRequest,
     RemoteAliasSummary,
     RemoteRootCandidate,

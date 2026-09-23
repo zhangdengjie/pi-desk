@@ -678,6 +678,14 @@ onBeforeUnmount(() => {
       </div>
       <div v-if="attachmentError" class="attachment-error" role="alert">{{ attachmentError }}</div>
       <div v-if="externalFileNotice" class="attachment-error composer-notice" role="status">{{ externalFileNotice }}</div>
+      <!-- Startup precheck: a `$VAR` API key that never reached this process makes Pi drop the whole
+           provider, and the only symptom is a model list that silently lacks it. -->
+      <div
+        v-for="issue in appStore.providerEnvIssues"
+        :key="`${issue.provider}-${issue.variable}`"
+        class="attachment-error composer-notice provider-env-notice"
+        role="status"
+      >{{ tr("composer.providerEnvMissing", { provider: issue.provider, variable: issue.variable }) }}</div>
       <div class="composer-editor" @keydown.capture="onKeydown" @paste.capture="onPaste">
         <MarkdownEditor
           ref="markdownEditor"

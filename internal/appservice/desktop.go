@@ -38,9 +38,21 @@ type DesktopService struct {
 	runtimeProber RuntimeProber
 	catalog       *workspace.Catalog
 	updateURL     string
+	// providerEnvProbe is optional so unit tests never read the developer's real ~/.pi/agent.
+	// The real app wires it to ModelConfigService.MissingProviderEnv.
+	providerEnvProbe func() ([]domain.ProviderEnvIssue, error)
 
 	debugMu      sync.Mutex
 	debugEnabled bool
+}
+
+// SetProviderEnvProbe attaches the startup precheck for `$VAR` API keys that never reached this
+// process. It is a package function rather than a method on purpose: Wails binds every exported
+// method of a registered service, and a setter taking a `func()` has no business being callable
+// from the frontend. DesktopService is constructed before the model configuration service exists
+// in main.go, so the probe cannot ride on the constructor either.
+func SetProviderEnvProbe(service *DesktopService, probe func() ([]domain.ProviderEnvIssue, error)) {
+	service.providerEnvProbe = probe
 }
 
 func NewDesktopService(runtimeProber RuntimeProber, catalogs ...*workspace.Catalog) *DesktopService {
@@ -66,6 +78,12 @@ func (service *DesktopService) GetBootstrapState() domain.BootstrapState {
 	if service.catalog != nil {
 		if window, err := service.catalog.Window(); err == nil {
 			state.Window = domain.WindowState{X: window.X, Y: window.Y, Width: window.Width, Height: window.Height, Maximized: window.Maximized, Valid: window.Valid}
+		}
+	}
+	// Advisory only: an unreadable models.json must never break the bootstrap the whole UI waits on.
+	if service.providerEnvProbe != nil {
+		if issues, err := service.providerEnvProbe(); err == nil {
+			state.ProviderEnvIssues = issues
 		}
 	}
 	return state

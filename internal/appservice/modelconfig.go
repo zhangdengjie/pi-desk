@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -553,6 +554,68 @@ func parseThinkingLevelMap(value string) (map[string]any, error) {
 		}
 	}
 	return result, nil
+}
+
+// envReferencePattern matches Pi's two environment templates: `$NAME` and `${NAME}`.
+var envReferencePattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)`)
+
+// MissingProviderEnv reports every provider whose API key is an environment reference this process
+// cannot resolve. Pi drops such a provider silently, so the only symptom is
+// `Model not found: bailian/qwen3.8-flash` plus a blank thinking-level list - and a .app started by
+// Finder never reads ~/.zshrc, which is where those variables usually live.
+func (service *ModelConfigService) MissingProviderEnv() ([]domain.ProviderEnvIssue, error) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	root, err := service.readDocument()
+	if err != nil {
+		return nil, err
+	}
+	providers, err := providersObject(root)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(providers))
+	for name := range providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	issues := []domain.ProviderEnvIssue{}
+	for _, name := range names {
+		provider, ok := providers[name].(map[string]any)
+		if !ok {
+			continue
+		}
+		apiKey, _ := provider["apiKey"].(string)
+		for _, variable := range envReferences(apiKey) {
+			if os.Getenv(variable) == "" {
+				issues = append(issues, domain.ProviderEnvIssue{Provider: name, Variable: variable})
+			}
+		}
+	}
+	return issues, nil
+}
+
+// envReferences mirrors Pi's own template parser (`resolve-config-value.js: parseConfigValueTemplate`):
+// `$$` and `$!` are escapes, and a value starting with `!` is a shell command rather than a template,
+// so it must not be reported as a missing variable.
+func envReferences(value string) []string {
+	if value == "" || strings.HasPrefix(value, "!") {
+		return nil
+	}
+	scrubbed := strings.ReplaceAll(strings.ReplaceAll(value, "$$", "xx"), "$!", "xx")
+	seen := map[string]bool{}
+	names := []string{}
+	for _, match := range envReferencePattern.FindAllStringSubmatch(scrubbed, -1) {
+		name := match[1]
+		if name == "" {
+			name = match[2]
+		}
+		if name != "" && !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 func (service *ModelConfigService) readDocument() (map[string]any, error) {

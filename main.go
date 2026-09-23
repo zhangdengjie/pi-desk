@@ -212,6 +212,10 @@ func main() {
 	desktopService := appservice.NewDesktopService(locator, catalog)
 	sessionIndex := sessionindex.NewWithAnchorRoot(sessionsPath, anchorRoot)
 	modelConfigService := appservice.NewModelConfigService()
+	// The bootstrap the UI waits on carries the `$VAR` credential precheck, so a Finder-launched .app
+	// can say "provider X is invisible because DASHSCOPE_API_KEY never reached this process" instead
+	// of letting Pi drop the provider and only report `Model not found` later.
+	appservice.SetProviderEnvProbe(desktopService, modelConfigService.MissingProviderEnv)
 	promptTemplateService := appservice.NewPromptTemplateService(catalog)
 	managedSkillService := appservice.NewManagedSkillService(catalog)
 	piExtensionService := appservice.NewPiExtensionService(catalog, locator)

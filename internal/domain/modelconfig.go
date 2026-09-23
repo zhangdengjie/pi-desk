@@ -5,6 +5,14 @@ type ModelConfigSnapshot struct {
 	Providers []ManagedModelProvider `json:"providers"`
 }
 
+// ProviderEnvIssue names one provider whose API key is an environment reference ($VAR / ${VAR}) that
+// the running Pi Desk process cannot resolve, so Pi drops the provider and every model under it.
+// It exists because a .app launched by Finder never reads ~/.zshrc.
+type ProviderEnvIssue struct {
+	Provider string `json:"provider"`
+	Variable string `json:"variable"`
+}
+
 type ManagedModelProvider struct {
 	ID         string            `json:"id"`
 	BaseURL    string            `json:"baseUrl,omitempty"`

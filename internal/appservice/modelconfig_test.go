@@ -347,3 +347,38 @@ func TestAddModelsRejectsExistingModelWithoutChangingFile(t *testing.T) {
 		t.Fatalf("duplicate rejection changed the file: %s", data)
 	}
 }
+
+func TestMissingProviderEnvReportsOnlyUnresolvedReferences(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "models.json")
+	data := `{"providers":{` +
+		`"bailian":{"baseUrl":"https://example.invalid/v1","apiKey":"$BAILIAN_KEY","models":[{"id":"qwen-x"}]},` +
+		`"braced":{"apiKey":"${MISSING_BRACED}"},` +
+		`"escaped":{"apiKey":"$$NOT_A_VAR$REAL_ONE"},` +
+		`"command":{"apiKey":"!security find-generic-password -s pi-key -w"},` +
+		`"plain":{"apiKey":"literal-secret"}}}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service := newModelConfigService(path, nil)
+	// The point of the whole check: a value that resolves must stay silent, and `$$` must never be
+	// mistaken for a lookup the way a naive regex would.
+	t.Setenv("REAL_ONE", "set-by-the-test")
+	t.Setenv("MISSING_BRACED", "")
+
+	issues, err := service.MissingProviderEnv()
+	if err != nil {
+		t.Fatalf("MissingProviderEnv returned an error: %v", err)
+	}
+	want := []domain.ProviderEnvIssue{
+		{Provider: "bailian", Variable: "BAILIAN_KEY"},
+		{Provider: "braced", Variable: "MISSING_BRACED"},
+	}
+	if len(issues) != len(want) {
+		t.Fatalf("MissingProviderEnv() = %#v, want %#v", issues, want)
+	}
+	for index := range want {
+		if issues[index] != want[index] {
+			t.Fatalf("issue %d = %#v, want %#v (full: %#v)", index, issues[index], want[index], issues)
+		}
+	}
+}
