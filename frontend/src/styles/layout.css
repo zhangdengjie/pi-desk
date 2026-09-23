@@ -4093,6 +4093,32 @@
   font-weight: 650;
 }
 
+/* Git-excluded paths stay in the listing (`internal/repository` listIgnoredFiles) but must not read
+   like tracked sources. Geometry lives here, not in the template (AGENTS.md §4): no `ui.listItem`
+   or display utility sits on these rows, because tailwind.css is imported `important`. */
+.file-tree-name.is-ignored {
+  color: var(--text-faint);
+}
+
+.file-tree-name.is-ignored:hover {
+  color: var(--text-secondary);
+}
+
+/* The "show git-ignored files" switch under the filter box. */
+.file-ignored-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: calc(11px + var(--font-size-delta));
+  cursor: pointer;
+}
+
+.file-ignored-toggle input {
+  margin: 0;
+}
+
 .file-tree-open[data-status="M"],
 .file-tree-open[data-status="R"] {
   color: var(--amber);

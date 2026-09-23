@@ -3,7 +3,7 @@ import { ui } from "../ui/classes";
 import { ArrowLeft, Binary, ExternalLink, FileCode2, FileDiff, FolderOpen, LoaderCircle, PanelRightClose, RefreshCw } from "lucide-vue-next";
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useAppStore } from "../stores/app";
-import { buildRepositoryTree } from "../utils/fileMentions";
+import { buildRepositoryTree, type RepositoryTreeEntry } from "../utils/fileMentions";
 import { fuzzyScore } from "../utils/fuzzySearch";
 import CodePreview from "./CodePreview.vue";
 import FileTreeNode from "./FileTreeNode.vue";
@@ -66,10 +66,20 @@ const changeStatusByPath = computed<Record<string, string>>(() => Object.fromEnt
 const FILE_LIST_LIMIT = 5000;
 const fileFilter = ref("");
 watch(() => appStore.activeThreadId, () => { fileFilter.value = ""; });
-const filePaths = computed(() => [...new Set([
-  ...repositoryFiles.value.map((file) => file.path.replaceAll("\\", "/")),
-  ...normalizedChangedFiles.value.map((file) => file.path),
-])]);
+const fileEntries = computed<RepositoryTreeEntry[]>(() => {
+  const entries = new Map<string, RepositoryTreeEntry>();
+  for (const file of repositoryFiles.value) {
+    // The only place that drops ignored paths: everything downstream stays plain path-driven.
+    if (file.ignored && !appStore.repositoryShowIgnoredFiles) continue;
+    const path = file.path.replaceAll("\\", "/");
+    entries.set(path, { path, ignored: file.ignored, directory: file.directory });
+  }
+  // A changed file is listed even when the repository snapshot has not caught up with it yet.
+  for (const file of normalizedChangedFiles.value) {
+    if (!entries.has(file.path)) entries.set(file.path, { path: file.path });
+  }
+  return [...entries.values()];
+});
 // Filtered over the whole list, before the cap, and in the original path order so the tree stays grouped.
 // Primary rule is a case-insensitive substring of the full relative path, so directories and extensions
 // work and depth cannot dilute the match; the file name is fuzzy-scored as a typo fallback only.
@@ -78,9 +88,9 @@ const filePaths = computed(() => [...new Set([
 // Java path — the file disappeared from a search for its own name.
 const fileMatches = computed(() => {
   const needle = fileFilter.value.trim().toLowerCase();
-  if (!needle) return filePaths.value;
-  return filePaths.value.filter((path) => {
-    const lower = path.toLowerCase();
+  if (!needle) return fileEntries.value;
+  return fileEntries.value.filter((entry) => {
+    const lower = entry.path.toLowerCase();
     return lower.includes(needle) || fuzzyScore(lower.slice(lower.lastIndexOf("/") + 1), needle) >= 0;
   });
 });
@@ -307,10 +317,19 @@ watch(fileTreeElement, async (element) => {
         <div v-if="appStore.activeRepositoryLoading && !repository" class="repository-state" :class="ui.empty"><LoaderCircle :size="18" class="is-spinning" /></div>
         <div v-else-if="appStore.activeRepositoryError && !repository" class="repository-state error-text" :class="ui.empty">{{ appStore.activeRepositoryError }}</div>
         <template v-else>
-          <div v-if="filePaths.length" class="file-filter-row mt-3">
+          <div v-if="fileEntries.length" class="file-filter-row mt-3">
             <input v-model="fileFilter" type="search" :class="ui.input" :placeholder="tr('inspector.filterFiles')" :aria-label="tr('inspector.filterFiles')" />
             <span v-if="fileFilter" class="file-filter-count">{{ tr("inspector.filterMatches", { count: fileMatches.length }) }}</span>
           </div>
+          <label v-if="fileEntries.length" class="file-ignored-toggle ml-3" :title="tr('inspector.showIgnoredHint')">
+            <input
+              type="checkbox"
+              :checked="appStore.repositoryShowIgnoredFiles"
+              :aria-label="tr('inspector.showIgnored')"
+              @change="appStore.setRepositoryShowIgnoredFiles(($event.target as HTMLInputElement).checked)"
+            />
+            <span>{{ tr("inspector.showIgnored") }}</span>
+          </label>
           <div v-if="sessionChangesError" class="diff-notice error-text">{{ sessionChangesError }}</div>
           <div v-if="fileListTruncated" class="diff-notice">{{ repository?.truncated
             ? tr("inspector.filesCapReached", { count: visibleFiles.length })

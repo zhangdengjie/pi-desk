@@ -864,6 +864,10 @@ export const useAppStore = defineStore("app", {
     // FileTreeNode) because opening a file preview unmounts the whole tree, and the lifetime matches
     // `repositoryByWorkspace` - both are in-memory caches, nothing is written to desktop state.
     repositoryTreeExpandedByWorkspace: {} as Record<string, Record<string, boolean>>,
+    // Whether the file tree shows paths Git excludes. On by default: those paths are real files in
+    // the workspace (`pi` keeps its own notes under `.pi/plans/`, excluded via `.git/info/exclude`),
+    // and hiding them made the listing look broken. In-memory like the other repository caches.
+    repositoryShowIgnoredFiles: true,
     // Scroll offset of the file tree, same reason and same bucket as the expansion state: the
     // `.file-tree` element is destroyed while a file preview is open.
     repositoryTreeScrollTopByWorkspace: {} as Record<string, number>,
@@ -1572,6 +1576,9 @@ export const useAppStore = defineStore("app", {
     rememberRepositoryTreeScroll(top: number) {
       const key = this.activeRepositoryTreeKey;
       if (key) this.repositoryTreeScrollTopByWorkspace[key] = Math.max(0, Math.round(top));
+    },
+    setRepositoryShowIgnoredFiles(value: boolean) {
+      this.repositoryShowIgnoredFiles = value;
     },
     toggleRepositoryTreeDirectory(directory: string) {
       const key = this.activeRepositoryTreeKey;

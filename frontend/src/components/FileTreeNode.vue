@@ -45,6 +45,10 @@ function forwardDiff(path: string) {
 function forwardRollback(path: string) {
   emit("rollback", path);
 }
+
+// File rows keep their action hint (`Preview …`) because the tests and the muscle memory both key on
+// it; Git-excluded rows get a suffix so a `.pi/plans` entry does not read like a deleted file.
+const treeTitle = computed(() => `${props.node.directory ? props.node.path : `Preview ${props.node.path}`}${props.node.ignored ? " (git-ignored)" : ""}`);
 </script>
 
 <template>
@@ -62,14 +66,14 @@ function forwardRollback(path: string) {
       <FolderOpen v-if="node.directory && open" :size="14" />
       <Folder v-else-if="node.directory" :size="14" />
       <File v-else :size="14" />
-      <span v-if="node.directory" class="file-tree-name" :title="node.path" @click="toggleDirectory">{{ node.name }}</span>
+      <span v-if="node.directory" class="file-tree-name" :class="{ 'is-ignored': node.ignored }" :title="treeTitle" @click="toggleDirectory">{{ node.name }}</span>
       <button
         v-else
         class="file-tree-name file-tree-open"
-        :class="{ 'is-changed': changeStatuses?.[node.path] }"
+        :class="{ 'is-changed': changeStatuses?.[node.path], 'is-ignored': node.ignored }"
         type="button"
         :data-status="changeStatuses?.[node.path]"
-        :title="`Preview ${node.path}`"
+        :title="treeTitle"
         @click="emit('open', node.path)"
       >{{ node.name }}</button>
       <button

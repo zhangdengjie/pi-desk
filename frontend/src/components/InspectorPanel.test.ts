@@ -238,6 +238,48 @@ describe("InspectorPanel", () => {
     expect(wrapper.find(".diff-notice").exists()).toBe(false);
   });
 
+  it("lists git-ignored paths faded, and drops them when the switch is off", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-ignored", title: "Ignored", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-ignored",
+      repositoryByWorkspace: { "d:/repo": {
+        files: [
+          { path: "README.md", name: "README.md" },
+          { path: ".pi/settings.json", name: "settings.json" },
+          { path: ".pi/plans", name: "plans", ignored: true, directory: true },
+          { path: ".pi/plans/2026-09-23.md", name: "2026-09-23.md", ignored: true },
+        ],
+        git: { isRepository: true, files: [] },
+      } },
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+
+    // The folder Git folds into a single `--directory` row still renders, and says why it is faded.
+    const folder = wrapper.get('span[title=".pi/plans (git-ignored)"]');
+    expect(folder.classes()).toContain("is-ignored");
+    // A tracked folder that merely contains an excluded child must not fade.
+    expect(wrapper.get('span[title=".pi"]').classes()).not.toContain("is-ignored");
+    expect(wrapper.find('button[title="Preview README.md"]').classes()).not.toContain("is-ignored");
+
+    await folder.trigger("click");
+    const plan = wrapper.get('button[title="Preview .pi/plans/2026-09-23.md (git-ignored)"]');
+    expect(plan.classes()).toContain("is-ignored");
+
+    await wrapper.get(".file-ignored-toggle input").setValue(false);
+    expect(store.repositoryShowIgnoredFiles).toBe(false);
+    expect(wrapper.find('span[title=".pi/plans (git-ignored)"]').exists()).toBe(false);
+    expect(wrapper.find('span[title=".pi"]').exists()).toBe(true);
+    expect(wrapper.find('button[title="Preview README.md"]').exists()).toBe(true);
+  });
+
   it("filters the whole file list, including entries beyond the cap", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
