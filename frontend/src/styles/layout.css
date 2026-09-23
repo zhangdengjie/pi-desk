@@ -1853,13 +1853,6 @@
   line-height: 1.6;
 }
 
-/* The shared .thinking-block pre rule caps code fences at 280px; inside an
-   already scrollable thinking body that means a scrollbar within a scrollbar. */
-.thinking-block .thinking-body pre {
-  max-height: none;
-}
-
-.thinking-block pre,
 .tool-call pre {
   max-height: 280px;
   margin: 0;
@@ -8383,7 +8376,6 @@ article.mcp-server-row {
   padding-bottom: 0;
 }
 
-.thinking-block pre,
 .tool-call pre,
 .markdown-body pre,
 .oversized-message {
