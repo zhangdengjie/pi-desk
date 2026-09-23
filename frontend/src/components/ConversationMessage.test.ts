@@ -154,6 +154,28 @@ describe("ConversationMessage", () => {
     vi.unstubAllGlobals();
   });
 
+  it("stops opening reasoning as soon as the answer starts streaming", async () => {
+    const pinia = createPinia();
+    const message = (text: string) => ({
+      id: "answer-anchor", role: "assistant" as const, text, thinking: "Inspecting", timestamp: "10:08",
+      streaming: true, activeExecution: "thinking" as const, tools: [],
+    });
+    const wrapper = mount(ConversationMessage, { props: { message: message("") }, global: { plugins: [pinia] } });
+
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
+    expect(wrapper.get(".thinking-block .thinking-body").classes()).toContain("is-live");
+
+    // The answer's first token lands while Pi still reports thinking as the
+    // active step: the window has to be out of the flow already, so the answer
+    // renders at the position it will keep.
+    await wrapper.setProps({ message: message("Working on it") });
+
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeUndefined();
+    expect(wrapper.get(".thinking-block .thinking-body").classes()).not.toContain("is-live");
+    expect(wrapper.get(".message-content > .markdown-body").text()).toBe("Working on it");
+    wrapper.unmount();
+  });
+
   it("keeps a reader's expanded reasoning open when the next run message remounts the row", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

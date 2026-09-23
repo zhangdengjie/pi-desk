@@ -272,9 +272,19 @@ function stepThinking(step: ExecutionStep): string {
 // toggle handler tells "the reader clicked" apart from "Vue wrote the prop".
 const renderedOpen = new Map<string, boolean>();
 
+// The live window only exists while there is no answer on screen yet. Once the
+// answer starts streaming its first line has to land where it will stay, so no
+// panel may open or close above it - reopening during the answer is exactly the
+// teleport the reader sees.
+const autoOpensReasoning = computed(() => props.message.streaming && !visibleMessageText.value.trim());
+
+function liveReasoningWindow(step: ExecutionStep): boolean {
+  return step.active === true && autoOpensReasoning.value;
+}
+
 function reasoningOpen(step: ExecutionStep): boolean {
   // The live step still opens by itself; anything else is the reader's call.
-  const open = step.active === true || isPanelPinnedOpen(step.id);
+  const open = liveReasoningWindow(step) || isPanelPinnedOpen(step.id);
   renderedOpen.set(step.id, open);
   return open;
 }
@@ -290,7 +300,7 @@ function syncReasoningOpen(step: ExecutionStep, event: Event) {
 // every token, which is the flicker readers see while the model thinks; now the
 // window keeps its size and pulls its own tail into view instead.
 const executionDetails = ref<HTMLElement>();
-const liveReasoning = computed(() => executionSteps.value.find((step) => step.kind === "thinking" && step.active === true));
+const liveReasoning = computed(() => executionSteps.value.find((step) => step.kind === "thinking" && liveReasoningWindow(step)));
 let reasoningScrollFrame = 0;
 
 watch(() => [liveReasoning.value?.id ?? "", liveReasoning.value?.text?.length ?? 0] as const, () => {
@@ -357,7 +367,7 @@ watch(() => [liveReasoning.value?.id ?? "", liveReasoning.value?.text?.length ??
               </summary>
               <MarkdownBody
                 class="thinking-body"
-                :class="{ 'is-live': step.active === true }"
+                :class="{ 'is-live': liveReasoningWindow(step) }"
                 :text="stepThinking(step)"
                 :streaming="false"
                 :search-query="searchQuery"
