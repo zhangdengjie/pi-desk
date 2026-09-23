@@ -53,7 +53,7 @@ describe("MarkdownBody", () => {
   });
 
   it("wraps every rendered table in a horizontal scroll container", () => {
-    const { wrapper } = mountMarkdown("| 组件 | 说明 |\n| --- | --- |\n| Build | 中文长文本，宽度有限时不允许垂直堆叠 |\n");
+    const { wrapper } = mountMarkdown("| 组件 | 说明 |\n| --- | --- |\n| Build | 中文长文本，宽度有限时不允许垂直堆叠，必须靠横向滚动来兜住 |\n");
 
     const scroll = wrapper.get(".markdown-table-scroll");
     expect(scroll.element.tagName).toBe("DIV");
@@ -64,6 +64,9 @@ describe("MarkdownBody", () => {
     // max-width on a th/td with bare text, so this DOM shape is part of the contract.
     expect(wrapper.findAll("th .markdown-cell")).toHaveLength(2);
     expect(wrapper.findAll("td .markdown-cell")).toHaveLength(2);
+    // Only the prose cell takes the width floor; short value cells stay natural.
+    expect(wrapper.findAll(".markdown-cell.is-wide")).toHaveLength(1);
+    expect(wrapper.get("td .markdown-cell.is-wide").text()).toContain("中文长文本");
     wrapper.unmount();
   });
 

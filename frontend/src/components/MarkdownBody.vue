@@ -63,10 +63,22 @@ markdown.renderer.rules.table_close = (tokens, index, options, _env, self) =>
 // control): a bare text cell ignores max-width on <th>/<td> — WebKit laid the column
 // out at 490px for a 340px cap. A block child inside the cell fixes it (340px in both
 // engines). So every cell gets one wrapper and the ceiling lives on that wrapper.
+// A column floor is only useful on cells that actually hold prose: applied to "Go" or
+// "1.26.1" it inflates a two-column value table to hundreds of pixels of dead space.
+// CSS cannot express "floor, but never above the content" — min(340px, max-content)
+// computes to 0px in both engines — so the renderer decides from the cell's own text.
+const WIDE_CELL_MIN_CHARS = 24;
+
+function cellIsWide(tokens: Parameters<NonNullable<typeof markdown.renderer.rules.td_open>>[0], index: number): boolean {
+  const inline = tokens[index + 1];
+  if (!inline || inline.type !== "inline") return false;
+  return Array.from(inline.content ?? "").length >= WIDE_CELL_MIN_CHARS;
+}
+
 markdown.renderer.rules.th_open = (tokens, index, options, _env, self) =>
-  `${self.renderToken(tokens, index, options)}<div class="markdown-cell">`;
+  `${self.renderToken(tokens, index, options)}<div class="markdown-cell${cellIsWide(tokens, index) ? " is-wide" : ""}">`;
 markdown.renderer.rules.td_open = (tokens, index, options, _env, self) =>
-  `${self.renderToken(tokens, index, options)}<div class="markdown-cell">`;
+  `${self.renderToken(tokens, index, options)}<div class="markdown-cell${cellIsWide(tokens, index) ? " is-wide" : ""}">`;
 markdown.renderer.rules.th_close = (tokens, index, options, _env, self) =>
   `</div>${self.renderToken(tokens, index, options)}`;
 markdown.renderer.rules.td_close = (tokens, index, options, _env, self) =>

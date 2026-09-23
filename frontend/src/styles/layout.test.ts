@@ -132,18 +132,24 @@ describe("message editor theme colors", () => {
     expect(scroll).toMatch(/overflow-x:\s*auto/);
     const table = firstRuleBody(layout, ".markdown-body table");
     expect(table).toMatch(/width:\s*max-content/);
-    // Clamped on both sides: a short table fills the pane, a long one wraps into
-    // the columns until the per-cell floor forces the scroll wrapper instead.
-    expect(table).toMatch(/min-width:\s*100%/);
+    // Clamped to the pane on the upper side only: min-width:100% stretched a table of
+    // short values into two huge empty columns.
     expect(table).toMatch(/max-width:\s*100%/);
+    expect(table).not.toMatch(/min-width/);
     // display:block on the table itself is what squeezed CJK cells into vertical text.
     expect(table).not.toMatch(/display:/);
     expect(table).not.toMatch(/overflow/);
     const cell = firstRuleBody(layout, ".markdown-body .markdown-cell");
-    expect(cell).toMatch(/min-width:\s*var\(--markdown-cell-wrap-min\)/);
-    expect(cell).toMatch(/overflow-wrap:\s*anywhere/);
+    // break-word, not anywhere: `anywhere` feeds back into min-content and lets a
+    // short identifier column collapse to one glyph per line.
+    expect(cell).toMatch(/overflow-wrap:\s*break-word/);
+    expect(cell).not.toMatch(/min-width/);
+    // The floor is opt-in per cell, so "Go | 1.26.1" keeps its natural width.
+    const wide = firstRuleBody(layout, ".markdown-body .markdown-cell.is-wide");
+    expect(wide).toMatch(/min-width:\s*var\(--markdown-cell-wrap-min\)/);
+    expect(wide).toMatch(/overflow-wrap:\s*anywhere/);
     // The floor is a token, so themes/densities can retune it in one place.
-    expect(await tokensText()).toMatch(/--markdown-cell-wrap-min:\s*340px/);
+    expect(await tokensText()).toMatch(/--markdown-cell-wrap-min:\s*200px/);
     // And it must not move onto the cell itself — WebKit ignores width there.
     expect(firstRuleBody(layout, ".markdown-body th,\n.markdown-body td")).not.toMatch(/max-width/);
     expect(firstRuleBody(layout, ".markdown-body th,\n.markdown-body td")).not.toMatch(/min-width/);

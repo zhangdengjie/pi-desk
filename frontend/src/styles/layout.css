@@ -1792,16 +1792,16 @@
   overscroll-behavior-x: contain;
 }
 
-/* The table asks for its content width but is clamped to the pane on both sides:
-     min-width  -> a short table still fills the preview instead of floating top-left
-     max-width  -> a long table never exceeds the preview, it wraps instead
-   It can still end up wider than the pane when the per-cell floor below does not
-   fit: that overflow is what the scroll wrapper turns into a horizontal scrollbar.
-   display:block on the table itself is what used to squeeze CJK cells into vertical
-   text, so it stays a table. */
+/* Ask for the content width, clamp it to the pane, and let the per-cell floor
+   below decide when the table can no longer fit:
+     short table  -> natural width, no dead space, no stray scrollbar
+     long table   -> clamped to the pane, so the wide column reaches the right edge
+     too many columns -> the floor wins over the clamp and the wrapper scrolls
+   No min-width:100% — that stretched a two-column table of short values into two
+   huge empty columns. display:block on the table is what squeezed CJK cells into
+   vertical text, so it stays a table. */
 .markdown-body table {
   width: max-content;
-  min-width: 100%;
   max-width: 100%;
   border-collapse: collapse;
 }
@@ -1813,12 +1813,18 @@
   text-align: left;
 }
 
-/* Per-column floor. The table is clamped to the pane, so without a floor the
-   columns squeeze down to their min-content — one CJK glyph per line. With it,
-   columns that cannot fit make the table overflow and scroll instead. It has to
+/* Per-column floor, and only on prose cells (MarkdownBody.vue tags them .is-wide):
+   a long paragraph must not be squeezed to a few CJK glyphs per line, and when the
+   floor cannot fit, the table overflows into the scroll wrapper instead. It has to
    live on this block child: WebKit ignores width properties on a <th>/<td> whose
-   content is bare text (see MarkdownBody.vue). */
+   content is bare text. */
 .markdown-body .markdown-cell {
+  /* break-word, not anywhere: `anywhere` feeds back into min-content sizing, which
+     let a "MarkdownBody.vue" column collapse to 15px (one glyph per line). */
+  overflow-wrap: break-word;
+}
+
+.markdown-body .markdown-cell.is-wide {
   min-width: var(--markdown-cell-wrap-min);
   overflow-wrap: anywhere;
 }
