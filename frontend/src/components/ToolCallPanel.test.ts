@@ -31,33 +31,38 @@ describe("ToolCallPanel", () => {
     expect(wrapper.text()).toContain("Truncated in view");
   });
 
-  it("keeps a call closed while it runs after the answer already started", () => {
+  it("keeps a call closed while it runs after the answer already started", async () => {
+    vi.useFakeTimers();
     const wrapper = mount(ToolCallPanel, {
       props: { tool: { id: "tool-no-live", name: "bash", output: "npm test\nrunning", status: "running" }, allowLive: false },
     });
 
+    await vi.advanceTimersByTimeAsync(3000);
+
     expect(wrapper.get("details").attributes("open")).toBeUndefined();
     expect(wrapper.get(".tool-output").text()).toContain("running");
     wrapper.unmount();
+    vi.useRealTimers();
   });
 
   it("scrolls the live output window to its newest chunk instead of growing the row", async () => {
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
-    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.useFakeTimers();
     const wrapper = mount(ToolCallPanel, {
       props: { tool: { id: "tool-tail", name: "bash", output: "first chunk", status: "running" } },
     });
+    await vi.advanceTimersByTimeAsync(1200);
     const panel = wrapper.get(".tool-output").element as HTMLElement;
     Object.defineProperty(panel, "scrollHeight", { configurable: true, get: () => 720 });
 
     await wrapper.setProps({ tool: { id: "tool-tail", name: "bash", output: "first chunk\nsecond chunk", status: "running" } });
-    await wrapper.vm.$nextTick();
-    while (frames.length) frames.shift()?.(0);
+    await vi.advanceTimersByTimeAsync(64);
 
     expect(panel.scrollTop).toBe(720);
+
+    await wrapper.setProps({ tool: { id: "tool-tail", name: "bash", output: "first chunk\nsecond chunk", status: "complete" } });
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
     wrapper.unmount();
-    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("remembers a reader's expansion of a finished call across re-creation", async () => {
@@ -74,14 +79,34 @@ describe("ToolCallPanel", () => {
     recreated.unmount();
   });
 
-  it("expands while running and collapses when the call finishes", async () => {
+  it("opens the live window only once a call is slow enough to wait on", async () => {
+    vi.useFakeTimers();
     const wrapper = mount(ToolCallPanel, {
       props: { tool: { id: "tool-live", name: "read", output: "partial", status: "running" } },
     });
 
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1200);
     expect(wrapper.get("details").attributes("open")).toBeDefined();
+
     await wrapper.setProps({ tool: { id: "tool-live", name: "read", output: "done", status: "complete" } });
     expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("never touches the layout for a call that finishes before the window would open", async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(ToolCallPanel, {
+      props: { tool: { id: "tool-fast", name: "bash", output: "", status: "running" } },
+    });
+
+    await wrapper.setProps({ tool: { id: "tool-fast", name: "bash", output: "all passed", status: "complete" } });
+    await vi.advanceTimersByTimeAsync(5000);
+
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    wrapper.unmount();
+    vi.useRealTimers();
   });
 
   it("contains clipboard permission failures", async () => {

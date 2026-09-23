@@ -15,11 +15,35 @@ const copied = ref<"input" | "output" | "">("");
 const previewImage = ref<{ name: string; previewUrl: string }>();
 let copyResetTimer: ReturnType<typeof setTimeout> | undefined;
 
-// A running call gets a live window only while the answer has not started: a
-// panel that opens above the answer would lift the answer when it closes, which
-// is the teleport readers see at the end of a tool call. Same contract as the
-// reasoning window in ConversationMessage.
-const live = computed(() => props.tool.status === "running" && props.allowLive !== false);
+// A running call may only open a live window while the answer has not started:
+// a panel that opens above the answer would lift the answer when it closes, the
+// teleport readers see at the end of a tool call. Same contract as the reasoning
+// window in ConversationMessage.
+const eligibleForLiveWindow = computed(() => props.tool.status === "running" && props.allowLive);
+
+// Most calls finish within a frame - read, grep, one fast bash line - so opening
+// a window for them only flashes and then lifts the layout. Waiting before
+// opening means a call the reader can actually notice waiting on is the only one
+// that ever moves the transcript.
+const LIVE_WINDOW_DELAY_MS = 1200;
+const live = ref(false);
+let liveWindowTimer: ReturnType<typeof setTimeout> | undefined;
+
+watch(eligibleForLiveWindow, (eligible) => {
+  if (liveWindowTimer !== undefined) {
+    clearTimeout(liveWindowTimer);
+    liveWindowTimer = undefined;
+  }
+  if (!eligible) {
+    live.value = false;
+    return;
+  }
+  liveWindowTimer = setTimeout(() => {
+    liveWindowTimer = undefined;
+    live.value = true;
+  }, LIVE_WINDOW_DELAY_MS);
+}, { immediate: true });
+
 const outputPanel = ref<HTMLElement>();
 let renderedOpen: boolean | undefined;
 
@@ -156,6 +180,7 @@ async function copyText(kind: "input" | "output", text: string) {
 
 onBeforeUnmount(() => {
   if (copyResetTimer) clearTimeout(copyResetTimer);
+  if (liveWindowTimer !== undefined) clearTimeout(liveWindowTimer);
   if (outputScrollFrame) cancelAnimationFrame(outputScrollFrame);
 });
 </script>
