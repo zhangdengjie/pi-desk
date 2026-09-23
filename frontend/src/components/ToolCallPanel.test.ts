@@ -31,6 +31,49 @@ describe("ToolCallPanel", () => {
     expect(wrapper.text()).toContain("Truncated in view");
   });
 
+  it("keeps a call closed while it runs after the answer already started", () => {
+    const wrapper = mount(ToolCallPanel, {
+      props: { tool: { id: "tool-no-live", name: "bash", output: "npm test\nrunning", status: "running" }, allowLive: false },
+    });
+
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    expect(wrapper.get(".tool-output").text()).toContain("running");
+    wrapper.unmount();
+  });
+
+  it("scrolls the live output window to its newest chunk instead of growing the row", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const wrapper = mount(ToolCallPanel, {
+      props: { tool: { id: "tool-tail", name: "bash", output: "first chunk", status: "running" } },
+    });
+    const panel = wrapper.get(".tool-output").element as HTMLElement;
+    Object.defineProperty(panel, "scrollHeight", { configurable: true, get: () => 720 });
+
+    await wrapper.setProps({ tool: { id: "tool-tail", name: "bash", output: "first chunk\nsecond chunk", status: "running" } });
+    await wrapper.vm.$nextTick();
+    while (frames.length) frames.shift()?.(0);
+
+    expect(panel.scrollTop).toBe(720);
+    wrapper.unmount();
+    vi.unstubAllGlobals();
+  });
+
+  it("remembers a reader's expansion of a finished call across re-creation", async () => {
+    const tool = { id: "tool-memory", name: "read", output: "source", status: "complete" as const };
+    const wrapper = mount(ToolCallPanel, { props: { tool } });
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+
+    await wrapper.get("summary").trigger("click");
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    wrapper.unmount();
+
+    const recreated = mount(ToolCallPanel, { props: { tool } });
+    expect(recreated.get("details").attributes("open")).toBeDefined();
+    recreated.unmount();
+  });
+
   it("expands while running and collapses when the call finishes", async () => {
     const wrapper = mount(ToolCallPanel, {
       props: { tool: { id: "tool-live", name: "read", output: "partial", status: "running" } },

@@ -1899,6 +1899,15 @@
   word-break: break-word;
 }
 
+/* A running call's output is a constant window, not a growing one: the row must
+   not gain height on every chunk, which is what pushed the answer down and then
+   lifted it when the panel closed. ToolCallPanel scrolls the window's own tail
+   into view. Mirrors .thinking-body.is-live. */
+.tool-call[data-state="running"] .tool-output {
+  height: 132px;
+  max-height: none;
+}
+
 .tool-summary {
   flex: 0 1 auto;
   min-width: 0;

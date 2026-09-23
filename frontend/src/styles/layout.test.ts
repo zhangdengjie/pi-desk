@@ -92,6 +92,14 @@ describe("reasoning window and tail control", () => {
     expect(firstRuleBody(layout, ".thinking-block .thinking-body.is-live")).toMatch(/height:\s*168px/);
   });
 
+  it("gives a running call's output a constant window instead of a growing one", async () => {
+    const layout = await layoutText();
+    const window = firstRuleBody(layout, `.tool-call[data-state="running"] .tool-output`);
+    expect(window).toMatch(/height:\s*132px/);
+    expect(window).toMatch(/max-height:\s*none/);
+    expect(firstRuleBody(layout, ".tool-call pre")).toMatch(/max-height:\s*280px/);
+  });
+
   it("floats the jump-to-latest control above the composer overlay reserve", async () => {
     const layout = await layoutText();
     const jump = firstRuleBody(layout, ".timeline-jump-latest");

@@ -272,14 +272,14 @@ function stepThinking(step: ExecutionStep): string {
 // toggle handler tells "the reader clicked" apart from "Vue wrote the prop".
 const renderedOpen = new Map<string, boolean>();
 
-// The live window only exists while there is no answer on screen yet. Once the
-// answer starts streaming its first line has to land where it will stay, so no
-// panel may open or close above it - reopening during the answer is exactly the
-// teleport the reader sees.
-const autoOpensReasoning = computed(() => props.message.streaming && !visibleMessageText.value.trim());
+// Live panels - the reasoning window and a running tool call - only take the
+// stage while there is no answer on screen yet. Once the answer starts streaming
+// its first line has to land where it will stay, so nothing may open or close
+// above it; reopening during the answer is exactly the teleport readers see.
+const livePanelsAllowed = computed(() => props.message.streaming && !visibleMessageText.value.trim());
 
 function liveReasoningWindow(step: ExecutionStep): boolean {
-  return step.active === true && autoOpensReasoning.value;
+  return step.active === true && livePanelsAllowed.value;
 }
 
 function reasoningOpen(step: ExecutionStep): boolean {
@@ -375,7 +375,7 @@ watch(() => [liveReasoning.value?.id ?? "", liveReasoning.value?.text?.length ??
               />
             </details>
             <template v-else-if="step.kind === 'tools'">
-              <ToolCallPanel v-for="tool in step.tools" :key="tool.id" :tool="tool" />
+              <ToolCallPanel v-for="tool in step.tools" :key="tool.id" :tool="tool" :allow-live="livePanelsAllowed" />
             </template>
             <MarkdownBody v-else-if="step.text" :text="step.text" :streaming="false" :search-query="searchQuery" :search-active="searchActive" />
           </template>

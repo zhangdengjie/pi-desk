@@ -5,13 +5,41 @@ import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { ToolExecution } from "../stores/app";
 import type { SubagentTaskState } from "../utils/subagentTasks";
 import { tr } from "../i18n";
+import { isPanelPinnedOpen, pinPanelOpen } from "../utils/detailsOpenState";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 
-const props = defineProps<{ tool: ToolExecution }>();
+// Vue casts an absent Boolean prop to false, so the live allowance needs an
+// explicit default or a standalone call would never open.
+const props = withDefaults(defineProps<{ tool: ToolExecution; allowLive?: boolean }>(), { allowLive: true });
 const copied = ref<"input" | "output" | "">("");
-const open = ref(props.tool.status === "running");
 const previewImage = ref<{ name: string; previewUrl: string }>();
 let copyResetTimer: ReturnType<typeof setTimeout> | undefined;
+
+// A running call gets a live window only while the answer has not started: a
+// panel that opens above the answer would lift the answer when it closes, which
+// is the teleport readers see at the end of a tool call. Same contract as the
+// reasoning window in ConversationMessage.
+const live = computed(() => props.tool.status === "running" && props.allowLive !== false);
+const outputPanel = ref<HTMLElement>();
+let renderedOpen: boolean | undefined;
+
+const panelOpen = computed(() => {
+  const open = live.value || isPanelPinnedOpen(props.tool.id);
+  renderedOpen = open;
+  return open;
+});
+
+// The live window keeps a constant height (layout.css), so the incoming output
+// has to be pulled into view instead of growing the row.
+let outputScrollFrame = 0;
+watch(() => [live.value, props.tool.output.length] as const, () => {
+  if (!live.value || outputScrollFrame) return;
+  outputScrollFrame = requestAnimationFrame(() => {
+    outputScrollFrame = 0;
+    const panel = outputPanel.value;
+    if (panel) panel.scrollTop = panel.scrollHeight;
+  });
+}, { immediate: true });
 
 const resultImages = computed(() => props.tool.images ?? []);
 
@@ -99,13 +127,12 @@ const durationLabel = computed(() => {
   return `${(duration / 1000).toFixed(duration < 10_000 ? 1 : 0)}s`;
 });
 
-watch(() => props.tool.status, (status, previous) => {
-  if (status === "running") open.value = true;
-  else if (previous === "running") open.value = false;
-});
-
 function syncOpen(event: Event) {
-  open.value = (event.currentTarget as HTMLDetailsElement).open;
+  const details = event.currentTarget as HTMLDetailsElement;
+  // Ignore the toggle that our own prop write causes; only the reader's choice
+  // belongs in the memory, which is what survives a row being re-created.
+  if (details.open === renderedOpen) return;
+  pinPanelOpen(props.tool.id, details.open);
 }
 
 function diffLineClass(line: string): string {
@@ -129,11 +156,12 @@ async function copyText(kind: "input" | "output", text: string) {
 
 onBeforeUnmount(() => {
   if (copyResetTimer) clearTimeout(copyResetTimer);
+  if (outputScrollFrame) cancelAnimationFrame(outputScrollFrame);
 });
 </script>
 
 <template>
-  <details class="tool-call" :data-state="tool.status" :open="open" @toggle="syncOpen">
+  <details class="tool-call" :data-state="tool.status" :open="panelOpen" @toggle="syncOpen">
     <summary :class="ui.root">
       <ChevronRight class="disclosure-icon" :size="13" aria-hidden="true" />
       <Bot v-if="isSubagent" :size="15" aria-hidden="true" />
@@ -202,7 +230,7 @@ onBeforeUnmount(() => {
           <Copy v-else :size="13" />
         </button>
       </div>
-      <pre>{{ tool.output }}</pre>
+      <pre ref="outputPanel" class="tool-output">{{ tool.output }}</pre>
     </div>
     <ImagePreviewDialog v-if="previewImage" :image="previewImage" @close="previewImage = undefined" />
   </details>
