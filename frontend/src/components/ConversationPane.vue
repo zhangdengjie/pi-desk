@@ -7,7 +7,7 @@ import ComposerBar from "./ComposerBar.vue";
 import ConversationMessage from "./ConversationMessage.vue";
 import { useAppStore } from "../stores/app";
 import { CONVERSATION_VIRTUALIZATION_THRESHOLD, estimateMessageSize, shouldVirtualizeMessages } from "../utils/conversationVirtualization";
-import { isNearBottom } from "../utils/scroll";
+import { isNearBottom, nestedScrollerCanGoUp } from "../utils/scroll";
 import { groupConversationTurns } from "../utils/conversationGrouping";
 import { tr } from "../i18n";
 
@@ -136,11 +136,27 @@ function scheduleAutoScroll() {
   });
 }
 
+// A trackpad flick only moves 40-90px, so a wide "near bottom" band treated the
+// first flicks as "still at the tail": the next animation frame pinned the bottom
+// again and the transcript yanked itself away mid-read. Resuming the follow now
+// needs an actual arrival at the bottom, and an upward wheel releases the pin
+// straight from the gesture instead of waiting for a sampled scroll event.
+const FOLLOW_RESUME_PX = 24;
+
 function onTimelineScroll() {
   const element = timeline.value;
   if (!element) return;
-  stickToBottom.value = isNearBottom(element.scrollTop, element.clientHeight, element.scrollHeight);
+  stickToBottom.value = isNearBottom(element.scrollTop, element.clientHeight, element.scrollHeight, FOLLOW_RESUME_PX);
   updateActiveNavigation();
+}
+
+function onTimelineWheel(event: WheelEvent) {
+  if (event.deltaY >= 0) return;
+  // Reasoning and tool panels are scroll containers of their own. While the
+  // wheel is still feeding one of those, the timeline has not moved at all,
+  // so releasing the follow would be wrong.
+  if (nestedScrollerCanGoUp(event.target, timeline.value)) return;
+  stickToBottom.value = false;
 }
 
 function updateActiveNavigation() {
@@ -383,7 +399,7 @@ onBeforeUnmount(() => {
           <span><em>{{ tr("conversation.navigationAnswer") }}</em>{{ hoveredNavigationItem.answer }}</span>
         </aside>
       </nav>
-      <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" @scroll="onTimelineScroll">
+      <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" @scroll="onTimelineScroll" @wheel="onTimelineWheel">
       <div v-if="appStore.activeSessionOperation === 'Compacting'" class="conversation-operation-banner mb-4 inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-xs text-[var(--text-secondary)] shadow-sm" role="status" aria-live="polite">
         <LoaderCircle :size="14" class="is-spinning" aria-hidden="true" />
         <span>{{ tr("topbar.compacting") }}</span>

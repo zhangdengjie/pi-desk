@@ -1,3 +1,4 @@
+import { nextTick } from "vue";
 import { createPinia, setActivePinia } from "pinia";
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -109,6 +110,95 @@ describe("ConversationPane", () => {
     expect(timeline.scrollTop).toBe(100);
     wrapper.unmount();
     expect(observer.disconnect).toHaveBeenCalled();
+  });
+
+  async function mountPinnedTail() {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const store = useAppStore();
+    const wrapper = mountTranscript(4);
+    await flushPromises();
+    const sizes = { clientHeight: 600, scrollHeight: 1800 };
+    const timeline = wrapper.get(".timeline").element as HTMLElement;
+    Object.defineProperties(timeline, {
+      clientHeight: { configurable: true, get: () => sizes.clientHeight },
+      scrollHeight: { configurable: true, get: () => sizes.scrollHeight },
+    });
+    const settle = async () => {
+      await nextTick();
+      while (frames.length) frames.shift()?.(0);
+      await flushPromises();
+    };
+    // Growing the tail is what normally triggers the follow; scrollHeight has to
+    // move with it because jsdom lays nothing out.
+    const stream = async (text: string, scrollHeight: number) => {
+      const messages = store.messagesByThread["thread-1"];
+      messages[messages.length - 1].text = text;
+      sizes.scrollHeight = scrollHeight;
+      await settle();
+    };
+    return { wrapper, timeline, stream, settle };
+  }
+
+  it("stops following the tail when a small wheel flick escapes the bottom", async () => {
+    const { wrapper, timeline, stream } = await mountPinnedTail();
+
+    // 20px above the bottom: the scroll handler alone would keep following.
+    timeline.scrollTop = 1180;
+    await wrapper.get(".timeline").trigger("wheel", { deltaY: -30 });
+    await stream("Message 3 is still writing", 1900);
+
+    expect(timeline.scrollTop).toBe(1180);
+    wrapper.unmount();
+  });
+
+  it("stops following the tail for scroll sources without a wheel gesture", async () => {
+    const { wrapper, timeline, stream } = await mountPinnedTail();
+
+    // 40px off the bottom used to sit inside the old 96px "near bottom" band, so
+    // a keyboard or scrollbar move that far never released the pin.
+    timeline.scrollTop = 1160;
+    await wrapper.get(".timeline").trigger("scroll");
+    await stream("Message 3 is still writing", 1900);
+
+    expect(timeline.scrollTop).toBe(1160);
+    wrapper.unmount();
+  });
+
+  it("resumes following the tail once the reader is back at the bottom", async () => {
+    const { wrapper, timeline, stream } = await mountPinnedTail();
+
+    timeline.scrollTop = 1160;
+    await wrapper.get(".timeline").trigger("wheel", { deltaY: -30 });
+    await stream("Message 3 is still writing", 1900);
+    expect(timeline.scrollTop).toBe(1160);
+
+    // The tail grew to 1900, so its bottom now sits at scrollTop 1300.
+    timeline.scrollTop = 1300;
+    await wrapper.get(".timeline").trigger("scroll");
+    await stream("Message 3 finished writing", 2020);
+
+    expect(timeline.scrollTop).toBe(2020);
+    wrapper.unmount();
+  });
+
+  it("keeps following while the wheel is still feeding a nested scroll container", async () => {
+    const { wrapper, timeline, stream } = await mountPinnedTail();
+    const reasoning = wrapper.findAll(".stub-message")[1].element;
+    Object.defineProperties(reasoning, {
+      scrollTop: { configurable: true, get: () => 40 },
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 500 },
+    });
+
+    timeline.scrollTop = 1200;
+    await wrapper.get(".timeline").trigger("scroll");
+    await wrapper.findAll(".stub-message")[1].trigger("wheel", { deltaY: -30 });
+    await stream("Message 3 is still writing", 1900);
+
+    expect(timeline.scrollTop).toBe(1900);
+    wrapper.unmount();
   });
 
   it("shows the temporary thinking status only while waiting for backend output", async () => {
