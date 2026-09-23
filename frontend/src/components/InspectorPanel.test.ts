@@ -128,6 +128,47 @@ describe("InspectorPanel", () => {
     expect(wrapper.text()).not.toContain("All files");
   });
 
+  it("restores the file tree scroll offset after closing a preview", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-scroll", title: "Scroll", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-scroll",
+      repositoryByWorkspace: { "d:/repo": {
+        files: [
+          { path: "src/index.ts", name: "index.ts" },
+          { path: "src/deep/nested.ts", name: "nested.ts" },
+        ],
+        git: { isRepository: true, files: [] },
+      } },
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    repositoryMocks.previewFile.mockResolvedValue({
+      path: "src/index.ts", absolutePath: "D:\\repo\\src\\index.ts", content: "x", size: 1, binary: false, truncated: false,
+    });
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+
+    const tree = wrapper.get(".file-tree").element as HTMLElement;
+    tree.scrollTop = 640;
+    tree.dispatchEvent(new Event("scroll"));
+    expect(store.repositoryTreeScrollTopByWorkspace["d:/repo"]).toBe(640);
+
+    // Opening a preview unmounts the element entirely, which is what used to lose the offset.
+    await wrapper.get('button[title="Preview src/index.ts"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find(".file-tree").exists()).toBe(false);
+
+    await wrapper.get('button[title="Close file preview"]').trigger("click");
+    await flushPromises();
+    await flushPromises();
+
+    expect((wrapper.get(".file-tree").element as HTMLElement).scrollTop).toBe(640);
+  });
+
   it("keeps the tree expanded across opening and closing a file preview", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

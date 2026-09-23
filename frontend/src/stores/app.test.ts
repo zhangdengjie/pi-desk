@@ -3750,6 +3750,29 @@ describe("app store", () => {
     expect(store.activeDraft).toBe("Keep this ");
   });
 
+  it("remembers the repository tree scroll offset per workspace", () => {
+    const store = useAppStore();
+    store.$patch({
+      threads: [
+        { id: "t-a", title: "A", workspace: "repo-a", workspacePath: "D:\\repo-a", trust: "approve", status: "idle", started: false, generation: 0 },
+        { id: "t-b", title: "B", workspace: "repo-b", workspacePath: "D:\\repo-b", trust: "approve", status: "idle", started: false, generation: 0 },
+      ],
+      activeThreadId: "t-a",
+    });
+
+    expect(store.activeRepositoryTreeScrollTop).toBe(0);
+    store.rememberRepositoryTreeScroll(1234.6);
+    expect(store.repositoryTreeScrollTopByWorkspace["d:/repo-a"]).toBe(1235);
+    expect(store.activeRepositoryTreeScrollTop).toBe(1235);
+
+    store.rememberRepositoryTreeScroll(-12);
+    expect(store.repositoryTreeScrollTopByWorkspace["d:/repo-a"]).toBe(0);
+
+    store.activeThreadId = "t-b";
+    expect(store.activeRepositoryTreeScrollTop).toBe(0);
+    expect(Object.keys(store.repositoryTreeScrollTopByWorkspace)).toEqual(["d:/repo-a"]);
+  });
+
   it("records repository tree expansion per workspace and keeps the top-level default", () => {
     const store = useAppStore();
     store.$patch({

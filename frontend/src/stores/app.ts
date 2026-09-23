@@ -858,6 +858,9 @@ export const useAppStore = defineStore("app", {
     // FileTreeNode) because opening a file preview unmounts the whole tree, and the lifetime matches
     // `repositoryByWorkspace` - both are in-memory caches, nothing is written to desktop state.
     repositoryTreeExpandedByWorkspace: {} as Record<string, Record<string, boolean>>,
+    // Scroll offset of the file tree, same reason and same bucket as the expansion state: the
+    // `.file-tree` element is destroyed while a file preview is open.
+    repositoryTreeScrollTopByWorkspace: {} as Record<string, number>,
     repositoryRefreshGenerationByWorkspace: {} as Record<string, number>,
     repositoryDiffByWorkspace: {} as Record<string, RepositoryDiffView | undefined>,
     repositoryDiffPathByWorkspace: {} as Record<string, string>,
@@ -1005,6 +1008,10 @@ export const useAppStore = defineStore("app", {
     activeRepositoryTreeExpanded(state): Record<string, boolean> {
       const thread = state.threads.find((item) => item.id === state.activeThreadId);
       return (thread && state.repositoryTreeExpandedByWorkspace[repositoryKey(thread)]) || {};
+    },
+    activeRepositoryTreeScrollTop(state): number {
+      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      return (thread && state.repositoryTreeScrollTopByWorkspace[repositoryKey(thread)]) ?? 0;
     },
     activeRepositoryLoading(state): boolean {
       const thread = state.threads.find((item) => item.id === state.activeThreadId);
@@ -1555,6 +1562,10 @@ export const useAppStore = defineStore("app", {
       const inside = Boolean(root) && (normalized === root || normalized.startsWith(`${root}/`));
       this.insertFileMention(inside ? normalized.slice(root.length + 1) : normalized);
       return { path: normalized, external: !inside };
+    },
+    rememberRepositoryTreeScroll(top: number) {
+      const key = this.activeRepositoryTreeKey;
+      if (key) this.repositoryTreeScrollTopByWorkspace[key] = Math.max(0, Math.round(top));
     },
     toggleRepositoryTreeDirectory(directory: string) {
       const key = this.activeRepositoryTreeKey;

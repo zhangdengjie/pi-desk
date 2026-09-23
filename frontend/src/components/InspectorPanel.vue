@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
 import { ArrowLeft, Binary, ExternalLink, FileCode2, FileDiff, FolderOpen, LoaderCircle, PanelRightClose, RefreshCw } from "lucide-vue-next";
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useAppStore } from "../stores/app";
 import { buildRepositoryTree } from "../utils/fileMentions";
 import { fuzzyScore } from "../utils/fuzzySearch";
@@ -200,8 +200,27 @@ onBeforeUnmount(() => {
 });
 watch(() => appStore.activeThreadId, () => {
   void appStore.refreshActiveRepository();
+  // Switching threads keeps the same element but swaps the content, so the remembered offset of the
+  // new workspace has to be re-applied once the rows are there.
+  void nextTick(restoreTreeScroll);
 });
 watch(() => appStore.activeRepositoryFilePreviewPath, () => { markdownRendered.value = true; });
+
+const fileTreeElement = ref<HTMLElement>();
+// `.file-tree` is destroyed while a file preview is open (that branch is `v-if`ed), so the scroll
+// offset is remembered in the store right next to the expansion state.
+function restoreTreeScroll() {
+  const element = fileTreeElement.value;
+  if (element) element.scrollTop = appStore.activeRepositoryTreeScrollTop;
+}
+function rememberTreeScroll(event: Event) {
+  appStore.rememberRepositoryTreeScroll((event.target as HTMLElement).scrollTop);
+}
+watch(fileTreeElement, async (element) => {
+  if (!element) return;
+  await nextTick();
+  restoreTreeScroll();
+});
 </script>
 
 <template>
@@ -297,7 +316,7 @@ watch(() => appStore.activeRepositoryFilePreviewPath, () => { markdownRendered.v
             ? tr("inspector.filesCapReached", { count: visibleFiles.length })
             : tr("inspector.showingFiles", { shown: visibleFiles.length, total: fileMatches.length }) }}</div>
           <template v-if="fileTree.length">
-            <div class="file-tree">
+            <div ref="fileTreeElement" class="file-tree" @scroll.passive="rememberTreeScroll">
             <FileTreeNode
               v-for="node in fileTree"
               :key="`${node.directory}-${node.path}`"
