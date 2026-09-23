@@ -854,6 +854,10 @@ export const useAppStore = defineStore("app", {
     repositoryLoadingByWorkspace: {} as Record<string, boolean>,
     repositoryErrorByWorkspace: {} as Record<string, string>,
     repositoryStaleByWorkspace: {} as Record<string, boolean>,
+    // Which repository directories the user has opened, per workspace. Lives in the store (not in
+    // FileTreeNode) because opening a file preview unmounts the whole tree, and the lifetime matches
+    // `repositoryByWorkspace` - both are in-memory caches, nothing is written to desktop state.
+    repositoryTreeExpandedByWorkspace: {} as Record<string, Record<string, boolean>>,
     repositoryRefreshGenerationByWorkspace: {} as Record<string, number>,
     repositoryDiffByWorkspace: {} as Record<string, RepositoryDiffView | undefined>,
     repositoryDiffPathByWorkspace: {} as Record<string, string>,
@@ -993,6 +997,14 @@ export const useAppStore = defineStore("app", {
     activeRepository(state): RepositorySnapshot | undefined {
       const thread = state.threads.find((item) => item.id === state.activeThreadId);
       return thread ? state.repositoryByWorkspace[repositoryKey(thread)] : undefined;
+    },
+    activeRepositoryTreeKey(state): string {
+      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      return thread ? repositoryKey(thread) : "";
+    },
+    activeRepositoryTreeExpanded(state): Record<string, boolean> {
+      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      return (thread && state.repositoryTreeExpandedByWorkspace[repositoryKey(thread)]) || {};
     },
     activeRepositoryLoading(state): boolean {
       const thread = state.threads.find((item) => item.id === state.activeThreadId);
@@ -1543,6 +1555,14 @@ export const useAppStore = defineStore("app", {
       const inside = Boolean(root) && (normalized === root || normalized.startsWith(`${root}/`));
       this.insertFileMention(inside ? normalized.slice(root.length + 1) : normalized);
       return { path: normalized, external: !inside };
+    },
+    toggleRepositoryTreeDirectory(directory: string) {
+      const key = this.activeRepositoryTreeKey;
+      if (!key || !directory) return;
+      const record = this.repositoryTreeExpandedByWorkspace[key] ?? (this.repositoryTreeExpandedByWorkspace[key] = {});
+      // The default is "top level open", so collapsing a root directory for the first time has to
+      // write an explicit false instead of just flipping an absent entry.
+      record[directory] = !(record[directory] ?? directory.split("/").length === 1);
     },
     async refreshActiveRepository(threadID?: string) {
       const thread = this.threads.find((item) => item.id === (threadID || this.activeThreadId));

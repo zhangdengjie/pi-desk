@@ -3750,6 +3750,36 @@ describe("app store", () => {
     expect(store.activeDraft).toBe("Keep this ");
   });
 
+  it("records repository tree expansion per workspace and keeps the top-level default", () => {
+    const store = useAppStore();
+    store.$patch({
+      threads: [
+        { id: "t-a", title: "A", workspace: "repo-a", workspacePath: "D:\\repo-a", trust: "approve", status: "idle", started: false, generation: 0 },
+        { id: "t-b", title: "B", workspace: "repo-b", workspacePath: "D:\\repo-b", trust: "approve", status: "idle", started: false, generation: 0 },
+      ],
+      activeThreadId: "t-a",
+    });
+
+    expect(store.activeRepositoryTreeExpanded).toEqual({});
+    store.toggleRepositoryTreeDirectory("src");
+    store.toggleRepositoryTreeDirectory("src/deep");
+
+    // A root directory defaults to open, so collapsing it records false.
+    expect(store.repositoryTreeExpandedByWorkspace["d:/repo-a"]).toEqual({ src: false, "src/deep": true });
+
+    store.activeThreadId = "t-b";
+    expect(store.activeRepositoryTreeExpanded).toEqual({});
+    store.toggleRepositoryTreeDirectory("docs");
+    // Same default rule applies to the other workspace's root: first click collapses.
+    expect(store.repositoryTreeExpandedByWorkspace["d:/repo-b"]).toEqual({ docs: false });
+    store.toggleRepositoryTreeDirectory("docs");
+    expect(store.repositoryTreeExpandedByWorkspace["d:/repo-b"]).toEqual({ docs: true });
+    expect(Object.keys(store.repositoryTreeExpandedByWorkspace).sort()).toEqual(["d:/repo-a", "d:/repo-b"]);
+
+    store.toggleRepositoryTreeDirectory("");
+    expect(store.repositoryTreeExpandedByWorkspace["d:/repo-b"]).toEqual({ docs: true });
+  });
+
   it("marks only the just-inserted mention draft as a programmatic insert", async () => {
     const store = useAppStore();
     store.$patch({

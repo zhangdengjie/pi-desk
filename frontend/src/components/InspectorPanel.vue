@@ -305,6 +305,8 @@ watch(() => appStore.activeRepositoryFilePreviewPath, () => { markdownRendered.v
               :change-statuses="changeStatusByPath"
               :rollback-actions="rollbackActions"
               :rollback-armed="rollbackArmed"
+              :expanded="appStore.activeRepositoryTreeExpanded"
+              @toggle-directory="appStore.toggleRepositoryTreeDirectory"
               @open="openTreeFile"
               @diff="appStore.openRepositoryDiff"
               @mention="appStore.insertFileMention"

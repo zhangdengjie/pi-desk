@@ -128,6 +128,45 @@ describe("InspectorPanel", () => {
     expect(wrapper.text()).not.toContain("All files");
   });
 
+  it("keeps the tree expanded across opening and closing a file preview", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-tree", title: "Tree", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-tree",
+      repositoryByWorkspace: { "d:/repo": {
+        files: [
+          { path: "src/index.ts", name: "index.ts" },
+          { path: "src/deep/nested.ts", name: "nested.ts" },
+        ],
+        git: { isRepository: true, files: [] },
+      } },
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    repositoryMocks.previewFile.mockResolvedValue({
+      path: "src/index.ts", absolutePath: "D:\\repo\\src\\index.ts", content: "x", size: 1, binary: false, truncated: false,
+    });
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+
+    // `src` starts open, `src/deep` does not.
+    expect(wrapper.find('button[title="Preview src/deep/nested.ts"]').exists()).toBe(false);
+    await wrapper.get('button[title="Expand folder"]').trigger("click");
+    expect(wrapper.find('button[title="Preview src/deep/nested.ts"]').exists()).toBe(true);
+
+    // Opening a preview unmounts the whole tree; the expansion has to survive that round trip.
+    await wrapper.get('button[title="Preview src/index.ts"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find(".inspector-file-header").exists()).toBe(true);
+    await wrapper.get('button[title="Close file preview"]').trigger("click");
+
+    expect(wrapper.find('button[title="Preview src/deep/nested.ts"]').exists()).toBe(true);
+    expect(store.repositoryTreeExpandedByWorkspace["d:/repo"]).toEqual({ "src/deep": true });
+  });
+
   it("lists every workspace file up to the backend cap instead of the first 500", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

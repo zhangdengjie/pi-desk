@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { AtSign, ChevronDown, ChevronRight, File, Folder, FolderOpen, Undo2 } from "lucide-vue-next";
-import { ref } from "vue";
+import { computed } from "vue";
 import type { RepositoryTreeNode } from "../utils/fileMentions";
 
 const props = defineProps<{
@@ -9,14 +9,26 @@ const props = defineProps<{
   changeStatuses?: Record<string, string>;
   rollbackActions?: Record<string, string>;
   rollbackArmed?: Record<string, boolean>;
+  /** Expanded directories of the current workspace, owned by the store so the state survives the
+   *  file preview unmounting the whole tree. Absent entries fall back to "top level open". */
+  expanded?: Record<string, boolean>;
 }>();
 const emit = defineEmits<{
   mention: [path: string, directory: boolean];
   open: [path: string];
   diff: [path: string];
   rollback: [path: string];
+  toggleDirectory: [path: string];
 }>();
-const open = ref((props.depth ?? 0) === 0);
+const open = computed(() => props.expanded?.[props.node.path] ?? (props.depth ?? 0) === 0);
+
+function toggleDirectory() {
+  if (props.node.directory) emit("toggleDirectory", props.node.path);
+}
+
+function forwardToggleDirectory(path: string) {
+  emit("toggleDirectory", path);
+}
 
 function forwardMention(path: string, directory: boolean) {
   emit("mention", path, directory);
@@ -42,7 +54,7 @@ function forwardRollback(path: string) {
        flattened the indentation, the grid columns and the muted/hover text colours. -->
   <div class="file-tree-node">
     <div class="file-tree-row">
-      <button v-if="node.directory" class="file-tree-toggle" type="button" :title="open ? 'Collapse folder' : 'Expand folder'" @click="open = !open">
+      <button v-if="node.directory" class="file-tree-toggle" type="button" :title="open ? 'Collapse folder' : 'Expand folder'" @click="toggleDirectory">
         <ChevronDown v-if="open" :size="13" />
         <ChevronRight v-else :size="13" />
       </button>
@@ -50,7 +62,7 @@ function forwardRollback(path: string) {
       <FolderOpen v-if="node.directory && open" :size="14" />
       <Folder v-else-if="node.directory" :size="14" />
       <File v-else :size="14" />
-      <span v-if="node.directory" class="file-tree-name" :title="node.path" @click="open = !open">{{ node.name }}</span>
+      <span v-if="node.directory" class="file-tree-name" :title="node.path" @click="toggleDirectory">{{ node.name }}</span>
       <button
         v-else
         class="file-tree-name file-tree-open"
@@ -92,6 +104,8 @@ function forwardRollback(path: string) {
         :change-statuses="changeStatuses"
         :rollback-actions="rollbackActions"
         :rollback-armed="rollbackArmed"
+        :expanded="expanded"
+        @toggle-directory="forwardToggleDirectory"
         @mention="forwardMention"
         @open="forwardOpen"
         @diff="forwardDiff"
