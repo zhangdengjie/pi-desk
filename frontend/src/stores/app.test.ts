@@ -2351,6 +2351,29 @@ describe("app store", () => {
     expect(store.extensionRequestsPendingByThread[thread.id]).toEqual([]);
   });
 
+  it("answers a blocking prompt it cannot render instead of hanging the turn", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "deny");
+    const thread = store.activeThread!;
+    thread.generation = 2;
+    thread.started = true;
+
+    // `select` without options is dropped by blockingExtensionRequest (`stores/app.ts:452`), but Pi
+    // still waits for a response on it - the shape behind "plan mode will not exit, the transcript
+    // just keeps spinning": the turn is parked on a dialog that has nothing to click.
+    store.handlePiEvent({
+      threadId: thread.id,
+      event: { generation: 2, type: "extension_ui_request", payload: { id: "ui-empty", method: "select", title: "Pick one", options: [] } },
+    });
+
+    expect(store.extensionRequestByThread[thread.id]).toBeUndefined();
+    expect(mocks.respondExtensionUI).toHaveBeenCalledWith({ threadId: thread.id, requestId: "ui-empty", cancelled: true });
+    const notice = store.messagesByThread[thread.id].at(-1);
+    expect(notice?.role).toBe("system");
+    // Both locales interpolate the method name, so the note is assertable without pinning a language.
+    expect(notice?.text).toContain("select");
+  });
+
   it("prompts the next queued request even when answering the current one fails", async () => {
     const store = useAppStore();
     await store.createThread("D:\\work\\repo", "deny");

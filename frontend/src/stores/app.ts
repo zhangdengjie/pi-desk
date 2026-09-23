@@ -3572,14 +3572,20 @@ export const useAppStore = defineStore("app", {
             const projected = blockingExtensionRequest(payload);
             if (projected) {
               this.queueExtensionRequest(thread.id, projected);
-            } else if (request.placeholder === BATCH_ASK_PLACEHOLDER) {
-              const requestID = boundedExtensionText(request.id, 256).trim();
-              delete this.extensionRequestByThread[thread.id];
-              if (requestID) {
-                void agentService.respondExtensionUI({ threadId: thread.id, requestId: requestID, cancelled: true });
-              }
-              this.appendSystem(thread.id, tr("extension.invalidBatchRequest"), tr("extension.invalidBatchRequest"));
+              break;
             }
+            // A blocking frame we refuse to render must still be answered: Pi parks the whole turn on
+            // it, so the transcript keeps spinning with nothing to click. `@narumitw/pi-tui-kit` maps a
+            // cancelled select to `{kind:"closed",reason:"back"}`, which unwinds the extension cleanly
+            // (this is also what `abortActiveThread` does for prompts left over when you press Stop).
+            const requestID = boundedExtensionText(request.id, 256).trim();
+            if (!requestID) break;
+            delete this.extensionRequestByThread[thread.id];
+            void agentService.respondExtensionUI({ threadId: thread.id, requestId: requestID, cancelled: true });
+            const notice = request.placeholder === BATCH_ASK_PLACEHOLDER
+              ? tr("extension.invalidBatchRequest")
+              : tr("extension.unrenderableRequest", { method: request.method });
+            this.appendSystem(thread.id, notice, notice);
           } else if (request.method === "notify" && request.message) {
             const notifyMessage = boundedExtensionText(request.message, 8192);
             if (!notifyMessage || isInternalRuntimeNotice(notifyMessage)) break;
