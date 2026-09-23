@@ -132,20 +132,21 @@ describe("message editor theme colors", () => {
     expect(scroll).toMatch(/overflow-x:\s*auto/);
     const table = firstRuleBody(layout, ".markdown-body table");
     expect(table).toMatch(/width:\s*max-content/);
-    // A two-column table should fill a maximised preview; the cell ceiling is
-    // relative to the pane, so stretching can no longer break it.
+    // Clamped on both sides: a short table fills the pane, a long one wraps into
+    // the columns until the per-cell floor forces the scroll wrapper instead.
     expect(table).toMatch(/min-width:\s*100%/);
+    expect(table).toMatch(/max-width:\s*100%/);
     // display:block on the table itself is what squeezed CJK cells into vertical text.
     expect(table).not.toMatch(/display:/);
     expect(table).not.toMatch(/overflow/);
-    expect(scroll).toMatch(/container-type:\s*inline-size/);
     const cell = firstRuleBody(layout, ".markdown-body .markdown-cell");
-    expect(cell).toMatch(/max-width:\s*max\(var\(--markdown-cell-wrap-min\),\s*65cqi\)/);
+    expect(cell).toMatch(/min-width:\s*var\(--markdown-cell-wrap-min\)/);
     expect(cell).toMatch(/overflow-wrap:\s*anywhere/);
-    // The ceiling is a token, so themes/densities can retune it in one place.
+    // The floor is a token, so themes/densities can retune it in one place.
     expect(await tokensText()).toMatch(/--markdown-cell-wrap-min:\s*340px/);
-    // And it must not move onto the cell itself — WebKit ignores it there.
+    // And it must not move onto the cell itself — WebKit ignores width there.
     expect(firstRuleBody(layout, ".markdown-body th,\n.markdown-body td")).not.toMatch(/max-width/);
+    expect(firstRuleBody(layout, ".markdown-body th,\n.markdown-body td")).not.toMatch(/min-width/);
     // Code blocks keep their own alignment instead of re-wrapping box-drawing output.
     expect(firstRuleBody(layout, ".markdown-body pre")).toMatch(/white-space:\s*pre;/);
     expect(firstRuleBody(layout, ".oversized-message")).toMatch(/white-space:\s*pre-wrap/);

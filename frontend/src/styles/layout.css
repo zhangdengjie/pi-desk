@@ -1790,17 +1790,19 @@
   margin: 9px 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  /* Query container for the cell ceiling: cqi resolves against this box's visible
-     width, so a wide preview gets wide cells and a narrow one still scrolls. */
-  container-type: inline-size;
 }
 
-/* Stretching the table to the pane is what makes a two-column table fill a wide
-   preview; the per-cell ceiling below is relative to that pane, so stretching can
-   no longer push a column past it. */
+/* The table asks for its content width but is clamped to the pane on both sides:
+     min-width  -> a short table still fills the preview instead of floating top-left
+     max-width  -> a long table never exceeds the preview, it wraps instead
+   It can still end up wider than the pane when the per-cell floor below does not
+   fit: that overflow is what the scroll wrapper turns into a horizontal scrollbar.
+   display:block on the table itself is what used to squeeze CJK cells into vertical
+   text, so it stays a table. */
 .markdown-body table {
   width: max-content;
   min-width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
 }
 
@@ -1811,13 +1813,13 @@
   text-align: left;
 }
 
-/* Per-column ceiling: without it a table sized to max-content renders a whole
-   sentence on one line. Relative to the scroll pane (floored at 340px) so a
-   two-column table in a maximised preview does not stack text into a narrow strip.
-   It has to sit on this block child — WebKit ignores max-width on a <th>/<td> whose
+/* Per-column floor. The table is clamped to the pane, so without a floor the
+   columns squeeze down to their min-content — one CJK glyph per line. With it,
+   columns that cannot fit make the table overflow and scroll instead. It has to
+   live on this block child: WebKit ignores width properties on a <th>/<td> whose
    content is bare text (see MarkdownBody.vue). */
 .markdown-body .markdown-cell {
-  max-width: max(var(--markdown-cell-wrap-min), 65cqi);
+  min-width: var(--markdown-cell-wrap-min);
   overflow-wrap: anywhere;
 }
 
