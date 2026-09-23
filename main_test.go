@@ -3,10 +3,23 @@ package main
 import (
 	"testing"
 
+	"pi-desk/internal/appdirs"
 	"pi-desk/internal/domain"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
+
+// defaultStatePathInTest resolves the state path a normal desktop run would use, i.e. with no
+// PI_DESK_DATA_DIR override in the environment.
+func defaultStatePathInTest(t *testing.T) string {
+	t.Helper()
+	t.Setenv(appdirs.DataDirEnv, "")
+	path, err := appdirs.StatePath()
+	if err != nil {
+		t.Fatalf("resolve default state path: %v", err)
+	}
+	return path
+}
 
 func TestCenteredWindowStateFitsFirstLaunchToPrimaryWorkArea(t *testing.T) {
 	screens := []*application.Screen{{
@@ -115,7 +128,7 @@ func TestConstrainWindowStateLeavesInvalidStateUntouched(t *testing.T) {
 
 func TestSingleInstanceOptionsBlocksSecondProcessUnlessOptedOut(t *testing.T) {
 	t.Setenv("PI_DESK_ALLOW_MULTI_INSTANCE", "")
-	options := singleInstanceOptions()
+	options := singleInstanceOptions(defaultStatePathInTest(t))
 	if options == nil {
 		t.Fatal("expected a second Pi Desk process to be refused by default")
 	}
@@ -127,7 +140,34 @@ func TestSingleInstanceOptionsBlocksSecondProcessUnlessOptedOut(t *testing.T) {
 	}
 
 	t.Setenv("PI_DESK_ALLOW_MULTI_INSTANCE", "1")
-	if got := singleInstanceOptions(); got != nil {
+	if got := singleInstanceOptions("/tmp/whatever/state.json"); got != nil {
 		t.Fatalf("expected the opt-out to disable the lock, got %+v", got)
+	}
+}
+
+func TestSingleInstanceOptionsScopesTheLockToTheDataDirectory(t *testing.T) {
+	t.Setenv("PI_DESK_ALLOW_MULTI_INSTANCE", "")
+
+	defaultOptions := singleInstanceOptions(defaultStatePathInTest(t))
+	sandboxOptions := singleInstanceOptions("/tmp/pi-desk-sandbox/state.json")
+	if defaultOptions.UniqueID == sandboxOptions.UniqueID {
+		t.Fatalf(
+			"a sandbox instance would be refused by the running desktop: both use lock %q",
+			defaultOptions.UniqueID,
+		)
+	}
+	if again := singleInstanceOptions("/tmp/pi-desk-sandbox/state.json"); again.UniqueID != sandboxOptions.UniqueID {
+		t.Fatal("two processes on the same data directory must still block each other")
+	}
+}
+
+func TestInstanceTitleMarksSandboxRuns(t *testing.T) {
+	t.Setenv(appdirs.DataDirEnv, "")
+	if got := instanceTitle(); got != "Pi Desk" {
+		t.Fatalf("title = %q, want the unbranded default", got)
+	}
+	t.Setenv(appdirs.DataDirEnv, "/tmp/pi-desk-sandbox")
+	if got := instanceTitle(); got == "Pi Desk" {
+		t.Fatal("a verification instance must be distinguishable in the title bar and tray")
 	}
 }

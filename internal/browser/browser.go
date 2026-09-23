@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"pi-desk/internal/appdirs"
 )
 
 const (
@@ -31,16 +32,10 @@ var ErrBrowserNotRunning = errors.New("managed browser is not running; ask Pi to
 
 // ProfileDir is the dedicated Chromium user data directory, shared with the
 // extension (LOCALAPPDATA on Windows so browser caches stay out of Roaming).
+// PI_DESK_DATA_DIR moves it next of the relocated state file, so a verification
+// instance never fights the running one over a locked Chromium profile.
 func ProfileDir() (string, error) {
-	base := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
-	if base == "" {
-		config, err := os.UserConfigDir()
-		if err != nil {
-			return "", fmt.Errorf("resolve browser profile directory: %w", err)
-		}
-		base = config
-	}
-	return filepath.Join(base, "pi-desk", "browser"), nil
+	return appdirs.BrowserProfileDir()
 }
 
 // ReadPortFile parses DevToolsActivePort: line one is the port, line two the

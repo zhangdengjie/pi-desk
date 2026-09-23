@@ -5,11 +5,13 @@ import (
 	"embed"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"pi-desk/internal/appdirs"
 	"pi-desk/internal/appservice"
 	"pi-desk/internal/domain"
 	"pi-desk/internal/piruntime"
@@ -65,21 +67,30 @@ const (
 	defaultWindowHeight = 900
 	minimumWindowWidth  = 980
 	minimumWindowHeight = 680
-	// singleInstanceID names the flock file Wails keeps in the temp directory.
-	singleInstanceID = "com.pidesk.desktop"
 )
+
+// instanceTitle marks a PI_DESK_DATA_DIR run in the window title and tray tooltip, so a
+// verification instance can never be mistaken for the desktop the user is working in.
+func instanceTitle() string {
+	if appdirs.Overridden() {
+		return "Pi Desk \u00b7 sandbox"
+	}
+	return "Pi Desk"
+}
 
 // singleInstanceOptions keeps a second Pi Desk from starting. Two processes share one state.json
 // but each holds its own in-memory workspace catalog, so whichever writes last silently drops the
 // other's registrations - that is the "workspace is not registered" report of 2026-09-22.
 // Wails uses flock(LOCK_EX|LOCK_NB), so a crashed process releases the lock with no stale file to
-// clean up. PI_DESK_ALLOW_MULTI_INSTANCE opts out, which is also how you verify this by hand.
-func singleInstanceOptions() *application.SingleInstanceOptions {
+// clean up. The lock is scoped to statePath, so a PI_DESK_DATA_DIR sandbox instance runs beside the
+// user's desktop instead of being refused by it. PI_DESK_ALLOW_MULTI_INSTANCE opts out entirely,
+// which is also how you verify the double-instance corruption by hand.
+func singleInstanceOptions(statePath string) *application.SingleInstanceOptions {
 	if os.Getenv("PI_DESK_ALLOW_MULTI_INSTANCE") != "" {
 		return nil
 	}
 	return &application.SingleInstanceOptions{
-		UniqueID: singleInstanceID,
+		UniqueID: appdirs.InstanceIDFor(statePath),
 		OnSecondInstanceLaunch: func(application.SecondInstanceData) {
 			// The second process exits right after delivering this; the user gets the window back.
 			window, found := application.Get().Window.GetByName("main")
@@ -189,6 +200,9 @@ func main() {
 		log.Fatal(err)
 	}
 	catalog := workspace.NewCatalog(statePath)
+	if appdirs.Overridden() {
+		log.Printf("pi-desk: sandbox instance, writable state under %s", filepath.Dir(statePath))
+	}
 	remoteRuntimes := remotessh.NewRuntimeRegistry()
 	defer func() {
 		if shutdownErr := remoteRuntimes.Close(5 * time.Second); shutdownErr != nil {
@@ -247,9 +261,9 @@ func main() {
 	catalogService := appservice.NewCatalogService(catalog, sessionIndex, remoteCatalog)
 
 	app := application.New(application.Options{
-		Name:           "Pi Desk",
+		Name:           instanceTitle(),
 		Description:    "A desktop interface for the Pi coding agent",
-		SingleInstance: singleInstanceOptions(),
+		SingleInstance: singleInstanceOptions(statePath),
 		Services: []application.Service{
 			application.NewService(notificationService),
 			application.NewService(desktopService),
@@ -289,7 +303,7 @@ func main() {
 	windowState = constrainWindowState(windowState, screens)
 	windowOptions := application.WebviewWindowOptions{
 		Name:            "main",
-		Title:           "Pi Desk",
+		Title:           instanceTitle(),
 		Width:           defaultWindowWidth,
 		Height:          defaultWindowHeight,
 		MinWidth:        minimumWindowWidth,
@@ -394,7 +408,7 @@ func main() {
 	})
 	systemTray := app.SystemTray.New()
 	systemTray.SetIcon(trayIcon)
-	systemTray.SetTooltip("Pi Desk")
+	systemTray.SetTooltip(instanceTitle())
 	trayMenu := app.NewMenu()
 	trayMenu.Add("显示 Pi Desk").OnClick(func(*application.Context) { showWindow() })
 	trayMenu.Add("退出 Pi Desk").OnClick(func(*application.Context) {

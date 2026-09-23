@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/natefinch/atomic"
+	"pi-desk/internal/appdirs"
 )
 
 const stateVersion = 6
@@ -129,12 +130,11 @@ type Catalog struct {
 	desktop DesktopRecord
 }
 
+// DefaultStatePath is the desktop state file. PI_DESK_DATA_DIR relocates it together with the
+// browser profile and the remote anchors, which is how a verification instance avoids sharing
+// state with the running one - see internal/appdirs.
 func DefaultStatePath() (string, error) {
-	directory, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("locate user configuration directory: %w", err)
-	}
-	return filepath.Join(directory, "pi-desk", "state.json"), nil
+	return appdirs.StatePath()
 }
 
 func NewCatalog(path string) *Catalog {
