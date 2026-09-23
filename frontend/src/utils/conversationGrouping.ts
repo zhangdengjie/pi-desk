@@ -72,6 +72,7 @@ function mergeAssistantRun(messages: TimelineMessage[], turnStartedAt?: number):
   return {
     ...finalMessage,
     id: finalMessage.id,
+    turnKey: messages[0].id,
     text: finalTagged.text,
     thinking: "",
     thinkingCount: steps.filter((step) => step.kind === "thinking").length,

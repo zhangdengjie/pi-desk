@@ -201,6 +201,48 @@ describe("ConversationPane", () => {
     wrapper.unmount();
   });
 
+  it("keeps an opened reasoning block across the row remount a new assistant message causes", async () => {
+    const store = useAppStore();
+    store.threads = [{
+      id: "thread-1", title: "Streaming task", workspace: "repo", workspacePath: "D:\\repo",
+      trust: "deny", status: "running", started: true, generation: 1,
+    }];
+    store.activeThreadId = "thread-1";
+    store.messagesByThread["thread-1"] = [
+      { id: "u1", role: "user", text: "Go", thinking: "", timestamp: "10:00", streaming: false, tools: [] },
+      { id: "a1", role: "assistant", text: "", thinking: "Reading the scroll code", timestamp: "10:01", streaming: true, tools: [] },
+    ];
+    const wrapper = mount(ConversationPane, { global: { stubs: { ComposerBar: true } } });
+    await flushPromises();
+
+    const rowIds = () => wrapper.findAll(".message-row").map((row) => row.attributes("data-message-id"));
+    expect(rowIds()).toEqual(["u1", "a1"]);
+    const block = wrapper.get(".thinking-block");
+    expect(block.attributes("open")).toBeUndefined();
+    (block.element as HTMLDetailsElement).open = true;
+    await block.trigger("toggle");
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
+    const blockElement = wrapper.get(".thinking-block").element;
+    const reasoningBody = wrapper.get(".thinking-block .thinking-body").element as HTMLElement;
+    reasoningBody.scrollTop = 120;
+
+    // The next Pi message of the same run moves the merged row id. The row key
+    // follows the run instead, so the panels keep their DOM node, their open
+    // state, and the reader's place inside a long reasoning block.
+    store.messagesByThread["thread-1"].push(
+      { id: "a2", role: "assistant", text: "Still working", thinking: "", timestamp: "10:02", streaming: true, tools: [] },
+    );
+    await nextTick();
+    await flushPromises();
+
+    expect(rowIds()).toEqual(["u1", "a2"]);
+    expect(wrapper.get(".thinking-block").element).toBe(blockElement);
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
+    expect((wrapper.get(".thinking-block .thinking-body").element as HTMLElement).scrollTop).toBe(120);
+    expect(wrapper.get(".thinking-block .thinking-body").text()).toBe("Reading the scroll code");
+    wrapper.unmount();
+  });
+
   it("shows the temporary thinking status only while waiting for backend output", async () => {
     const store = useAppStore();
     store.threads = [{

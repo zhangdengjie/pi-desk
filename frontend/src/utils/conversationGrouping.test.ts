@@ -19,6 +19,22 @@ describe("groupConversationTurns", () => {
     expect(grouped[1].executionSteps?.map((step) => step.kind)).toEqual(["thinking", "tools", "thinking"]);
   });
 
+  it("pins the row key to the first message of the run so panels survive the next append", () => {
+    const started = groupConversationTurns([
+      message({ id: "user", role: "user", text: "Change it" }),
+      message({ id: "work", role: "assistant", thinking: "Inspect", streaming: true }),
+    ]);
+    const grown = groupConversationTurns([
+      message({ id: "user", role: "user", text: "Change it" }),
+      message({ id: "work", role: "assistant", thinking: "Inspect" }),
+      message({ id: "final", role: "assistant", text: "Done", streaming: true }),
+    ]);
+
+    expect(started[1]).toMatchObject({ id: "work", turnKey: "work" });
+    // The answer id moved, the row identity did not.
+    expect(grown[1]).toMatchObject({ id: "final", turnKey: "work" });
+  });
+
   it("marks only the currently streaming reasoning step active", () => {
     const grouped = groupConversationTurns([
       message({ id: "user", role: "user", text: "Inspect", timestampMs: 1000 }),

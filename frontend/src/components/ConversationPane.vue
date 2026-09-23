@@ -45,7 +45,7 @@ const streamSignal = computed(() => {
 const virtualizer = useVirtualizer(computed(() => ({
   count: shouldVirtualize.value ? messages.value.length : 0,
   getScrollElement: () => timeline.value ?? null,
-  getItemKey: (index: number) => messages.value[index]?.id ?? index,
+  getItemKey: (index: number) => messages.value[index]?.turnKey ?? messages.value[index]?.id ?? index,
   estimateSize: (index: number) => estimateMessageSize(messages.value[index]),
   overscan: 6,
 })));
@@ -440,7 +440,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <ConversationMessage v-else v-for="message in messages" :key="message.id" :message="message" :search-query="searchQuery" :search-active="message.id === activeSearchMessageId" />
+      <ConversationMessage v-else v-for="message in messages" :key="message.turnKey ?? message.id" :message="message" :search-query="searchQuery" :search-active="message.id === activeSearchMessageId" />
       <div
         v-if="appStore.activeWaitingForOutput && !appStore.activeRetry"
         class="waiting-for-output mt-3 inline-flex size-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-raised)] text-[var(--text-secondary)] shadow-sm"

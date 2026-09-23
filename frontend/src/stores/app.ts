@@ -165,6 +165,12 @@ export interface TimelineRunNotice {
 
 export interface TimelineMessage {
   id: string;
+  /**
+   * Stable v-for identity for a merged assistant run. `id` follows the *final*
+   * message, so it flips every time Pi appends another assistant message; using
+   * it as the row key remounted the row mid-run and reset every panel under it.
+   */
+  turnKey?: string;
   entryId?: string;
   role: "user" | "assistant" | "system";
   text: string;
