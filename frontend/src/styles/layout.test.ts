@@ -19,7 +19,8 @@ function ruleBodies(layout: string, selector: string): string[] {
     const close = layout.indexOf("}", open + 1);
     if (close < 0) break;
     const previousClose = layout.lastIndexOf("}", open - 1);
-    const candidate = layout.slice(previousClose + 1, open).trim();
+    // Comments before a selector are documentation, not part of the selector.
+    const candidate = layout.slice(previousClose + 1, open).replace(/\/\*[\s\S]*?\*\//g, "").trim();
     if (candidate === selector) result.push(layout.slice(open + 1, close));
     cursor = close + 1;
   }
@@ -81,6 +82,15 @@ describe("conversation scroll rail", () => {
     expect(firstRuleBody(layout, ".conversation-outline-preview")).toMatch(/left:\s*40px/);
   });
 });
+
+describe("reasoning window and tail control", () => {
+  it("gives live reasoning a fixed height so streaming cannot push the answer down", async () => {
+    const layout = await layoutText();
+    const panel = firstRuleBody(layout, ".thinking-block .thinking-body");
+    expect(panel).toMatch(/max-height:\s*300px/);
+    expect(panel).toMatch(/overflow:\s*auto/);
+    expect(firstRuleBody(layout, ".thinking-block .thinking-body.is-live")).toMatch(/height:\s*168px/);
+  });
 
 describe("message editor theme colors", () => {
   it("restores Markdown list markers after the global CSS reset", async () => {

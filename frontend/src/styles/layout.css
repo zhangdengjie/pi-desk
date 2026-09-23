@@ -985,6 +985,14 @@
   pointer-events: none;
 }
 
+/* A live reasoning block gets a fixed height instead of the max-height cap: the
+   panel must not grow token by token and push the answer below it down, which is
+   what read as flicker while the model thought. ConversationMessage keeps its
+   tail scrolled into view inside this window. */
+.thinking-block .thinking-body.is-live {
+  height: 168px;
+}
+
 .conversation-outline-scroll {
   width: 48px;
   height: 100%;

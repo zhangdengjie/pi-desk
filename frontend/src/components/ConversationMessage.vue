@@ -82,6 +82,7 @@ watch(() => [runNotice.value?.status, runNotice.value?.retryAt], () => {
   }
 }, { immediate: true });
 onBeforeUnmount(() => {
+  if (reasoningScrollFrame) cancelAnimationFrame(reasoningScrollFrame);
   if (retryTimer !== undefined) window.clearInterval(retryTimer);
 });
 const runNoticeLabel = computed(() => {
@@ -283,6 +284,27 @@ function syncReasoningOpen(step: ExecutionStep, event: Event) {
   if (details.open === renderedOpen.get(step.id)) return;
   pinPanelOpen(step.id, details.open);
 }
+
+// Only one step is live at a time, and its panel is a fixed-height window (see
+// .thinking-body.is-live). A growing block pushed everything under it down on
+// every token, which is the flicker readers see while the model thinks; now the
+// window keeps its size and pulls its own tail into view instead.
+const executionDetails = ref<HTMLElement>();
+const liveReasoning = computed(() => executionSteps.value.find((step) => step.kind === "thinking" && step.active === true));
+let reasoningScrollFrame = 0;
+
+watch(() => [liveReasoning.value?.id ?? "", liveReasoning.value?.text?.length ?? 0] as const, () => {
+  if (reasoningScrollFrame) return;
+  reasoningScrollFrame = requestAnimationFrame(() => {
+    reasoningScrollFrame = 0;
+    const step = liveReasoning.value;
+    if (!step) return;
+    const tail = [...executionDetails.value?.querySelectorAll<HTMLElement>(".thinking-block") ?? []]
+      .find((panel) => panel.dataset.stepId === step.id)
+      ?.querySelector<HTMLElement>(".thinking-body");
+    if (tail) tail.scrollTop = tail.scrollHeight;
+  });
+}, { flush: "post" });
 </script>
 
 <template>
@@ -325,9 +347,9 @@ function syncReasoningOpen(step: ExecutionStep, event: Event) {
           <span>{{ executionSummary }}</span>
           <LoaderCircle v-if="message.streaming" :size="12" class="is-spinning" aria-hidden="true" />
         </summary>
-        <div class="execution-process-details">
+        <div ref="executionDetails" class="execution-process-details">
           <template v-for="step in executionSteps" :key="step.id">
-            <details v-if="step.kind === 'thinking'" class="thinking-block" :open="reasoningOpen(step)" @toggle="syncReasoningOpen(step, $event)">
+            <details v-if="step.kind === 'thinking'" class="thinking-block" :data-step-id="step.id" :open="reasoningOpen(step)" @toggle="syncReasoningOpen(step, $event)">
               <summary>
                 <ChevronRight class="disclosure-icon" :size="13" aria-hidden="true" />
                 <BrainCircuit class="thinking-icon" :size="15" aria-hidden="true" />
@@ -335,6 +357,7 @@ function syncReasoningOpen(step: ExecutionStep, event: Event) {
               </summary>
               <MarkdownBody
                 class="thinking-body"
+                :class="{ 'is-live': step.active === true }"
                 :text="stepThinking(step)"
                 :streaming="false"
                 :search-query="searchQuery"

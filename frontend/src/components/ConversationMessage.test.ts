@@ -127,6 +127,33 @@ describe("ConversationMessage", () => {
     wrapper.unmount();
   });
 
+  it("keeps the live reasoning window a fixed size and scrolls its own tail into view", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const pinia = createPinia();
+    const message = (text: string, streaming = true) => ({
+      id: "live-window", role: "assistant" as const, text: "", thinking: text, timestamp: "10:07",
+      streaming, activeExecution: streaming ? "thinking" as const : undefined, tools: [],
+    });
+    const wrapper = mount(ConversationMessage, { props: { message: message("First part") }, global: { plugins: [pinia] } });
+    const body = wrapper.get(".thinking-block .thinking-body");
+    expect(body.classes()).toContain("is-live");
+    Object.defineProperty(body.element, "scrollHeight", { configurable: true, get: () => 900 });
+
+    await wrapper.setProps({ message: message("First part, then a lot more") });
+    await wrapper.vm.$nextTick();
+    while (frames.length) frames.shift()?.(0);
+
+    expect((body.element as HTMLElement).scrollTop).toBe(900);
+
+    await wrapper.setProps({ message: message("First part, then a lot more", false) });
+    expect(wrapper.get(".thinking-block .thinking-body").classes()).not.toContain("is-live");
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeUndefined();
+    wrapper.unmount();
+    vi.unstubAllGlobals();
+  });
+
   it("keeps a reader's expanded reasoning open when the next run message remounts the row", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
