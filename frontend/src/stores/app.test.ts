@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   checkRuntime: vi.fn(),
   checkForUpdates: vi.fn(),
   notifyDesktop: vi.fn(),
+  readUserConfig: vi.fn().mockResolvedValue({ path: "/home/tester/.pi-desk/config.json", streamPanels: "auto" }),
+  writeUserConfig: vi.fn(),
   listWorkspaces: vi.fn(),
   listWorkspaceApplications: vi.fn(),
   openWorkspaceWith: vi.fn(),
@@ -73,6 +75,8 @@ vi.mock("../services/desktop", () => ({
   checkRuntime: mocks.checkRuntime,
   checkForUpdates: mocks.checkForUpdates,
   notifyDesktop: mocks.notifyDesktop,
+  readUserConfig: mocks.readUserConfig,
+  writeUserConfig: mocks.writeUserConfig,
 }));
 vi.mock("../services/catalog", () => ({
   catalogService: {
@@ -265,6 +269,7 @@ describe("app store", () => {
     mocks.checkRuntime.mockResolvedValue({ state: "ready", version: "0.83.0", command: "pi.cmd" });
     mocks.checkForUpdates.mockResolvedValue({ status: "current", currentVersion: "0.1.0", latestVersion: "0.1.0", message: "Pi Desk is up to date" });
     mocks.notifyDesktop.mockResolvedValue(true);
+    mocks.readUserConfig.mockResolvedValue({ path: "/home/tester/.pi-desk/config.json", streamPanels: "auto" });
     mocks.startSession.mockResolvedValue({
       threadId: "thread-1",
       generation: 4,
@@ -4104,5 +4109,42 @@ describe("app store", () => {
 
     expect(store.activeWorkspaceIsRemote).toBe(true);
     expect(mocks.pickFile).not.toHaveBeenCalled();
+  });
+
+  it("reads the streaming panel policy out of the user's config file on bootstrap", async () => {
+    mocks.readUserConfig.mockResolvedValue({ path: "/home/tester/.pi-desk/config.json", streamPanels: "alwaysOpen" });
+    const store = useAppStore();
+    await store.initialize();
+
+    expect(store.streamPanels).toBe("alwaysOpen");
+    expect(store.userConfigPath).toBe("/home/tester/.pi-desk/config.json");
+    expect(store.userConfigError).toBe("");
+  });
+
+  it("keeps the shipped default when the file holds a value nobody knows", async () => {
+    mocks.readUserConfig.mockResolvedValue({ path: "/x/config.json", streamPanels: "yolo", error: "parse /x/config.json: boom" });
+    const store = useAppStore();
+    await store.initialize();
+
+    expect(store.streamPanels).toBe("auto");
+    expect(store.userConfigError).toContain("boom");
+  });
+
+  it("writes the policy back through the same file and re-reads what landed", async () => {
+    mocks.writeUserConfig.mockResolvedValue({ path: "/home/tester/.pi-desk/config.json", streamPanels: "alwaysClosed" });
+    const store = useAppStore();
+    await store.setStreamPanels("alwaysClosed");
+
+    expect(mocks.writeUserConfig).toHaveBeenCalledWith("alwaysClosed");
+    expect(store.streamPanels).toBe("alwaysClosed");
+  });
+
+  it("survives a desktop service that cannot answer", async () => {
+    mocks.readUserConfig.mockRejectedValue(new Error("binding unavailable"));
+    const store = useAppStore();
+    await store.loadUserConfig();
+
+    expect(store.streamPanels).toBe("auto");
+    expect(store.userConfigError).toContain("binding unavailable");
   });
 });

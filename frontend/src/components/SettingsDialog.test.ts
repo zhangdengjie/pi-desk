@@ -56,8 +56,13 @@ describe("SettingsDialog", () => {
       "[&_textarea]:!text-sm",
     ]));
     expect(wrapper.get(".settings-sections").classes()).not.toContain("[&>section]:px-1");
-    expect(wrapper.findAll(".settings-section-title")).toHaveLength(4);
-    expect(wrapper.findAll(".settings-card")).toHaveLength(4);
+    expect(wrapper.findAll(".settings-section-title")).toHaveLength(5);
+    expect(wrapper.findAll(".settings-card")).toHaveLength(5);
+    // The streaming block is the panel policy plus the file that holds it.
+    const streamSelect = wrapper.get('select[aria-label="Reasoning and tool windows"]');
+    expect(streamSelect.findAll("option")).toHaveLength(3);
+    expect((streamSelect.element as HTMLSelectElement).value).toBe("auto");
+    expect(wrapper.get('[data-testid="user-config-row"]').text()).toContain("Config file");
     expect(wrapper.find(".settings-card .settings-section-title").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Open a task to start Pi and change runtime behavior.");
     const updateRow = wrapper.get('[data-testid="update-check-row"]');

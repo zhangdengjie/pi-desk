@@ -30,6 +30,16 @@ export function isPanelPinnedOpen(id: string): boolean {
   return openPanels.get(id) === true;
 }
 
+/**
+ * The reader's choice, or `undefined` while they have not made one - which is the
+ * case the `streamPanels` mode still gets to decide. `isPanelPinnedOpen` cannot
+ * express that difference, and the modes need it: "closed because I clicked" and
+ * "closed because nobody said otherwise" are different questions after the run.
+ */
+export function panelOpenState(id: string): boolean | undefined {
+  return openPanels.get(id);
+}
+
 export function pinPanelOpen(id: string, open: boolean): void {
   remember(id, open);
 }

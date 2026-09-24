@@ -3,14 +3,14 @@
 import { ui } from "../ui/classes";
 import { ArrowUp, BrainCircuit, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Copy, FileDiff, GitFork, LoaderCircle, Pencil, RefreshCw, Save, Sparkles, Trash2, TriangleAlert, X } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import type { ExecutionStep, TimelineMessage, ToolDiff } from "../stores/app";
+import type { ExecutionStep, StreamPanelMode, TimelineMessage, ToolDiff } from "../stores/app";
 import { useAppStore } from "../stores/app";
 import type { PreparedImage } from "../utils/imageAttachments";
 import { resolveWorkspaceFileLink, type WorkspaceFileLink } from "../utils/fileLinks";
 import { mergeToolDiffs } from "../utils/toolDiff";
 import { parseSkillInvocation, replaceSkillInvocationUserMessage, skillInvocationCommandText } from "../utils/skillInvocation";
 import { splitTaggedThinking } from "../utils/taggedThinking";
-import { isPanelPinnedOpen, pinPanelOpen } from "../utils/detailsOpenState";
+import { panelOpenState, pinPanelOpen } from "../utils/detailsOpenState";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 import MarkdownBody from "./MarkdownBody.vue";
 import ToolCallPanel from "./ToolCallPanel.vue";
@@ -29,7 +29,6 @@ const editSubmitting = ref(false);
 const confirmingDelete = ref(false);
 const copied = ref(false);
 const previewImage = ref<PreparedImage>();
-const executionOpen = ref(props.message.streaming);
 const changedFilesExpanded = ref(false);
 const editBox = ref<HTMLTextAreaElement>();
 const skillInvocation = computed(() => props.message.role === "user" ? parseSkillInvocation(props.message.text) : undefined);
@@ -196,20 +195,18 @@ const durationLabel = computed(() => {
   return `${Math.floor(seconds / 60)}m${seconds % 60}s`;
 });
 
-watch(() => props.message.streaming, (streaming, wasStreaming) => {
-  if (streaming) executionOpen.value = true;
-  else if (wasStreaming) executionOpen.value = false;
+watch(() => props.message.id, () => {
+  changedFilesExpanded.value = false;
+  everLive.value = props.message.streaming;
 });
-watch(() => props.message.id, () => { changedFilesExpanded.value = false; });
 
 function syncExecutionOpen(event: Event) {
   const details = event.currentTarget as HTMLDetailsElement;
-  if (props.message.streaming && !details.open) {
-    details.open = true;
-    executionOpen.value = true;
-    return;
-  }
-  executionOpen.value = details.open;
+  // Vue writes `open` from the computed; a toggle that agrees with it is ours.
+  // Anything else is the reader, and their choice now outranks every mode - it used
+  // to be reverted mid-stream, which read as a control that did not work.
+  if (details.open === renderedOpen.get(executionKey.value)) return;
+  pinPanelOpen(executionKey.value, details.open);
 }
 
 function openChangedFile(file: ChangedFileSummary) {
@@ -268,25 +265,65 @@ function stepThinking(step: ExecutionStep): string {
 // Reasoning panels have to remember the reader's choice outside the DOM: a
 // merged run is keyed by its final message id, so every new Pi message in the
 // same turn remounts the row and a native <details> would open/close with it.
-// `renderedOpen` records what this instance last asked for, which is how the
-// toggle handler tells "the reader clicked" apart from "Vue wrote the prop".
+// `panelOpenState` is that memory; `undefined` means "never clicked", which is
+// exactly where the `streamPanels` mode is still allowed to decide.
+
+// `~/.pi-desk/config.json`. auto = the shipped behaviour, alwaysOpen = keep this
+// turn's windows up, alwaysClosed = nothing opens by itself.
+const panelMode = computed<StreamPanelMode>(() => appStore.streamPanels);
+// A turn that streamed in this window is readable material; a session loaded from
+// disk is not. Without this, `alwaysOpen` would open every historical reasoning
+// block of every old message the moment the transcript rendered.
+const everLive = ref(props.message.streaming);
+watch(() => props.message.streaming, (streaming) => {
+  if (streaming) everLive.value = true;
+});
+const executionKey = computed(() => `${props.message.id}-execution`);
+
+// Written during render, which is what lets a toggle handler tell "Vue asked for
+// this value" apart from "the reader clicked": the handler's `step` closure can
+// still belong to the previous render, while this map always holds the value that
+// render just wrote. Comparing against a recomputed value instead pins a panel
+// open the moment the live window appears.
 const renderedOpen = new Map<string, boolean>();
 
-// Live panels - the reasoning window and a running tool call - only take the
-// stage while there is no answer on screen yet. Once the answer starts streaming
-// its first line has to land where it will stay, so nothing may open or close
-// above it; reopening during the answer is exactly the teleport readers see.
-const livePanelsAllowed = computed(() => props.message.streaming && !visibleMessageText.value.trim());
+function panelDefault(live: boolean): boolean {
+  if (live) return true;
+  if (panelMode.value === "alwaysClosed" || !everLive.value) return false;
+  return panelMode.value === "alwaysOpen";
+}
+
+function openFor(id: string, live: boolean): boolean {
+  const open = panelOpenState(id) ?? panelDefault(live);
+  renderedOpen.set(id, open);
+  return open;
+}
+
+// The outer block is the window onto the run: in `auto` it is open exactly while the
+// run is on. The two explicit modes already answer that question, so "streaming" is
+// not allowed to force it open over `alwaysClosed`.
+const executionOpen = computed(() => openFor(
+  executionKey.value,
+  props.message.streaming && panelMode.value === "auto",
+));
+
+// Live windows - the reasoning window and a running tool call - only take the
+// stage while the run is on. `auto` hands the stage over as soon as the answer has
+// a character on screen, because a panel opening above the answer lifts it (the
+// teleport readers see at the end of a tool call). `alwaysOpen` keeps them for the
+// whole run: those windows have a fixed height (layout.css), so nothing grows and
+// nothing lifts, and the alternative is a block expanding under the answer.
+const livePanelsAllowed = computed(() => {
+  if (panelMode.value === "alwaysClosed" || !props.message.streaming) return false;
+  return panelMode.value === "alwaysOpen" ? true : !visibleMessageText.value.trim();
+});
 
 function liveReasoningWindow(step: ExecutionStep): boolean {
   return step.active === true && livePanelsAllowed.value;
 }
 
 function reasoningOpen(step: ExecutionStep): boolean {
-  // The live step still opens by itself; anything else is the reader's call.
-  const open = liveReasoningWindow(step) || isPanelPinnedOpen(step.id);
-  renderedOpen.set(step.id, open);
-  return open;
+  return openFor(step.id, liveReasoningWindow(step));
 }
 
 function syncReasoningOpen(step: ExecutionStep, event: Event) {
@@ -369,13 +406,13 @@ watch(() => [liveReasoning.value?.id ?? "", liveReasoning.value?.text?.length ??
                 class="thinking-body"
                 :class="{ 'is-live': liveReasoningWindow(step) }"
                 :text="stepThinking(step)"
-                :streaming="false"
+                :streaming="liveReasoningWindow(step)"
                 :search-query="searchQuery"
                 :search-active="searchActive"
               />
             </details>
             <template v-else-if="step.kind === 'tools'">
-              <ToolCallPanel v-for="tool in step.tools" :key="tool.id" :tool="tool" :allow-live="livePanelsAllowed" />
+              <ToolCallPanel v-for="tool in step.tools" :key="tool.id" :tool="tool" :allow-live="livePanelsAllowed" :panel-mode="panelMode" :run-is-live="everLive" />
             </template>
             <MarkdownBody v-else-if="step.text" :text="step.text" :streaming="false" :search-query="searchQuery" :search-active="searchActive" />
           </template>

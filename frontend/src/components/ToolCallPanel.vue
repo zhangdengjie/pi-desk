@@ -2,15 +2,16 @@
 import { ui } from "../ui/classes";
 import { Bot, Check, ChevronRight, CircleCheck, CircleX, Copy, LoaderCircle, SquareTerminal, Wrench } from "lucide-vue-next";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import type { ToolExecution } from "../stores/app";
+import type { StreamPanelMode, ToolExecution } from "../stores/app";
 import type { SubagentTaskState } from "../utils/subagentTasks";
 import { tr } from "../i18n";
-import { isPanelPinnedOpen, pinPanelOpen } from "../utils/detailsOpenState";
+import { panelOpenState, pinPanelOpen } from "../utils/detailsOpenState";
+import { useRevealedText } from "../composables/useRevealedText";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 
 // Vue casts an absent Boolean prop to false, so the live allowance needs an
 // explicit default or a standalone call would never open.
-const props = withDefaults(defineProps<{ tool: ToolExecution; allowLive?: boolean }>(), { allowLive: true });
+const props = withDefaults(defineProps<{ tool: ToolExecution; allowLive?: boolean; panelMode?: StreamPanelMode; runIsLive?: boolean }>(), { allowLive: true, panelMode: "auto", runIsLive: false });
 const copied = ref<"input" | "output" | "">("");
 const previewImage = ref<{ name: string; previewUrl: string }>();
 let copyResetTimer: ReturnType<typeof setTimeout> | undefined;
@@ -45,18 +46,32 @@ watch(eligibleForLiveWindow, (eligible) => {
 }, { immediate: true });
 
 const outputPanel = ref<HTMLElement>();
-let renderedOpen: boolean | undefined;
+
+// The same rule as the reasoning blocks: `alwaysOpen` only applies to a call of a
+// turn this window actually watched, never to the tool history of a loaded
+// session. A merged run remounts its row on every new Pi message, so "the parent
+// is still streaming" counts, and a call caught in flight counts on its own.
+const belongsToLiveRun = computed(() => props.runIsLive || props.tool.status === "running");
 
 const panelOpen = computed(() => {
-  const open = live.value || isPanelPinnedOpen(props.tool.id);
-  renderedOpen = open;
-  return open;
+  const pinned = panelOpenState(props.tool.id);
+  if (pinned !== undefined) return pinned;
+  // `alwaysClosed` means exactly that: not even the delayed live window gets through.
+  if (props.panelMode === "alwaysClosed") return false;
+  if (live.value) return true;
+  if (!belongsToLiveRun.value) return false;
+  return props.panelMode === "alwaysOpen";
 });
 
 // The live window keeps a constant height (layout.css), so the incoming output
 // has to be pulled into view instead of growing the row.
+//
+// A run's chunks arrive as whole partial results, which is a jump of a dozen lines at
+// a time. While the call runs, the window reveals them frame by frame and then follows
+// its own tail; the moment the call settles the full text is on screen.
+const shownOutput = useRevealedText(() => props.tool.output, () => props.tool.status === "running");
 let outputScrollFrame = 0;
-watch(() => [live.value, props.tool.output.length] as const, () => {
+watch(() => [live.value, shownOutput.value.length] as const, () => {
   if (!live.value || outputScrollFrame) return;
   outputScrollFrame = requestAnimationFrame(() => {
     outputScrollFrame = 0;
@@ -155,7 +170,7 @@ function syncOpen(event: Event) {
   const details = event.currentTarget as HTMLDetailsElement;
   // Ignore the toggle that our own prop write causes; only the reader's choice
   // belongs in the memory, which is what survives a row being re-created.
-  if (details.open === renderedOpen) return;
+  if (details.open === panelOpen.value) return;
   pinPanelOpen(props.tool.id, details.open);
 }
 
@@ -255,7 +270,7 @@ onBeforeUnmount(() => {
           <Copy v-else :size="13" />
         </button>
       </div>
-      <pre ref="outputPanel" class="tool-output">{{ tool.output }}</pre>
+      <pre ref="outputPanel" class="tool-output">{{ shownOutput }}</pre>
     </div>
     <ImagePreviewDialog v-if="previewImage" :image="previewImage" @close="previewImage = undefined" />
   </details>

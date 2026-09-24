@@ -1,11 +1,23 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { forgetPanelOpenStates, isPanelPinnedOpen, pinPanelOpen } from "./detailsOpenState";
+import { forgetPanelOpenStates, isPanelPinnedOpen, panelOpenState, pinPanelOpen } from "./detailsOpenState";
 
 describe("detailsOpenState", () => {
   beforeEach(() => forgetPanelOpenStates());
 
   it("reports nothing pinned until a reader touches the panel", () => {
     expect(isPanelPinnedOpen("a-thinking")).toBe(false);
+  });
+
+  // The `streamPanels` modes need the third case: a panel the reader never touched
+  // is still the mode's to decide, while "closed because I clicked" is not.
+  it("separates an explicit close from never having been clicked", () => {
+    expect(panelOpenState("untouched")).toBeUndefined();
+
+    pinPanelOpen("shut", false);
+    pinPanelOpen("opened", true);
+
+    expect(panelOpenState("shut")).toBe(false);
+    expect(panelOpenState("opened")).toBe(true);
   });
 
   it("remembers both directions of the reader's choice", () => {

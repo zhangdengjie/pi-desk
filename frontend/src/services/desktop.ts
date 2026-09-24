@@ -1,6 +1,6 @@
 import { NotificationService } from "../../bindings/github.com/wailsapp/wails/v3/pkg/services/notifications";
 import { DesktopService, PiMaintenanceService } from "../../bindings/pi-desk/internal/appservice";
-import type { BootstrapState, PiMaintenanceAction, PiMaintenanceResult, PiRuntimeStatus, UpdateCheckResult } from "../../bindings/pi-desk/internal/domain";
+import type { BootstrapState, PiMaintenanceAction, PiMaintenanceResult, PiRuntimeStatus, UpdateCheckResult, UserConfigView } from "../../bindings/pi-desk/internal/domain";
 
 let notificationSequence = 0;
 
@@ -17,6 +17,18 @@ export async function getBootstrapState(): Promise<BootstrapState> {
 
 export async function toggleDebugMode(): Promise<boolean> {
   return DesktopService.ToggleDebugMode();
+}
+
+/**
+ * The hand-editable streaming config (`~/.pi-desk/config.json`). Reading it also
+ * creates the file with the defaults, so the advertised path always exists.
+ */
+export async function readUserConfig(): Promise<UserConfigView> {
+  return DesktopService.ReadUserConfig();
+}
+
+export async function writeUserConfig(streamPanels: string): Promise<UserConfigView> {
+  return DesktopService.WriteUserConfig({ path: "", streamPanels });
 }
 
 export async function checkRuntime(): Promise<PiRuntimeStatus> {

@@ -1,8 +1,8 @@
 import { defineStore } from "pinia";
-import { RuntimeState, type BootstrapState, type DesktopState, type ProviderEnvIssue, type SessionSnapshot, type WorkspaceApplication, type WorkspaceSummary as HostWorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
+import { RuntimeState, type BootstrapState, type DesktopState, type ProviderEnvIssue, type SessionSnapshot, type UserConfigView, type WorkspaceApplication, type WorkspaceSummary as HostWorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
 import { agentService, onPiEvent, type PiSessionEvent, type SessionBranches } from "../services/agent";
 import { catalogService } from "../services/catalog";
-import { checkForUpdates, checkRuntime as checkRuntimeStatus, getBootstrapState, notifyDesktop } from "../services/desktop";
+import { checkForUpdates, checkRuntime as checkRuntimeStatus, getBootstrapState, notifyDesktop, readUserConfig, writeUserConfig } from "../services/desktop";
 import { repositoryService, type RepositoryFileDiff, type RepositoryFilePreview, type RepositorySnapshot, type RepositoryWorkspaceReference, type SessionFileChange } from "../services/repository";
 import { remoteWorkspaceService } from "../services/remoteWorkspaces";
 import { onTerminalEvent, terminalService, type TerminalEvent } from "../services/terminal";
@@ -62,6 +62,13 @@ export interface ThreadPanel {
 }
 export type InspectorTab = "changes" | "context" | "terminal" | "browser";
 export type StreamingBehavior = "steer" | "followUp";
+/**
+ * Whether the reasoning and tool-call windows open on their own while the model
+ * streams. `auto` is the shipped behaviour; the other two come from
+ * `~/.pi-desk/config.json`. A click always beats all three - see detailsOpenState.
+ */
+export type StreamPanelMode = "auto" | "alwaysOpen" | "alwaysClosed";
+export const STREAM_PANEL_MODES: readonly StreamPanelMode[] = ["auto", "alwaysOpen", "alwaysClosed"];
 export type QueueMode = "all" | "one-at-a-time";
 export type Appearance = "dark" | "light" | "system";
 export type Language = "zh-CN" | "en";
@@ -409,6 +416,10 @@ function mergeModels(...sources: PiModel[][]): PiModel[] {
 
 let unsubscribePiEvents: (() => void) | undefined;
 let unsubscribeTerminalEvents: (() => void) | undefined;
+// The user config is a file someone edits in another app. Re-reading it when the
+// window comes back to the foreground is the whole hot-reload story: switching to
+// an editor and back is the gesture, and no timer runs while nobody looks.
+let unsubscribeUserConfigWatch: (() => void) | undefined;
 let localSequence = 0;
 let desktopSaveTimer: ReturnType<typeof setTimeout> | undefined;
 let piStartQueue: Promise<void> = Promise.resolve();
@@ -921,6 +932,13 @@ export const useAppStore = defineStore("app", {
     workspaceTrustUpdatingPath: "",
     workspaceTrustError: "",
     streamingBehavior: "steer" as StreamingBehavior,
+    // Live from ~/.pi-desk/config.json (internal/userconfig). The file, not this
+    // field and not state.json, is the truth: the dialog writes it and so does a
+    // text editor, and a re-read on every return to the foreground picks that up.
+    streamPanels: "auto" as StreamPanelMode,
+    userConfigPath: "",
+    userConfigError: "",
+    userConfigLoading: false,
     appearance: "light" as Appearance,
     language: "zh-CN" as Language,
     interfaceFont: "default" as InterfaceFont,
@@ -1162,11 +1180,13 @@ export const useAppStore = defineStore("app", {
         unsubscribeTerminalEvents = onTerminalEvent((event) => this.handleTerminalEvent(event));
       }
       const bootstrap = this.loadBootstrapState();
+      const userConfig = this.loadUserConfig();
+      this.watchUserConfig();
       const catalog = this.loadCatalog();
       const models = this.refreshConfiguredModels();
       await bootstrap;
       if (this.bootstrap && !this.bootstrapError) void this.checkRuntime();
-      await Promise.all([catalog, models]);
+      await Promise.all([catalog, models, userConfig]);
       if (this.updateChecksEnabled) void this.checkForUpdates();
     },
     async checkRuntime() {
@@ -3500,6 +3520,9 @@ export const useAppStore = defineStore("app", {
           const update = payload.assistantMessageEvent as Record<string, unknown> | undefined;
           const assistant = this.currentAssistant(thread.id, true);
           if (!update || !assistant) break;
+          // The store always holds the complete text as far as Pi has sent it: search,
+          // previews, grouping and the virtualizer all read these fields, so smoothing
+          // belongs to the renderer (MarkdownBody / ToolCallPanel), never here.
           if (update.type === "text_delta" && typeof update.delta === "string") {
             assistant.text += update.delta;
             assistant.activeExecution = "text";
@@ -3782,6 +3805,43 @@ export const useAppStore = defineStore("app", {
       } finally {
         this.bootstrapLoading = false;
       }
+    },
+    applyUserConfig(config: UserConfigView | undefined) {
+      if (!config) return;
+      this.userConfigPath = config.path ?? "";
+      this.userConfigError = config.error ?? "";
+      const mode = (config.streamPanels ?? "auto") as StreamPanelMode;
+      if (STREAM_PANEL_MODES.includes(mode)) this.streamPanels = mode;
+    },
+    async loadUserConfig() {
+      try {
+        this.applyUserConfig(await readUserConfig());
+      } catch (error) {
+        // A missing binding (tests, a non-Wails host) must not take the transcript with it.
+        this.userConfigError = errorMessage(error);
+      }
+    },
+    async setStreamPanels(mode: StreamPanelMode) {
+      if (this.userConfigLoading || !STREAM_PANEL_MODES.includes(mode)) return;
+      this.userConfigLoading = true;
+      try {
+        this.applyUserConfig(await writeUserConfig(mode));
+      } catch (error) {
+        this.userConfigError = errorMessage(error);
+      } finally {
+        this.userConfigLoading = false;
+      }
+    },
+    watchUserConfig() {
+      if (typeof document === "undefined" || unsubscribeUserConfigWatch) return;
+      const resume = () => {
+        if (document.visibilityState === "visible") void this.loadUserConfig();
+      };
+      document.addEventListener("visibilitychange", resume);
+      unsubscribeUserConfigWatch = () => {
+        document.removeEventListener("visibilitychange", resume);
+        unsubscribeUserConfigWatch = undefined;
+      };
     },
     restoreDesktopPreferences(desktop: DesktopState) {
       if (!desktop.preferences) return;

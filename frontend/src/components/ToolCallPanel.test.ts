@@ -1,8 +1,13 @@
 import { mount } from "@vue/test-utils";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import ToolCallPanel from "./ToolCallPanel.vue";
+import { forgetPanelOpenStates } from "../utils/detailsOpenState";
 
 describe("ToolCallPanel", () => {
+  // The expansion memory is module-scoped, so a click in one case must not decide
+  // the next one.
+  beforeEach(() => forgetPanelOpenStates());
+
   it("summarizes commands and exposes input and output copy actions", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
@@ -214,5 +219,48 @@ describe("ToolCallPanel", () => {
     expect(rows[1].attributes("data-status")).toBe("running");
     expect(rows[1].find(".tool-subagent-meta").exists()).toBe(false);
     expect(rows[2].attributes("data-status")).toBe("error");
+  });
+
+  // The `streamPanels` modes only speak about a turn this window watched, so every
+  // case here passes runIsLive the way ConversationMessage does while streaming.
+  it("stays open after the call finishes when the run asked for alwaysOpen", async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(ToolCallPanel, {
+      props: {
+        tool: { id: "tool-always", name: "bash", output: "built", status: "running" },
+        panelMode: "alwaysOpen",
+        runIsLive: true,
+      },
+    });
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+
+    await wrapper.setProps({ tool: { id: "tool-always", name: "bash", output: "built", status: "complete" } });
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("never opens a running call by itself in alwaysClosed, click still works", async () => {
+    vi.useFakeTimers();
+    const wrapper = mount(ToolCallPanel, {
+      props: { tool: { id: "tool-shut", name: "bash", output: "built", status: "running" }, panelMode: "alwaysClosed", runIsLive: true },
+    });
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+
+    await wrapper.get("summary").trigger("click");
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("ignores alwaysOpen for a call that arrived from a saved session", () => {
+    const wrapper = mount(ToolCallPanel, {
+      props: { tool: { id: "tool-old", name: "read", output: "source", status: "complete" }, panelMode: "alwaysOpen" },
+    });
+
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    wrapper.unmount();
   });
 });

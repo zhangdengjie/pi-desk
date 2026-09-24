@@ -1,9 +1,10 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { createPinia, setActivePinia } from "pinia";
+import { createPinia, setActivePinia, type Pinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ConversationMessage from "./ConversationMessage.vue";
 import { useAppStore } from "../stores/app";
 import { groupConversationTurns } from "../utils/conversationGrouping";
+import { forgetPanelOpenStates } from "../utils/detailsOpenState";
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -11,7 +12,12 @@ vi.mock("../services/desktop", () => ({ getBootstrapState: vi.fn() }));
 vi.mock("../services/repository", () => ({ repositoryService: {} }));
 
 describe("ConversationMessage", () => {
-  beforeEach(() => setActivePinia(createPinia()));
+  // The panel memory is module-scoped on purpose (it has to survive a row being
+  // re-created), so a click in one case would otherwise decide the next one.
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    forgetPanelOpenStates();
+  });
 
   it("allows deleting and forking an image-only persisted message", async () => {
     const store = useAppStore();
@@ -305,10 +311,6 @@ describe("ConversationMessage", () => {
     expect(details.attributes("open")).toBeDefined();
     expect(wrapper.find(".message-actions").exists()).toBe(false);
 
-    await details.get("summary").trigger("click");
-    await wrapper.vm.$nextTick();
-    expect(details.attributes("open")).toBeDefined();
-
     await wrapper.setProps({ message: { ...wrapper.props("message"), streaming: false } });
     await wrapper.vm.$nextTick();
     expect(details.attributes("open")).toBeUndefined();
@@ -316,9 +318,83 @@ describe("ConversationMessage", () => {
     expect(wrapper.findAll(".message-action")).toHaveLength(4);
   });
 
-  it("shows successful changed files after the response and opens them in the Inspector", async () => {
-    const pinia = createPinia();
+  // A turn caught mid-run: reasoning streamed, one call finished, the answer has
+  // a character on screen. That is the moment the three modes disagree.
+  function liveRun(pinia: Pinia, id: string, streaming = true) {
     setActivePinia(pinia);
+    const store = useAppStore();
+    const wrapper = mount(ConversationMessage, {
+      props: {
+        message: {
+          id, role: "assistant", text: "Partial answer", thinking: "Working", timestamp: "10:02",
+          streaming, tools: [{ id: `${id}-read`, name: "read", output: "source", status: "complete" }],
+        },
+      },
+      global: { plugins: [pinia] },
+    });
+    return { store, wrapper };
+  }
+
+  const panelState = (wrapper: ReturnType<typeof mount>, selector: string) => ({
+    execution: wrapper.get(".execution-process").attributes("open") !== undefined,
+    reasoning: wrapper.get(selector).attributes("open") !== undefined,
+  });
+
+  it("alwaysOpen keeps this turn's panels open through the answer and after it settles", async () => {
+    const pinia = createPinia();
+    const { store, wrapper } = liveRun(pinia, "assistant-always-open");
+    store.streamPanels = "alwaysOpen";
+    await wrapper.vm.$nextTick();
+
+    expect(panelState(wrapper, ".thinking-block")).toEqual({ execution: true, reasoning: true });
+    expect(wrapper.get(".tool-call").attributes("open")).toBeDefined();
+
+    await wrapper.setProps({ message: { ...wrapper.props("message"), streaming: false } });
+    await wrapper.vm.$nextTick();
+    expect(panelState(wrapper, ".thinking-block")).toEqual({ execution: true, reasoning: true });
+    expect(wrapper.get(".tool-call").attributes("open")).toBeDefined();
+  });
+
+  it("alwaysClosed opens nothing by itself but still takes a click", async () => {
+    const pinia = createPinia();
+    const { store, wrapper } = liveRun(pinia, "assistant-always-closed");
+    store.streamPanels = "alwaysClosed";
+    await wrapper.vm.$nextTick();
+
+    expect(panelState(wrapper, ".thinking-block")).toEqual({ execution: false, reasoning: false });
+    expect(wrapper.get(".tool-call").attributes("open")).toBeUndefined();
+
+    await wrapper.get(".execution-process > summary").trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get(".execution-process").attributes("open")).toBeDefined();
+  });
+
+  it("honours a click that closes a live run instead of reverting it", async () => {
+    const pinia = createPinia();
+    const { wrapper } = liveRun(pinia, "assistant-clicked-shut");
+    expect(wrapper.get(".execution-process").attributes("open")).toBeDefined();
+
+    await wrapper.get(".execution-process > summary").trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get(".execution-process").attributes("open")).toBeUndefined();
+
+    // More output arriving must not reopen what the reader just shut.
+    await wrapper.setProps({ message: { ...wrapper.props("message"), text: "Partial answer grows" } });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get(".execution-process").attributes("open")).toBeUndefined();
+  });
+
+  it("keeps a loaded session shut in alwaysOpen, because only a live turn is reading material", () => {
+    const pinia = createPinia();
+    const { store, wrapper } = liveRun(pinia, "assistant-history", false);
+    store.streamPanels = "alwaysOpen";
+    return wrapper.vm.$nextTick().then(() => {
+      expect(panelState(wrapper, ".thinking-block")).toEqual({ execution: false, reasoning: false });
+    });
+  });
+
+  it("shows successful changed files after the response and opens them in the Inspector", async () => {
+    const pinia = createPinia();    setActivePinia(pinia);
     const store = useAppStore();
     store.$patch({
       threads: [{

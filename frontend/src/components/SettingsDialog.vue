@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
 import { ArrowLeft, BarChart3, BookOpen, Boxes, Copy, Database, Download, ExternalLink, FileText, Info, Palette, PlugZap, Puzzle, RefreshCw, RotateCw, Search, Settings2 } from "lucide-vue-next";
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { PiMaintenanceAction, type PiMaintenanceResult } from "../../bindings/pi-desk/internal/domain";
 import { maintainPi } from "../services/desktop";
-import { CODE_THEME_OPTIONS, useAppStore, type QueueMode, type SettingsSection, type SlashCommand } from "../stores/app";
+import { CODE_THEME_OPTIONS, useAppStore, type QueueMode, type SettingsSection, type SlashCommand, type StreamPanelMode } from "../stores/app";
 import { tr } from "../i18n";
 import ModelManager from "./ModelManager.vue";
 import ExtensionManager from "./ExtensionManager.vue";
@@ -68,6 +68,23 @@ async function copyRuntimePath() {
   await navigator.clipboard.writeText(path);
   copied.value = true;
   window.setTimeout(() => { copied.value = false; }, 1200);
+}
+
+// The dialog and a text editor write the same file, so opening it re-reads the file
+// instead of showing whatever the last session remembered.
+onMounted(() => { void appStore.loadUserConfig(); });
+
+async function applyStreamPanelMode(event: Event) {
+  await appStore.setStreamPanels((event.target as HTMLSelectElement).value as StreamPanelMode);
+}
+
+const copiedConfig = ref(false);
+
+async function copyUserConfigPath() {
+  if (!appStore.userConfigPath) return;
+  await navigator.clipboard.writeText(appStore.userConfigPath);
+  copiedConfig.value = true;
+  window.setTimeout(() => { copiedConfig.value = false; }, 1200);
 }
 
 async function checkForUpdates() {
@@ -330,6 +347,34 @@ function sourceIcon(source: SlashCommand["source"]) {
                   @change="void updateRuntimeBehavior(() => appStore.setAutoRetry(($event.target as HTMLInputElement).checked))"
                 />
               </label>
+            </div>
+          </section>
+          <section>
+            <h2 class="settings-section-title">{{ tr("settings.streaming") }}</h2>
+            <p class="settings-section-help">{{ tr("settings.streamingHelp") }}</p>
+            <div class="settings-card">
+              <label class="setting-row setting-row-select" :class="ui.row">
+                <span><strong>{{ tr("settings.streamPanels") }}</strong><small>{{ tr("settings.streamPanelsHelp") }}</small></span>
+                <select class="appearance-select !w-44 !basis-44" :class="ui.select"
+                  :value="appStore.streamPanels"
+                  :aria-label="tr('settings.streamPanels')"
+                  :disabled="appStore.userConfigLoading"
+                  @change="void applyStreamPanelMode($event)"
+                >
+                  <option value="auto">{{ tr("settings.streamPanelsAuto") }}</option>
+                  <option value="alwaysOpen">{{ tr("settings.streamPanelsAlwaysOpen") }}</option>
+                  <option value="alwaysClosed">{{ tr("settings.streamPanelsAlwaysClosed") }}</option>
+                </select>
+              </label>
+              <div data-testid="user-config-row" class="setting-row" :class="ui.row">
+                <span>
+                  <strong>{{ tr("settings.userConfigFile") }}</strong>
+                  <small>{{ tr("settings.userConfigHelp") }}</small>
+                  <small class="break-all font-mono">{{ appStore.userConfigPath || tr("common.unavailable") }}</small>
+                  <small v-if="appStore.userConfigError" class="text-[var(--red)]" role="alert">{{ appStore.userConfigError }}</small>
+                </span>
+                <button class="text-button" :class="ui.button" type="button" :disabled="!appStore.userConfigPath" @click="void copyUserConfigPath()"><Copy :size="14" />{{ copiedConfig ? tr("settings.copied") : tr("settings.copyPath") }}</button>
+              </div>
             </div>
           </section>
           <section>
