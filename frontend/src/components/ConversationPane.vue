@@ -7,7 +7,7 @@ import ComposerBar from "./ComposerBar.vue";
 import ConversationMessage from "./ConversationMessage.vue";
 import { useAppStore } from "../stores/app";
 import { CONVERSATION_VIRTUALIZATION_THRESHOLD, estimateMessageSize, shouldVirtualizeMessages } from "../utils/conversationVirtualization";
-import { isNearBottom, nestedScrollerCanGoUp } from "../utils/scroll";
+import { isNearBottom, nestedScrollerCanGoUp, nextTailScroll } from "../utils/scroll";
 import { groupConversationTurns } from "../utils/conversationGrouping";
 import { tr } from "../i18n";
 
@@ -126,7 +126,7 @@ let rowObserver: ResizeObserver | undefined;
 
 function observeRowOutput(element: Element) {
   rowObserver ??= new ResizeObserver(() => {
-    if (stickToBottom.value) scrollToBottom();
+    if (stickToBottom.value) followTail();
   });
   rowObserver.observe(element);
 }
@@ -144,17 +144,40 @@ function scrollToBottom() {
   if (element) element.scrollTop = element.scrollHeight;
 }
 
-// Coalesce autoscroll into one frame-aligned correction: per-delta scrolls
-// otherwise force extra layouts and let intermediate offsets reach the screen.
-let autoScrollFrame = 0;
-function scheduleAutoScroll() {
-  if (autoScrollFrame) return;
-  autoScrollFrame = requestAnimationFrame(() => {
-    autoScrollFrame = 0;
-    if (!stickToBottom.value) return;
-    scrollToBottom();
-    updateActiveNavigation();
+// The follow is one frame chain, not one scroll per event: several ResizeObserver
+// callbacks and stream signals land inside a single frame, and chasing each of them
+// would force extra layouts and let intermediate offsets reach the screen.
+let tailFrame = 0;
+
+/**
+ * Move the tail one step and report whether a jump is still in flight. The step itself
+ * runs in the caller's frame on purpose: a ResizeObserver callback is the last place
+ * before paint where correcting the offset is invisible, and deferring it to a rAF is
+ * what made a collapsing panel flick a frame ago.
+ */
+function stepTail(): boolean {
+  const element = timeline.value;
+  if (!element || !stickToBottom.value) return false;
+  const next = nextTailScroll(element.scrollTop, element.scrollHeight, element.clientHeight);
+  if (next !== element.scrollTop) element.scrollTop = next;
+  const chasing = element.scrollHeight - element.scrollTop - element.clientHeight > 1;
+  if (!chasing) updateActiveNavigation();
+  return chasing;
+}
+
+function followTail() {
+  if (!stepTail()) return;
+  if (tailFrame) return;
+  tailFrame = requestAnimationFrame(() => {
+    tailFrame = 0;
+    if (stepTail()) followTail();
   });
+}
+
+function stopFollowingTail() {
+  if (!tailFrame) return;
+  cancelAnimationFrame(tailFrame);
+  tailFrame = 0;
 }
 
 // A trackpad flick only moves 40-90px, so a wide "near bottom" band treated the
@@ -168,6 +191,7 @@ function onTimelineScroll() {
   const element = timeline.value;
   if (!element) return;
   stickToBottom.value = isNearBottom(element.scrollTop, element.clientHeight, element.scrollHeight, FOLLOW_RESUME_PX);
+  if (!stickToBottom.value) stopFollowingTail();
   updateActiveNavigation();
 }
 
@@ -187,7 +211,6 @@ function followLatest() {
   scrollToBottom();
   updateActiveNavigation();
 }
-
 function updateActiveNavigation() {
   const element = timeline.value;
   if (!element || !navigationItems.value.length) return;
@@ -335,11 +358,11 @@ watch(() => appStore.activeThreadId, async () => {
 watch(streamSignal, (_signal, previous) => {
   const messageChanged = previous?.[1] !== lastMessage.value?.id;
   if (messageChanged && lastMessage.value?.role === "user") stickToBottom.value = true;
-  if (stickToBottom.value) scheduleAutoScroll();
+  if (stickToBottom.value) followTail();
 });
 
 watch(virtualTotalSize, () => {
-  if (stickToBottom.value && shouldVirtualize.value) scheduleAutoScroll();
+  if (stickToBottom.value && shouldVirtualize.value) followTail();
 });
 
 watch(navigationItems, (items) => {
@@ -361,7 +384,7 @@ onMounted(async () => {
   updateActiveNavigation();
 });
 onBeforeUnmount(() => {
-  if (autoScrollFrame) cancelAnimationFrame(autoScrollFrame);
+  stopFollowingTail();
   rowObserver?.disconnect();
   document.removeEventListener("keydown", onDocumentKeydown, true);
   hideHoveredNavigation();

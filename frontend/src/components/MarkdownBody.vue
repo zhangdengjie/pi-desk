@@ -3,6 +3,7 @@ import { ui } from "../ui/classes";
 import MarkdownIt from "markdown-it";
 import { computed, ref } from "vue";
 import { useAppStore } from "../stores/app";
+import { useRevealedText } from "../composables/useRevealedText";
 import { resolveWorkspaceFileLink, type WorkspaceFileLink } from "../utils/fileLinks";
 import { normalizeMarkdownBreakTags } from "../utils/markdown";
 import FileLinkContextMenu from "./FileLinkContextMenu.vue";
@@ -88,7 +89,12 @@ markdown.renderer.rules.th_close = (tokens, index, options, _env, self) =>
 markdown.renderer.rules.td_close = (tokens, index, options, _env, self) =>
   `</div>${self.renderToken(tokens, index, options)}`;
 
-const renderMarkdown = computed(() => props.text.length <= MAX_MARKDOWN_CHARS);
+// While the source is still growing (an answer streaming, a reasoning block live)
+// the text is revealed a frame at a time. The store has the whole string from the
+// first delta, so a raw render lands each provider chunk as a block - which is what
+// reads as typing in clauses with stalls between them.
+const shownText = useRevealedText(() => props.text, () => props.streaming === true);
+const renderMarkdown = computed(() => shownText.value.length <= MAX_MARKDOWN_CHARS);
 
 function highlightRenderedHtml(html: string, query: string, active: boolean): string {
   const needle = query.trim();
@@ -128,7 +134,7 @@ function highlightRenderedHtml(html: string, query: string, active: boolean): st
 
 const rendered = computed(() => {
   if (!renderMarkdown.value) return "";
-  const html = markdown.render(normalizeMarkdownBreakTags(props.text), { workspacePath: workspacePath.value });
+  const html = markdown.render(normalizeMarkdownBreakTags(shownText.value), { workspacePath: workspacePath.value });
   return highlightRenderedHtml(html, props.searchQuery ?? "", props.searchActive ?? false);
 });
 

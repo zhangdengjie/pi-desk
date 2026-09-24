@@ -129,4 +129,44 @@ describe("MarkdownBody", () => {
     expect(wrapper.findAll("mark.is-active")).toHaveLength(2);
     wrapper.unmount();
   });
+
+  // Provider chunks arrive as whole clauses, so a raw render lands a block at a time.
+  // While an answer streams, the text is revealed one animation frame at a time instead.
+  it("reveals a streamed burst over the next frames instead of landing it whole", async () => {
+    vi.useFakeTimers();
+    const { wrapper } = mountMarkdown("start");
+    await wrapper.setProps({ text: `start ${"tail".repeat(200)}`, streaming: true });
+
+    expect(wrapper.text()).toBe("start");
+    await vi.advanceTimersByTimeAsync(64);
+    const grown = wrapper.text();
+    expect(grown.length).toBeGreaterThan("start".length);
+    expect(grown.length).toBeLessThan("start".length + 200 * 4);
+
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(wrapper.text()).toBe(`start ${"tail".repeat(200)}`);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("shows a finished document whole, because only a live source is revealed", async () => {
+    vi.useFakeTimers();
+    const { wrapper } = mountMarkdown("opened from disk");
+    await wrapper.setProps({ text: "opened from disk\n\nand the rest of the file" });
+
+    expect(wrapper.text()).toContain("the rest of the file");
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("lands the whole answer the moment streaming stops", async () => {
+    vi.useFakeTimers();
+    const { wrapper } = mountMarkdown("half written");
+    await wrapper.setProps({ text: "half written and still arriving", streaming: true });
+    await wrapper.setProps({ streaming: false });
+
+    expect(wrapper.text()).toBe("half written and still arriving");
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
 });

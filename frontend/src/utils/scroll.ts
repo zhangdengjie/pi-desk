@@ -16,3 +16,22 @@ export function nestedScrollerCanGoUp(target: EventTarget | null, outer: Element
   }
   return false;
 }
+
+/**
+ * Where the transcript tail should sit on the next frame while it is being followed.
+ *
+ * A typing step moves the bottom by a couple of pixels, and pinning straight to it is
+ * what a smooth run looks like. What is *not* smooth is a discrete jump - a reasoning
+ * window releasing its fixed height, an image finishing decoding, a fenced block
+ * closing - where the exact pin throws the whole screen in one frame. Anything past
+ * `snapWithin` therefore travels a fraction of the remaining distance per frame, which
+ * reads as the tail being caught up with rather than teleported to.
+ *
+ * The target is `scrollHeight`, not a clamped offset: content keeps growing underneath,
+ * and always aiming at the newest bottom is what stops the ease from lagging behind.
+ */
+export function nextTailScroll(currentTop: number, scrollHeight: number, clientHeight: number, snapWithin = 140, factor = 0.35): number {
+  const distance = scrollHeight - clientHeight - currentTop;
+  if (distance <= snapWithin) return scrollHeight;
+  return currentTop + Math.max(1, distance * factor);
+}
