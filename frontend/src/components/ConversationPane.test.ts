@@ -166,6 +166,29 @@ describe("ConversationPane", () => {
     wrapper.unmount();
   });
 
+  // Scroll anchoring is the other author of scroll events: when a reasoning window
+  // collapses above the viewport the browser compensates scrollTop by itself, and reading
+  // that as "the reader left" would disarm the follow in the middle of a run - the
+  // transcript then sits still while the answer keeps streaming.
+  it("keeps following when scroll anchoring nudges the position mid-stream", async () => {
+    const { wrapper, timeline, stream } = await mountPinnedTail();
+
+    await stream("the answer is growing", 1900);
+    timeline.scrollTop = 1160; // 140px above the new bottom, with no input behind it
+    await wrapper.get(".timeline").trigger("scroll");
+    await stream("and still growing", 2020);
+
+    expect(timeline.scrollTop).toBe(2020);
+
+    // Real input still releases it, grace or not.
+    await wrapper.get(".timeline").trigger("wheel", { deltaY: -30 });
+    timeline.scrollTop = 1200; // 220px above the bottom of a 2020px document
+    await wrapper.get(".timeline").trigger("scroll");
+    await stream("and again", 2200);
+    expect(timeline.scrollTop).toBe(1200);
+    wrapper.unmount();
+  });
+
   it("resumes following the tail once the reader is back at the bottom", async () => {
     const { wrapper, timeline, stream } = await mountPinnedTail();
 

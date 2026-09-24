@@ -126,6 +126,7 @@ let rowObserver: ResizeObserver | undefined;
 
 function observeRowOutput(element: Element) {
   rowObserver ??= new ResizeObserver(() => {
+    noteSelfGrowth();
     if (stickToBottom.value) followTail();
   });
   rowObserver.observe(element);
@@ -195,12 +196,42 @@ function stopFollowingTail() {
 // straight from the gesture instead of waiting for a sampled scroll event.
 const FOLLOW_RESUME_PX = 24;
 
+// A scroll event is only evidence about the reader when the reader caused it. Two other
+// sources move the position on their own: our own eased steps, and the browser's scroll
+// anchoring, which compensates scrollTop whenever content *above* the viewport changes
+// height - which is every frame of a streamed answer, since reasoning and tool panels
+// grow and collapse up there. Reading an anchoring step as "they left the tail" disarms
+// the follow in the middle of a run, and the transcript then stops moving while text keeps
+// arriving until the reader drags themselves back down.
+//
+// So: real input (wheel, pointer, key) always wins; a bare scroll event that lands while
+// we are still writing content is ignored; anything else keeps the old contract.
+const SELF_GROWTH_GRACE_MS = 250;
+// Momentum scrolling keeps emitting scroll events after the last wheel event, so the
+// reader's own input has to be trusted for a while.
+const INPUT_WINDOW_MS = 600;
+let readerInputAt = 0;
+let selfGrowthUntil = 0;
+
+function markReaderInput() {
+  readerInputAt = Date.now();
+}
+
+function noteSelfGrowth() {
+  selfGrowthUntil = Date.now() + SELF_GROWTH_GRACE_MS;
+}
+
 function onTimelineScroll() {
   const element = timeline.value;
   if (!element) return;
   // One of our own steps (in flight, or being written right now): the reader has not
   // moved, so the follow stays armed.
   if (applyingTail || tailFrame) {
+    updateActiveNavigation();
+    return;
+  }
+  const now = Date.now();
+  if (now - readerInputAt > INPUT_WINDOW_MS && now < selfGrowthUntil) {
     updateActiveNavigation();
     return;
   }
@@ -215,6 +246,7 @@ function onTimelineWheel(event: WheelEvent) {
   // wheel is still feeding one of those, the timeline has not moved at all,
   // so releasing the follow would be wrong.
   if (nestedScrollerCanGoUp(event.target, timeline.value)) return;
+  markReaderInput();
   stickToBottom.value = false;
   stopFollowingTail();
 }
@@ -373,10 +405,12 @@ watch(() => appStore.activeThreadId, async () => {
 watch(streamSignal, (_signal, previous) => {
   const messageChanged = previous?.[1] !== lastMessage.value?.id;
   if (messageChanged && lastMessage.value?.role === "user") stickToBottom.value = true;
+  noteSelfGrowth();
   if (stickToBottom.value) followTail();
 });
 
 watch(virtualTotalSize, () => {
+  noteSelfGrowth();
   if (stickToBottom.value && shouldVirtualize.value) followTail();
 });
 
@@ -467,7 +501,7 @@ onBeforeUnmount(() => {
           <span><em>{{ tr("conversation.navigationAnswer") }}</em>{{ hoveredNavigationItem.answer }}</span>
         </aside>
       </nav>
-      <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" @scroll="onTimelineScroll" @wheel="onTimelineWheel">
+      <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" @scroll="onTimelineScroll" @wheel="onTimelineWheel" @pointerdown="markReaderInput" @keydown="markReaderInput">
       <div v-if="appStore.activeSessionOperation === 'Compacting'" class="conversation-operation-banner mb-4 inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-xs text-[var(--text-secondary)] shadow-sm" role="status" aria-live="polite">
         <LoaderCircle :size="14" class="is-spinning" aria-hidden="true" />
         <span>{{ tr("topbar.compacting") }}</span>
