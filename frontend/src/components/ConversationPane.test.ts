@@ -6,7 +6,7 @@ import { useAppStore, type TimelineMessage } from "../stores/app";
 import ConversationPane from "./ConversationPane.vue";
 
 vi.mock("../services/agent", () => ({
-  agentService: {},
+  agentService: { getState: vi.fn().mockResolvedValue({}) },
   onPiEvent: () => vi.fn(),
 }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -259,6 +259,97 @@ describe("ConversationPane", () => {
     expect(rowObserver!.disconnect).toHaveBeenCalled();
   });
 
+  // End to end on purpose: the real store event path, the real row, the real
+  // MarkdownBody and ToolCallPanel. Per-layer unit tests cannot show what a reader
+  // actually sees - that growth moves every frame instead of landing in clauses, and
+  // that in alwaysOpen the panels of the turn are still open after it settles.
+  it("reveals a streamed turn frame by frame and keeps its panels open in alwaysOpen", async () => {
+    vi.useFakeTimers();
+    const store = useAppStore();
+    store.threads = [{
+      id: "thread-stream", title: "Run", workspace: "repo", workspacePath: "/repo",
+      trust: "approve", status: "running", started: true, generation: 4,
+    } as never];
+    store.activeThreadId = "thread-stream";
+    store.messagesByThread["thread-stream"] = [];
+    store.notificationsEnabled = false;
+    store.streamPanels = "alwaysOpen";
+    const wrapper = mount(ConversationPane, { global: { stubs: { ComposerBar: true } } });
+    const send = (type: string, payload: Record<string, unknown> = {}) =>
+      store.handlePiEvent({ threadId: "thread-stream", event: { generation: 4, type, payload } as never });
+    const answer = () => wrapper.get(".message-content > .markdown-body").text();
+
+    send("message_start", { message: { role: "assistant", id: "a1", content: [] } });
+    await nextTick();
+    // An empty assistant message is not a turn yet: grouping drops it until it carries
+    // something, and the waiting spinner stands in for it.
+    expect(wrapper.find(".message-content > .markdown-body").exists()).toBe(false);
+
+    send("message_update", { assistantMessageEvent: { type: "thinking_delta", delta: "thinking of it" } });
+    await nextTick();
+    const reasoning = () => wrapper.get(".thinking-body").text();
+    expect(reasoning()).toBe("thinking of it");
+
+    const burst = "reasoning ".repeat(80).trim();
+    send("message_update", { assistantMessageEvent: { type: "thinking_delta", delta: ` ${burst}` } });
+    await nextTick();
+    // The whole burst is already in the store, and none of it is on screen: a frame
+    // has not run yet. That is the difference from landing a clause at a time.
+    const held = ("thinking of it " + burst).length;
+    expect(reasoning()).toBe("thinking of it");
+    await vi.advanceTimersByTimeAsync(16);
+    const firstStep = reasoning().length;
+    expect(firstStep).toBeGreaterThan("thinking of it".length);
+    expect(firstStep).toBeLessThan(held);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(reasoning().length).toBeGreaterThan(firstStep);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(reasoning()).toBe(`thinking of it ${burst}`);
+
+    send("tool_execution_start", { toolCallId: "t1", toolName: "bash", args: { command: "ls" } });
+    send("tool_execution_update", { toolCallId: "t1", toolName: "bash", partialResult: { content: [{ type: "text", text: "listing" }] } });
+    await nextTick();
+    // Same rule everywhere: a panel's first appearance lands whole, growth animates.
+    expect(wrapper.get(".tool-output").text()).toBe("listing");
+    send("tool_execution_update", { toolCallId: "t1", toolName: "bash", partialResult: { content: [{ type: "text", text: `listing${"x".repeat(400)}` }] } });
+    await nextTick();
+    expect(wrapper.get(".tool-output").text()).toBe("listing");
+    await vi.advanceTimersByTimeAsync(16);
+    const outputStep = wrapper.get(".tool-output").text().length;
+    expect(outputStep).toBeGreaterThan("listing".length);
+    expect(outputStep).toBeLessThan(407);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(wrapper.get(".tool-output").text()).toBe(`listing${"x".repeat(400)}`);
+    send("tool_execution_end", { toolCallId: "t1", toolName: "bash", isError: false, result: { content: [{ type: "text", text: "x".repeat(400) }] } });
+    await nextTick();
+    expect(wrapper.get(".tool-output").text()).toBe("x".repeat(400));
+
+    send("message_update", { assistantMessageEvent: { type: "text_delta", delta: "so" } });
+    await nextTick();
+    expect(answer()).toBe("so");
+    send("message_update", { assistantMessageEvent: { type: "text_delta", delta: "answer ".repeat(80) } });
+    await nextTick();
+    expect(answer()).toBe("so");
+    await vi.advanceTimersByTimeAsync(16);
+    const answerStep = answer().length;
+    expect(answerStep).toBeGreaterThan(2);
+    expect(answerStep).toBeLessThan(562);
+    await vi.advanceTimersByTimeAsync(16);
+    expect(answer().length).toBeGreaterThan(answerStep);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(answer()).toBe(("so" + "answer ".repeat(80)).trim());
+
+    send("message_end", { message: { role: "assistant", content: [{ type: "text", text: "so" + "answer ".repeat(80) }] } });
+    send("agent_settled", {});
+    await nextTick();
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(wrapper.get(".execution-process").attributes("open")).toBeDefined();
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
+    expect(wrapper.get(".tool-call").attributes("open")).toBeDefined();
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
   it("leaves the reader's place alone when a collapsed panel grows above them", async () => {
     const frames: FrameRequestCallback[] = [];
     const observers: Array<{ callback: () => void; targets: Element[] }> = [];
