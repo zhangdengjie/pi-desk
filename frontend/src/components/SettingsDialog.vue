@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
+import { streamTuning } from "../utils/streamTuning";
 import { ArrowLeft, BarChart3, BookOpen, Boxes, Copy, Database, Download, ExternalLink, FileText, Info, Palette, PlugZap, Puzzle, RefreshCw, RotateCw, Search, Settings2 } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 import { PiMaintenanceAction, type PiMaintenanceResult } from "../../bindings/pi-desk/internal/domain";
@@ -77,6 +78,17 @@ onMounted(() => { void appStore.loadUserConfig(); });
 async function applyStreamPanelMode(event: Event) {
   await appStore.setStreamPanels((event.target as HTMLSelectElement).value as StreamPanelMode);
 }
+
+// Read from the same singleton the renderer paces itself with, so the dialog can never
+// show numbers that are not in force.
+const streamTuningValues = computed(() => [
+  { key: "split", label: tr("settings.tuningSplit"), value: `1 / ${streamTuning.reveal.split}` },
+  { key: "chars", label: tr("settings.tuningChars"), value: `${streamTuning.reveal.floor} – ${streamTuning.reveal.ceiling}` },
+  { key: "snap", label: tr("settings.tuningSnap"), value: `≤ ${streamTuning.scroll.snapWithinPx}px` },
+  { key: "ease", label: tr("settings.tuningEase"), value: `${Math.round(streamTuning.scroll.factor * 100)}%` },
+  { key: "resume", label: tr("settings.tuningResume"), value: `${streamTuning.scroll.resumeWithinPx}px` },
+  { key: "live", label: tr("settings.tuningLive"), value: `${streamTuning.scroll.liveWindowDelayMs}ms` },
+]);
 
 const copiedConfig = ref(false);
 
@@ -374,6 +386,18 @@ function sourceIcon(source: SlashCommand["source"]) {
                   <small v-if="appStore.userConfigError" class="text-[var(--red)]" role="alert">{{ appStore.userConfigError }}</small>
                 </span>
                 <button class="text-button" :class="ui.button" type="button" :disabled="!appStore.userConfigPath" @click="void copyUserConfigPath()"><Copy :size="14" />{{ copiedConfig ? tr("settings.copied") : tr("settings.copyPath") }}</button>
+              </div>
+              <div data-testid="stream-tuning-row" class="setting-row" :class="ui.row">
+                <span>
+                  <strong>{{ tr("settings.streamTuning") }}</strong>
+                  <small>{{ tr("settings.streamTuningHelp") }}</small>
+                </span>
+                <dl class="stream-tuning-values">
+                  <div v-for="item in streamTuningValues" :key="item.key">
+                    <dt>{{ item.label }}</dt>
+                    <dd>{{ item.value }}</dd>
+                  </div>
+                </dl>
               </div>
             </div>
           </section>

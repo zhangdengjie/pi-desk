@@ -25,7 +25,9 @@ Vue -> Wails service -> Go host -> pi --mode rpc
 
 ```json
 {
-  "streamPanels": "auto"
+  "streamPanels": "auto",
+  "reveal": { "split": 5, "floor": 2, "ceiling": 160 },
+  "scroll": { "snapWithinPx": 140, "factor": 0.35, "resumeWithinPx": 24, "liveWindowDelayMs": 1200 }
 }
 ```
 
@@ -36,6 +38,16 @@ Vue -> Wails service -> Go host -> pi --mode rpc
 | `alwaysClosed` | 什么都不自动打开 |
 
 三种模式下，**你自己点开或关上的窗口一律保持你留下的状态**（按消息 id 记，切换会话不丢）。
+
+`reveal` 管吐字速度：每帧放「积压字数 ÷ `split`」个字符，再夹到 `[floor, ceiling]`。
+调大 `split` 更慢更连贯，调小 `ceiling` 可以压掉模型一次吐一大段时的冲击感。
+
+`scroll` 管跟随：跳动 ≤ `snapWithinPx` 直接钉到底部，更大的跳动每帧走剩余距离的 `factor`；
+离底部 `resumeWithinPx` 以内算「你还跟着」；工具调用要跑满 `liveWindowDelayMs` 才自动开实时窗
+（大多数调用一瞬间完成，不该为它们挪动版面）。
+
+两组都是可选的：只写想改的键，其余用出厂值（上例就是出厂值）。越界或类型不对的单个字段会回落
+出厂值，并在设置 → 常规 顶部给出提示；设置面板里的「当前生效的吐字/跟随参数」显示的就是实际值。
 
 验证用的隔离实例（`PI_DESK_DATA_DIR=<dir>`）会把这份文件读成 `<dir>/config.json`；
 `PI_DESK_CONFIG=/path/to/file.json` 可以指死单个文件。未知键保留、未知取值回落 `auto`。

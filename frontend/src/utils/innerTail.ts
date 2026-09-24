@@ -1,4 +1,5 @@
 import { isNearBottom } from "./scroll";
+import { streamTuning } from "./streamTuning";
 
 /**
  * Tail-follow for a scroll container *inside* the conversation - a running tool's output
@@ -19,10 +20,8 @@ export interface InnerTail {
   destroy: () => void;
 }
 
-/** How far from the bottom counts as "the reader came back". */
-const RESUME_PX = 24;
-
-export function attachInnerTail(element: HTMLElement, resumeWithin = RESUME_PX): InnerTail {
+/** How far from the bottom counts as "the reader came back" (see streamTuning). */
+export function attachInnerTail(element: HTMLElement, resumeWithin = streamTuning.scroll.resumeWithinPx): InnerTail {
   let armed = true;
 
   function onScroll() {

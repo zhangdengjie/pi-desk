@@ -1,5 +1,6 @@
 import { NotificationService } from "../../bindings/github.com/wailsapp/wails/v3/pkg/services/notifications";
 import { DesktopService, PiMaintenanceService } from "../../bindings/pi-desk/internal/appservice";
+import { SHIPPED } from "../utils/streamTuning";
 import type { BootstrapState, PiMaintenanceAction, PiMaintenanceResult, PiRuntimeStatus, UpdateCheckResult, UserConfigView } from "../../bindings/pi-desk/internal/domain";
 
 let notificationSequence = 0;
@@ -28,7 +29,9 @@ export async function readUserConfig(): Promise<UserConfigView> {
 }
 
 export async function writeUserConfig(streamPanels: string): Promise<UserConfigView> {
-  return DesktopService.WriteUserConfig({ path: "", streamPanels });
+  // Only the policy is written: Go reads the file again and keeps reveal/scroll (and any
+  // key it does not model) exactly as the user left them.
+  return DesktopService.WriteUserConfig({ path: "", streamPanels, reveal: SHIPPED.reveal, scroll: SHIPPED.scroll });
 }
 
 export async function checkRuntime(): Promise<PiRuntimeStatus> {

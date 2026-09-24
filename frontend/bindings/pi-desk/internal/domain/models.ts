@@ -814,6 +814,15 @@ export interface ResumeRemoteWorkspaceRequest {
     "workspaceId": string;
 }
 
+/**
+ * RevealTuning is the text pacing the renderer uses while an answer streams in.
+ */
+export interface RevealTuning {
+    "split": number;
+    "floor": number;
+    "ceiling": number;
+}
+
 export interface RollbackSessionFileRequest {
     "workspaceId"?: string;
     "workspacePath"?: string;
@@ -854,6 +863,17 @@ export interface ScheduledTaskState {
     "lastError"?: string;
     "createdAt": string;
     "updatedAt": string;
+}
+
+/**
+ * ScrollTuning is how the transcript chases the streaming tail, in the timeline and
+ * inside the capped reasoning and tool windows.
+ */
+export interface ScrollTuning {
+    "snapWithinPx": number;
+    "factor": number;
+    "resumeWithinPx": number;
+    "liveWindowDelayMs": number;
 }
 
 /**
@@ -1137,8 +1157,16 @@ export interface UserConfigView {
     "streamPanels": string;
 
     /**
-     * Error reports an unreadable or unparsable file. The value above is then the
-     * default, because a broken config must never block the UI.
+     * Reveal and Scroll carry the tuning the renderer reads at start-up and after the
+     * window regains focus, so a hand edit needs no restart.
+     */
+    "reveal": RevealTuning;
+    "scroll": ScrollTuning;
+
+    /**
+     * Error reports an unreadable or unparsable file, or values that were out of range
+     * and fell back to their default. The fields above are usable either way, because a
+     * broken config must never block the UI.
      */
     "error"?: string;
 }

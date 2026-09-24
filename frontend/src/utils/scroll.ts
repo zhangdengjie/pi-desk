@@ -17,6 +17,8 @@ export function nestedScrollerCanGoUp(target: EventTarget | null, outer: Element
   return false;
 }
 
+import { streamTuning } from "./streamTuning";
+
 /**
  * Where the transcript tail should sit on the next frame while it is being followed.
  *
@@ -30,7 +32,15 @@ export function nestedScrollerCanGoUp(target: EventTarget | null, outer: Element
  * The target is `scrollHeight`, not a clamped offset: content keeps growing underneath,
  * and always aiming at the newest bottom is what stops the ease from lagging behind.
  */
-export function nextTailScroll(currentTop: number, scrollHeight: number, clientHeight: number, snapWithin = 140, factor = 0.35): number {
+export function nextTailScroll(
+  currentTop: number,
+  scrollHeight: number,
+  clientHeight: number,
+  // Read per call, not captured at module load: a hand edit to the config file takes
+  // effect on the next frame without a restart.
+  snapWithin = streamTuning.scroll.snapWithinPx,
+  factor = streamTuning.scroll.factor,
+): number {
   const distance = scrollHeight - clientHeight - currentTop;
   if (distance <= snapWithin) return scrollHeight;
   return currentTop + Math.max(1, distance * factor);

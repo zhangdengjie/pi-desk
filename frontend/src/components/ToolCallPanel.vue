@@ -8,6 +8,7 @@ import { tr } from "../i18n";
 import { panelOpenState, pinPanelOpen } from "../utils/detailsOpenState";
 import { attachInnerTail, type InnerTail } from "../utils/innerTail";
 import { useRevealedText } from "../composables/useRevealedText";
+import { streamTuning } from "../utils/streamTuning";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 
 // Vue casts an absent Boolean prop to false, so the live allowance needs an
@@ -27,7 +28,7 @@ const eligibleForLiveWindow = computed(() => props.tool.status === "running" && 
 // a window for them only flashes and then lifts the layout. Waiting before
 // opening means a call the reader can actually notice waiting on is the only one
 // that ever moves the transcript.
-const LIVE_WINDOW_DELAY_MS = 1200;
+
 const live = ref(false);
 let liveWindowTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -43,7 +44,7 @@ watch(eligibleForLiveWindow, (eligible) => {
   liveWindowTimer = setTimeout(() => {
     liveWindowTimer = undefined;
     live.value = true;
-  }, LIVE_WINDOW_DELAY_MS);
+  }, streamTuning.scroll.liveWindowDelayMs);
 }, { immediate: true });
 
 const outputPanel = ref<HTMLElement>();

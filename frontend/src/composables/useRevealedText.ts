@@ -1,5 +1,6 @@
 import { onBeforeUnmount, ref, watch } from "vue";
 import { createStreamPacer } from "../utils/streamPacer";
+import { streamTuning } from "../utils/streamTuning";
 
 const STREAM = "stream";
 
@@ -16,7 +17,9 @@ const STREAM = "stream";
  * or diverging string) always lands whole - showing half an edit is worse than a jump.
  */
 export function useRevealedText(source: () => string, animate: () => boolean = () => true) {
-  const pacer = createStreamPacer();
+  // Taken when the component is created: a config edit mid-answer would otherwise
+  // change the speed of text that is already moving.
+  const pacer = createStreamPacer({ ...streamTuning.reveal });
   const revealed = ref(source());
   const sink = (text: string) => { revealed.value = text; };
   // Seed the stream with what the first render already shows, otherwise the very

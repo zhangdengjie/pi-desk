@@ -8,6 +8,7 @@ import ConversationMessage from "./ConversationMessage.vue";
 import { useAppStore } from "../stores/app";
 import { CONVERSATION_VIRTUALIZATION_THRESHOLD, estimateMessageSize, shouldVirtualizeMessages } from "../utils/conversationVirtualization";
 import { isNearBottom, nestedScrollerCanGoUp, nextTailScroll } from "../utils/scroll";
+import { streamTuning } from "../utils/streamTuning";
 import { groupConversationTurns } from "../utils/conversationGrouping";
 import { tr } from "../i18n";
 
@@ -194,7 +195,9 @@ function stopFollowingTail() {
 // again and the transcript yanked itself away mid-read. Resuming the follow now
 // needs an actual arrival at the bottom, and an upward wheel releases the pin
 // straight from the gesture instead of waiting for a sampled scroll event.
-const FOLLOW_RESUME_PX = 24;
+// How close to the bottom counts as "still with us". Shared with the capped output
+// windows (utils/innerTail) through the config file.
+const followResumePx = () => streamTuning.scroll.resumeWithinPx;
 
 // A scroll event is only evidence about the reader when the reader caused it. Two other
 // sources move the position on their own: our own eased steps, and the browser's scroll
@@ -235,7 +238,7 @@ function onTimelineScroll() {
     updateActiveNavigation();
     return;
   }
-  stickToBottom.value = isNearBottom(element.scrollTop, element.clientHeight, element.scrollHeight, FOLLOW_RESUME_PX);
+  stickToBottom.value = isNearBottom(element.scrollTop, element.clientHeight, element.scrollHeight, followResumePx());
   if (!stickToBottom.value) stopFollowingTail();
   updateActiveNavigation();
 }

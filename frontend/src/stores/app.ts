@@ -8,6 +8,7 @@ import { remoteWorkspaceService } from "../services/remoteWorkspaces";
 import { onTerminalEvent, terminalService, type TerminalEvent } from "../services/terminal";
 import { browserService, type BrowserEvent } from "../services/browser";
 import { modelConfigService } from "../services/modelconfig";
+import { applyStreamTuning } from "../utils/streamTuning";
 import { BATCH_ASK_PLACEHOLDER, parseBatchAskEnvelope, type BatchAskQuestion } from "../utils/batchAsk";
 import { formatFileMention } from "../utils/fileMentions";
 import { MAX_ATTACHED_IMAGES, MAX_SOURCE_IMAGE_BYTES, type PreparedImage } from "../utils/imageAttachments";
@@ -3812,6 +3813,9 @@ export const useAppStore = defineStore("app", {
       this.userConfigError = config.error ?? "";
       const mode = (config.streamPanels ?? "auto") as StreamPanelMode;
       if (STREAM_PANEL_MODES.includes(mode)) this.streamPanels = mode;
+      // The pace numbers travel with the same read, so one hand edit of the file covers
+      // policy, reveal and follow at once.
+      applyStreamTuning(config.reveal, config.scroll);
     },
     async loadUserConfig() {
       try {

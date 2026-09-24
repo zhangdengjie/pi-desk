@@ -1200,7 +1200,36 @@
   line-height: 1.35;
 }
 
-.settings-main .settings-section-help {
+.settings-main /* The streaming numbers are read-only here: they belong to the config file. A two column
+   list keeps them scannable without pretending to be controls. */
+.stream-tuning-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 14px;
+  margin: 6px 0 0;
+}
+
+.stream-tuning-values > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stream-tuning-values dt {
+  color: var(--text-activity);
+  font-size: calc(11.5px + var(--font-size-delta));
+}
+
+.stream-tuning-values dd {
+  margin: 0;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: calc(11.5px + var(--font-size-delta));
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.settings-section-help {
   margin: calc(var(--space-sm) * -1) 0 0;
   color: var(--text-muted);
   font-size: var(--font-size-body);

@@ -1,9 +1,11 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
+import { nextTick } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { RuntimeState } from "../../bindings/pi-desk/internal/domain";
 import { useAppStore } from "../stores/app";
 import SettingsDialog from "./SettingsDialog.vue";
+import { applyStreamTuning, resetStreamTuning } from "../utils/streamTuning";
 
 const modelConfigMocks = vi.hoisted(() => ({ selectable: vi.fn() }));
 const desktopMocks = vi.hoisted(() => ({ getBootstrapState: vi.fn(), maintainPi: vi.fn() }));
@@ -63,6 +65,17 @@ describe("SettingsDialog", () => {
     expect(streamSelect.findAll("option")).toHaveLength(3);
     expect((streamSelect.element as HTMLSelectElement).value).toBe("auto");
     expect(wrapper.get('[data-testid="user-config-row"]').text()).toContain("Config file");
+    // The numbers on screen are the ones the renderer paces with: the row reads the same
+    // singleton, so it cannot advertise a value that is not in force.
+    applyStreamTuning({ split: 7, floor: 3, ceiling: 90 }, { snapWithinPx: 60, factor: 0.2, resumeWithinPx: 9, liveWindowDelayMs: 300 });
+    await nextTick();
+    const tuningRow = wrapper.get('[data-testid="stream-tuning-row"]').text();
+    expect(tuningRow).toContain("1 / 7");
+    expect(tuningRow).toContain("3 – 90");
+    expect(tuningRow).toContain("≤ 60px");
+    expect(tuningRow).toContain("20%");
+    expect(tuningRow).toContain("300ms");
+    resetStreamTuning();
     expect(wrapper.find(".settings-card .settings-section-title").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Open a task to start Pi and change runtime behavior.");
     const updateRow = wrapper.get('[data-testid="update-check-row"]');
