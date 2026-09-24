@@ -43,19 +43,112 @@ const (
 	StreamPanelsAlwaysClosed = "alwaysClosed"
 )
 
+// Reveal controls how streamed text is spread over animation frames. The three numbers
+// together decide the pace: each frame releases `backlog / split` characters, clamped to
+// [floor, ceiling].
+type Reveal struct {
+	// Split is the fraction of the backlog shown per frame. 5 = one fifth.
+	Split int `json:"split"`
+	// Floor is the smallest number of characters a frame may reveal, so a trickle of
+	// text still moves instead of sitting until the backlog grows.
+	Floor int `json:"floor"`
+	// Ceiling caps a single frame. Without it one huge SSE chunk would land whole.
+	Ceiling int `json:"ceiling"`
+}
+
+// Scroll controls how the transcript chases the streaming tail.
+type Scroll struct {
+	// SnapWithinPx: a jump no larger than this pins straight to the bottom; a larger
+	// one is eased over frames instead of teleporting.
+	SnapWithinPx int `json:"snapWithinPx"`
+	// Factor is the share of the remaining distance travelled per frame while easing.
+	Factor float64 `json:"factor"`
+	// ResumeWithinPx: how close to a bottom the reader has to be - in the timeline or
+	// inside a capped output window - for the follow to (re)arm.
+	ResumeWithinPx int `json:"resumeWithinPx"`
+	// LiveWindowDelayMs is how long a call must keep running before its output window
+	// opens on its own; most calls finish faster than a blink and must not move the
+	// transcript at all.
+	LiveWindowDelayMs int `json:"liveWindowDelayMs"`
+}
+
 // Config is the file's content. Unknown keys are preserved on save so a newer
 // build's settings do not vanish when an older one writes the file back.
 type Config struct {
 	// StreamPanels decides whether reasoning and tool-call panels open on their own.
 	StreamPanels string `json:"streamPanels"`
+	// Reveal tunes the text pacing.
+	Reveal Reveal `json:"reveal"`
+	// Scroll tunes tail following.
+	Scroll Scroll `json:"scroll"`
 
+	// notes records values that were rejected and replaced by their default.
+	notes []string
 	// extra holds keys this build does not know about, keyed by JSON name.
 	extra map[string]json.RawMessage
 }
 
 // Defaults returns the shipped configuration.
 func Defaults() Config {
-	return Config{StreamPanels: StreamPanelsAuto}
+	return Config{
+		StreamPanels: StreamPanelsAuto,
+		Reveal:       DefaultReveal(),
+		Scroll:       DefaultScroll(),
+	}
+}
+
+// DefaultReveal is the shipped pacing: a fifth of the backlog per frame, at least two
+// characters and at most a hundred and sixty.
+func DefaultReveal() Reveal { return Reveal{Split: 5, Floor: 2, Ceiling: 160} }
+
+// DefaultScroll is the shipped tail follow: snap up to 140px, ease 35% of the rest per
+// frame, re-arm within 24px of a bottom, open a slow call's window after 1200ms.
+func DefaultScroll() Scroll {
+	return Scroll{SnapWithinPx: 140, Factor: 0.35, ResumeWithinPx: 24, LiveWindowDelayMs: 1200}
+}
+
+// Notes lists the values that were out of range and fell back to their default.
+func (config Config) Notes() []string { return config.notes }
+
+// normalise clamps every number to a usable range and records what it replaced, so one
+// typo in a hand edit cannot make the transcript stop following or dump a whole answer in
+// a single frame.
+func (config *Config) normalise() {
+	if config.Reveal.Split < 2 || config.Reveal.Split > 1000 {
+		config.note("reveal.split", config.Reveal.Split, DefaultReveal().Split)
+		config.Reveal.Split = DefaultReveal().Split
+	}
+	if config.Reveal.Floor < 1 || config.Reveal.Floor > 500 {
+		config.note("reveal.floor", config.Reveal.Floor, DefaultReveal().Floor)
+		config.Reveal.Floor = DefaultReveal().Floor
+	}
+	if config.Reveal.Ceiling < config.Reveal.Floor || config.Reveal.Ceiling > 100000 {
+		config.note("reveal.ceiling", config.Reveal.Ceiling, DefaultReveal().Ceiling)
+		config.Reveal.Ceiling = DefaultReveal().Ceiling
+	}
+	if config.Scroll.SnapWithinPx < 1 || config.Scroll.SnapWithinPx > 10000 {
+		config.note("scroll.snapWithinPx", config.Scroll.SnapWithinPx, DefaultScroll().SnapWithinPx)
+		config.Scroll.SnapWithinPx = DefaultScroll().SnapWithinPx
+	}
+	if config.Scroll.Factor <= 0 || config.Scroll.Factor >= 1 {
+		config.note("scroll.factor", config.Scroll.Factor, DefaultScroll().Factor)
+		config.Scroll.Factor = DefaultScroll().Factor
+	}
+	if config.Scroll.ResumeWithinPx < 1 || config.Scroll.ResumeWithinPx > 2000 {
+		config.note("scroll.resumeWithinPx", config.Scroll.ResumeWithinPx, DefaultScroll().ResumeWithinPx)
+		config.Scroll.ResumeWithinPx = DefaultScroll().ResumeWithinPx
+	}
+	if config.Scroll.LiveWindowDelayMs < 0 || config.Scroll.LiveWindowDelayMs > 60000 {
+		config.note("scroll.liveWindowDelayMs", config.Scroll.LiveWindowDelayMs, DefaultScroll().LiveWindowDelayMs)
+		config.Scroll.LiveWindowDelayMs = DefaultScroll().LiveWindowDelayMs
+	}
+}
+
+func (config *Config) note(key string, got, want any) {
+	if config.notes == nil {
+		config.notes = []string{}
+	}
+	config.notes = append(config.notes, fmt.Sprintf("%s=%v is out of range, using %v", key, got, want))
 }
 
 // Normal reports whether a raw value is one of the recognised panel modes, after
@@ -124,7 +217,8 @@ func Load() (Config, string, error) {
 		// newer build's settings, and must not refuse to start over one typo.
 		return Defaults(), path, fmt.Errorf("parse %s: %w", path, err)
 	}
-	config := Config{extra: map[string]json.RawMessage{}}
+	config := Defaults()
+	config.extra = map[string]json.RawMessage{}
 	for key, value := range fields {
 		switch key {
 		case "streamPanels":
@@ -134,6 +228,16 @@ func Load() (Config, string, error) {
 					config.StreamPanels = normalized
 				}
 			}
+		case "reveal":
+			if err := json.Unmarshal(value, &config.Reveal); err != nil {
+				config.note("reveal", string(value), DefaultReveal())
+				config.Reveal = DefaultReveal()
+			}
+		case "scroll":
+			if err := json.Unmarshal(value, &config.Scroll); err != nil {
+				config.note("scroll", string(value), DefaultScroll())
+				config.Scroll = DefaultScroll()
+			}
 		default:
 			config.extra[key] = value
 		}
@@ -141,6 +245,7 @@ func Load() (Config, string, error) {
 	if config.StreamPanels == "" {
 		config.StreamPanels = StreamPanelsAuto
 	}
+	config.normalise()
 	return config, path, nil
 }
 
@@ -162,6 +267,16 @@ func Save(config Config) (string, error) {
 		return "", fmt.Errorf("encode stream panel mode: %w", err)
 	}
 	fields["streamPanels"] = mode
+	reveal, err := json.Marshal(config.Reveal)
+	if err != nil {
+		return "", fmt.Errorf("encode reveal: %w", err)
+	}
+	fields["reveal"] = reveal
+	scroll, err := json.Marshal(config.Scroll)
+	if err != nil {
+		return "", fmt.Errorf("encode scroll: %w", err)
+	}
+	fields["scroll"] = scroll
 	// Go sorts map keys, so the layout is stable and a hand edit never shuffles.
 	encoded, err := json.MarshalIndent(fields, "", "  ")
 	if err != nil {
@@ -213,8 +328,21 @@ func Ensure() (string, error) {
 	if err != nil {
 		return path, fmt.Errorf("create configuration: %w", err)
 	}
+	defaults := Defaults()
+	reveal, err := json.Marshal(defaults.Reveal)
+	if err != nil {
+		_ = file.Close()
+		return path, err
+	}
+	scroll, err := json.Marshal(defaults.Scroll)
+	if err != nil {
+		_ = file.Close()
+		return path, err
+	}
 	encoded, err := json.MarshalIndent(map[string]json.RawMessage{
 		"streamPanels": json.RawMessage(`"` + StreamPanelsAuto + `"`),
+		"reveal":       reveal,
+		"scroll":       scroll,
 	}, "", "  ")
 	if err != nil {
 		_ = file.Close()

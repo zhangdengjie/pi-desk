@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"pi-desk/internal/appdirs"
@@ -183,5 +184,81 @@ func TestLoadTolerantOfBadInput(t *testing.T) {
 	}
 	if _, ok := config.extra["other"]; !ok {
 		t.Fatal("unknown key was not preserved")
+	}
+}
+
+func TestTuningRoundTripAndRanges(t *testing.T) {
+	path := t.TempDir() + "/config.json"
+	t.Setenv(PathEnv, path)
+
+	// A hand edit that only names one key keeps the shipped value for the rest.
+	if err := os.WriteFile(path, []byte(`{"reveal":{"split":3}}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	config, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if config.Reveal.Split != 3 || config.Reveal.Floor != DefaultReveal().Floor || config.Reveal.Ceiling != DefaultReveal().Ceiling {
+		t.Fatalf("partial reveal = %+v, want split honoured and the rest defaulted", config.Reveal)
+	}
+	if config.Scroll != DefaultScroll() {
+		t.Fatalf("absent scroll = %+v, want the shipped tuning", config.Scroll)
+	}
+	if len(config.Notes()) != 0 {
+		t.Fatalf("valid values produced notes: %v", config.Notes())
+	}
+
+	// Out of range values fall back per field and say so, instead of leaving the
+	// transcript unable to follow or dumping a whole answer in one frame.
+	if err := os.WriteFile(path, []byte(`{"reveal":{"split":0,"ceiling":1},"scroll":{"factor":0,"snapWithinPx":-5,"liveWindowDelayMs":99999}}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	config, _, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if config.Reveal != DefaultReveal() || config.Scroll != DefaultScroll() {
+		t.Fatalf("out of range values survived: %+v %+v", config.Reveal, config.Scroll)
+	}
+	notes := strings.Join(config.Notes(), "\n")
+	for _, want := range []string{"reveal.split", "scroll.factor", "scroll.snapWithinPx", "scroll.liveWindowDelayMs"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	// Save writes both blocks, and reading it back is a fixed point.
+	saved, err := Save(Defaults())
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if saved == "" {
+		t.Fatal("Save returned no path")
+	}
+	roundTrip, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load after Save: %v", err)
+	}
+	if roundTrip.Reveal != DefaultReveal() || roundTrip.Scroll != DefaultScroll() {
+		t.Fatalf("round trip lost tuning: %+v %+v", roundTrip.Reveal, roundTrip.Scroll)
+	}
+
+	// Ensure creates a file that already carries the numbers, so the path advertised in
+	// the dialog can be edited without guessing key names.
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, err := Ensure(); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	for _, want := range []string{"reveal", "ceiling", "snapWithinPx", "liveWindowDelayMs"} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("created file missing %q:\n%s", want, raw)
+		}
 	}
 }

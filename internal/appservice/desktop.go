@@ -227,9 +227,22 @@ func (service *DesktopService) ReadUserConfig() domain.UserConfigView {
 		return view
 	}
 	config, path, err := userconfig.Load()
-	view := domain.UserConfigView{Path: path, StreamPanels: config.StreamPanels}
+	view := domain.UserConfigView{
+		Path:         path,
+		StreamPanels: config.StreamPanels,
+		Reveal:       domain.RevealTuning{Split: config.Reveal.Split, Floor: config.Reveal.Floor, Ceiling: config.Reveal.Ceiling},
+		Scroll: domain.ScrollTuning{
+			SnapWithinPx:      config.Scroll.SnapWithinPx,
+			Factor:            config.Scroll.Factor,
+			ResumeWithinPx:    config.Scroll.ResumeWithinPx,
+			LiveWindowDelayMs: config.Scroll.LiveWindowDelayMs,
+		},
+	}
+	notes := strings.Join(config.Notes(), "; ")
 	if err != nil {
-		view.Error = err.Error()
+		view.Error = strings.TrimSpace(err.Error() + "; " + notes)
+	} else {
+		view.Error = notes
 	}
 	return view
 }
