@@ -73,3 +73,25 @@ describe("teleported dialog theme inheritance", () => {
     expect(tailwind).toContain("--text-base: var(--font-size-body)");
   });
 });
+
+describe("text colour tokens", () => {
+  // `--text-faint` sat undefined in every theme for two commits: the git-ignored fade in the file
+  // tree (`layout.css` `.file-tree-name.is-ignored`) and upstream's MCP switch both resolved to
+  // nothing, so the rows looked identical to tracked ones and no test noticed. A rule that points at
+  // a missing custom property fails silently, so the check has to be "every reference has a home".
+  it("defines every --text token the stylesheets reference", async () => {
+    const moduleName = ["node", "fs/promises"].join(":");
+    const { readFile } = await import(/* @vite-ignore */ moduleName) as {
+      readFile(path: string, encoding: "utf8"): Promise<string>;
+    };
+    const [tokens, layout, workbench] = await Promise.all([
+      tokensText(),
+      readFile(["src", "styles", "layout.css"].join("/"), "utf8"),
+      readFile(["src", "styles", "workbench.css"].join("/"), "utf8"),
+    ]);
+    const defined = new Set([...tokens.matchAll(/^\s*(--text(?:-[a-z0-9-]+)?)\s*:/gm)].map((match) => match[1]));
+    const used = new Set([...[layout, workbench].join("\n").matchAll(/var\((--text(?:-[a-z0-9-]+)?)[,)\s]/g)].map((match) => match[1]));
+    expect([...used].filter((name) => !defined.has(name))).toEqual([]);
+    expect(defined.has("--text-faint")).toBe(true);
+  });
+});
