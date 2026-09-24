@@ -336,3 +336,15 @@ describe("repository file tree hierarchy", () => {
     expect(tree).toMatch(/scrollbar-color:\s*var\(--border-strong\) transparent/);
   });
 });
+
+describe("draft editor base styles", () => {
+  it("keeps the two ProseMirror rules that decide how a draft paints", async () => {
+    const text = await layoutText();
+    // prosemirror-view ships style/prosemirror.css but the host has to include it: without
+    // `white-space` the browser collapses a draft's trailing spaces, and the separator <img>
+    // ProseMirror inserts beside a line break inherits the app's generic image sizing. Both were
+    // adding a line box to the composer that no text change explained.
+    expect(text).toMatch(/\.markdown-editor \.ProseMirror\s*\{[^}]*white-space:\s*pre-wrap[^}]*white-space:\s*break-spaces/s);
+    expect(text).toMatch(/img\.ProseMirror-separator\s*\{[^}]*display:\s*inline !important/s);
+  });
+});
