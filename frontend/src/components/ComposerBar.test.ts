@@ -41,6 +41,32 @@ describe("ComposerBar", () => {
     vi.mocked(repositoryService.clipboardFiles).mockReset().mockResolvedValue([]);
   });
 
+  it("shows the delivery switch only while Pi is answering, and defaults to waiting", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{ id: "run", title: "Run", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
+      activeThreadId: "run",
+    });
+    const wrapper = mount(ComposerBar, { global: { plugins: [pinia] } });
+    await flushPromises();
+    expect(wrapper.find(".delivery-mode-toggle").exists()).toBe(false);
+
+    store.threads[0].status = "running";
+    await flushPromises();
+    const buttons = wrapper.findAll(".delivery-mode-toggle button");
+    expect(buttons).toHaveLength(2);
+    // The untouched preference must keep the behaviour Pi Desk has always had.
+    expect(store.streamingBehavior).toBe("followUp");
+    expect(buttons[1].attributes("aria-pressed")).toBe("true");
+
+    await buttons[0].trigger("click");
+    expect(store.streamingBehavior).toBe("steer");
+    expect(wrapper.findAll(".delivery-mode-toggle button")[0].attributes("aria-pressed")).toBe("true");
+    wrapper.unmount();
+  });
+
   it("keeps the @ completion menu closed after a mention is inserted for the user", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

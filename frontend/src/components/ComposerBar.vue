@@ -853,6 +853,31 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="composer-actions">
+          <div
+            v-if="agentRunning"
+            class="delivery-mode-toggle"
+            role="group"
+            :aria-label="tr('composer.deliveryMode')"
+          >
+            <button
+              type="button"
+              :class="{ 'is-active': appStore.streamingBehavior === 'steer' }"
+              :aria-pressed="appStore.streamingBehavior === 'steer'"
+              :title="tr('composer.steerHelp')"
+              @click="appStore.setStreamingBehavior('steer')"
+            >
+              <Forward :size="13" /><span>{{ tr("composer.steer") }}</span>
+            </button>
+            <button
+              type="button"
+              :class="{ 'is-active': appStore.streamingBehavior === 'followUp' }"
+              :aria-pressed="appStore.streamingBehavior === 'followUp'"
+              :title="tr('composer.followUpHelp')"
+              @click="appStore.setStreamingBehavior('followUp')"
+            >
+              <CornerDownRight :size="13" /><span>{{ tr("composer.followUp") }}</span>
+            </button>
+          </div>
           <button
             v-if="running"
             class="stop-button"

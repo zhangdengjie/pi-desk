@@ -3355,6 +3355,37 @@
   gap: 5px;
 }
 
+/* Only visible while Pi is answering: the choice is meaningless otherwise. Geometry lives here,
+   not in the template, because tailwind utilities are compiled !important and would win. */
+.delivery-mode-toggle {
+  display: inline-flex;
+  height: 29px;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+}
+
+.delivery-mode-toggle button {
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.delivery-mode-toggle button.is-active {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
 .behavior-button {
   display: inline-flex;
   height: 29px;

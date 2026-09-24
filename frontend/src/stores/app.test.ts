@@ -1937,6 +1937,42 @@ describe("app store", () => {
     expect(store.activeMessages[0]).toMatchObject({ delivery: "steer" });
   });
 
+  it("sends straight to Pi when the delivery switch is on steer", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "deny");
+    const thread = store.activeThread!;
+    thread.started = true;
+    thread.generation = 5;
+    thread.status = "running";
+    store.streamingBehavior = "steer";
+    store.updateDraft("Also check the flaky spec");
+
+    await store.sendActivePrompt();
+
+    expect(mocks.sendPrompt).toHaveBeenCalledWith({
+      threadId: thread.id,
+      message: "Also check the flaky spec",
+      streamingBehavior: "steer",
+    });
+    expect(store.activePendingPrompts).toEqual([]);
+  });
+
+  it("holds the message for the next turn when the delivery switch is on follow up", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "deny");
+    const thread = store.activeThread!;
+    thread.started = true;
+    thread.generation = 5;
+    thread.status = "running";
+    store.streamingBehavior = "followUp";
+    store.updateDraft("Wait for this one");
+
+    await store.sendActivePrompt();
+
+    expect(mocks.sendPrompt).not.toHaveBeenCalled();
+    expect(store.activePendingPrompts).toEqual([expect.objectContaining({ text: "Wait for this one" })]);
+  });
+
   it("restores a queued prompt when immediate steering fails", async () => {
     const store = useAppStore();
     await store.createThread("D:\\work\\repo", "deny");

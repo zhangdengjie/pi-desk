@@ -935,7 +935,10 @@ export const useAppStore = defineStore("app", {
     sessionChangesErrorByThread: {} as Record<string, string>,
     workspaceTrustUpdatingPath: "",
     workspaceTrustError: "",
-    streamingBehavior: "steer" as StreamingBehavior,
+    // "followUp" keeps the long-standing behaviour: a message typed while Pi is running is
+    // staged locally and sent once the turn settles. "steer" hands it to Pi straight away and
+    // Pi weaves it into the current run. The field used to be persisted but read by nobody.
+    streamingBehavior: "followUp" as StreamingBehavior,
     // Live from ~/.pi-desk/config.json (internal/userconfig). The file, not this
     // field and not state.json, is the truth: the dialog writes it and so does a
     // text editor, and a re-read on every return to the foreground picks that up.
@@ -2087,7 +2090,9 @@ export const useAppStore = defineStore("app", {
         if (this.transcriptStateByThread[thread.id] !== "loaded") return;
       }
 
-      if (thread.status === "running" && behavior !== "steer") {
+      // An explicit argument wins over the preference (the queue panel always steers one now).
+      const mode = behavior ?? this.streamingBehavior;
+      if (thread.status === "running" && mode !== "steer") {
         const queue = this.pendingPromptsByThread[thread.id] ?? (this.pendingPromptsByThread[thread.id] = []);
         queue.push({ id: createID("pending"), text: message, images: attachments, createdAt: nowISO() });
         this.draftsByThread[thread.id] = "";
@@ -2100,7 +2105,7 @@ export const useAppStore = defineStore("app", {
       const originalAttachments = this.attachmentsByThread[thread.id];
       this.draftsByThread[thread.id] = "";
       this.attachmentsByThread[thread.id] = [];
-      const sent = await this.deliverPrompt(thread, message, attachments, thread.status === "running" && behavior === "steer" ? "steer" : undefined);
+      const sent = await this.deliverPrompt(thread, message, attachments, thread.status === "running" && mode === "steer" ? "steer" : undefined);
       if (!sent && !this.draftsByThread[thread.id] && !this.attachmentsByThread[thread.id]?.length) {
         this.draftsByThread[thread.id] = originalDraft ?? message;
         this.attachmentsByThread[thread.id] = originalAttachments ?? [];
