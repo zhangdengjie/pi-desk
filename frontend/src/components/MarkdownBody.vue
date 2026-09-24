@@ -38,7 +38,11 @@ markdown.renderer.rules.link_open = (tokens, index, options, environment, render
     tokens[index].attrSet("data-file-absolute", file.absolutePath);
     tokens[index].attrSet("data-file-name", file.name);
     if (file.line) tokens[index].attrSet("data-file-line", String(file.line));
-  } else if (/^(https?:|mailto:|tel:)/i.test(href)) {
+  } else if (/^(https?:)\/\//i.test(href)) {
+    // Web links route to the managed browser panel; the click handler below
+    // prevents default and falls back to the system browser on failure.
+    tokens[index].attrSet("class", "markdown-web-link");
+  } else if (/^(mailto:|tel:)/i.test(href)) {
     tokens[index].attrSet("target", "_blank");
     tokens[index].attrSet("rel", "noopener noreferrer");
   } else if (!href.startsWith("#")) {
@@ -144,10 +148,17 @@ function fileLinkFromEvent(event: MouseEvent): WorkspaceFileLink | undefined {
 
 function openPreview(event: MouseEvent) {
   const file = fileLinkFromEvent(event);
-  if (!file) return;
+  if (file) {
+    event.preventDefault();
+    contextMenu.value = undefined;
+    void appStore.openRepositoryFilePreview(file.relativePath, file.line);
+    return;
+  }
+  const target = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a.markdown-web-link") : null;
+  const href = target?.getAttribute("href");
+  if (!target || !href) return;
   event.preventDefault();
-  contextMenu.value = undefined;
-  void appStore.openRepositoryFilePreview(file.relativePath, file.line);
+  appStore.openBrowserTab(href);
 }
 
 function openContextMenu(event: MouseEvent) {

@@ -42,34 +42,38 @@ export interface BootstrapState {
     "providerEnvIssues"?: ProviderEnvIssue[] | null;
 }
 
-export interface BrowserClickRequest {
+export interface BrowserBoundsRequest {
+    "tabId": string;
     "x": number;
     "y": number;
-    "button"?: string;
-    "clickCount"?: number;
+    "width": number;
+    "height": number;
+    "visible": boolean;
 }
 
-export interface BrowserKeyRequest {
-    "key": string;
-    "modifiers"?: number;
+export interface BrowserOpenURLRequest {
+    "tabId"?: string;
+    "url": string;
+}
+
+export interface BrowserStartRequest {
+    "tabId": string;
+    "threadId": string;
+    "url": string;
 }
 
 export interface BrowserStatus {
+    "tabId": string;
+    "threadId": string;
+    "temporary": boolean;
+    "loading": boolean;
+    "canGoBack": boolean;
+    "canGoForward": boolean;
+    "error"?: string;
     "attached": boolean;
     "url"?: string;
     "title"?: string;
     "profileDir"?: string;
-}
-
-export interface BrowserTextInputRequest {
-    "text": string;
-}
-
-export interface BrowserWheelRequest {
-    "x": number;
-    "y": number;
-    "deltaX": number;
-    "deltaY": number;
 }
 
 export interface CommandResult {
@@ -122,6 +126,11 @@ export interface DesktopPreferences {
     "language": string;
     "fontFamily": string;
     "fontSize": number;
+    "lightCodeTheme"?: string;
+    "darkCodeTheme"?: string;
+    "showCodeLineNumbers"?: boolean;
+    "wrapCodeLines"?: boolean;
+    "codeFontSize"?: number;
     "offlineMode": boolean;
     "proxyEnabled": boolean;
     "proxyUrl"?: string;
@@ -131,6 +140,7 @@ export interface DesktopPreferences {
     "inspectorOpen": boolean;
     "inspectorWidth"?: number;
     "inspectorTab": string;
+    "panelState"?: string;
     "notificationsEnabled": boolean;
     "updateChecksEnabled": boolean;
     "closeToTray": boolean;

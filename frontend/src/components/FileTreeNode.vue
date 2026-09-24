@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { AtSign, ChevronDown, ChevronRight, File, Folder, FolderOpen, Undo2 } from "lucide-vue-next";
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import type { RepositoryTreeNode } from "../utils/fileMentions";
 
 const props = defineProps<{
@@ -9,26 +9,27 @@ const props = defineProps<{
   changeStatuses?: Record<string, string>;
   rollbackActions?: Record<string, string>;
   rollbackArmed?: Record<string, boolean>;
-  /** Expanded directories of the current workspace, owned by the store so the state survives the
-   *  file preview unmounting the whole tree. Absent entries fall back to "top level open". */
+  selectedPath?: string;
+  /** Expansion of the whole workspace, owned by the store (`repositoryTreeExpandedByWorkspace`) so
+   *  every tab of one repository shares a single tree state instead of reopening folders per tab. */
   expanded?: Record<string, boolean>;
+  filtering?: boolean;
 }>();
 const emit = defineEmits<{
   mention: [path: string, directory: boolean];
   open: [path: string];
   diff: [path: string];
   rollback: [path: string];
-  toggleDirectory: [path: string];
+  pin: [path: string];
+  expand: [path: string, value: boolean];
 }>();
-const open = computed(() => props.expanded?.[props.node.path] ?? (props.depth ?? 0) === 0);
-
-function toggleDirectory() {
-  if (props.node.directory) emit("toggleDirectory", props.node.path);
-}
-
-function forwardToggleDirectory(path: string) {
-  emit("toggleDirectory", path);
-}
+const localOpen = ref((props.depth ?? 0) === 0);
+const open = computed({
+  get: () => props.filtering || (props.expanded?.[props.node.path] ?? (props.selectedPath?.startsWith(props.node.path + "/") || localOpen.value)),
+  set: (value) => emit("expand", props.node.path, value),
+});
+// The tree lists git-ignored paths greyed out, so a folder name has to say which of the two it is.
+const treeTitle = computed(() => `${props.node.directory ? props.node.path : `Preview ${props.node.path}`}${props.node.ignored ? " (git-ignored)" : ""}`);
 
 function forwardMention(path: string, directory: boolean) {
   emit("mention", path, directory);
@@ -46,19 +47,20 @@ function forwardRollback(path: string) {
   emit("rollback", path);
 }
 
-// File rows keep their action hint (`Preview …`) because the tests and the muscle memory both key on
-// it; Git-excluded rows get a suffix so a `.pi/plans` entry does not read like a deleted file.
-const treeTitle = computed(() => `${props.node.directory ? props.node.path : `Preview ${props.node.path}`}${props.node.ignored ? " (git-ignored)" : ""}`);
+function forwardExpand(path: string, value: boolean) {
+  emit("expand", path, value);
+}
 </script>
 
 <template>
   <!-- Geometry belongs to layout.css: `ui.listItem` carries `px-2.5`, `gap-2`, `min-h-9` and
        `flex`, and `ui.root` carries `text-[var(--text)]`. Tailwind is imported `important`
        (`styles/tailwind.css:9`), so those utilities beat every unlayered `.file-tree-*` rule and
-       flattened the indentation, the grid columns and the muted/hover text colours. -->
+       flattened the indentation, the grid columns and the muted/hover text colours.
+       Indentation is likewise owned by `.file-tree-children`, so no `--tree-depth` here. -->
   <div class="file-tree-node">
-    <div class="file-tree-row">
-      <button v-if="node.directory" class="file-tree-toggle" type="button" :title="open ? 'Collapse folder' : 'Expand folder'" @click="toggleDirectory">
+    <div class="file-tree-row" :class="{ 'is-selected': selectedPath === node.path }">
+      <button v-if="node.directory" class="file-tree-toggle" type="button" :title="open ? 'Collapse folder' : 'Expand folder'" @click="open = !open">
         <ChevronDown v-if="open" :size="13" />
         <ChevronRight v-else :size="13" />
       </button>
@@ -66,7 +68,7 @@ const treeTitle = computed(() => `${props.node.directory ? props.node.path : `Pr
       <FolderOpen v-if="node.directory && open" :size="14" />
       <Folder v-else-if="node.directory" :size="14" />
       <File v-else :size="14" />
-      <span v-if="node.directory" class="file-tree-name" :class="{ 'is-ignored': node.ignored }" :title="treeTitle" @click="toggleDirectory">{{ node.name }}</span>
+      <button v-if="node.directory" type="button" class="file-tree-name file-tree-open" :class="{ 'is-ignored': node.ignored }" :title="treeTitle" :aria-expanded="open" @click="open = !open">{{ node.name }}</button>
       <button
         v-else
         class="file-tree-name file-tree-open"
@@ -75,6 +77,7 @@ const treeTitle = computed(() => `${props.node.directory ? props.node.path : `Pr
         :data-status="changeStatuses?.[node.path]"
         :title="treeTitle"
         @click="emit('open', node.path)"
+        @dblclick="emit('pin', node.path)"
       >{{ node.name }}</button>
       <button
         v-if="!node.directory && changeStatuses?.[node.path]"
@@ -108,8 +111,11 @@ const treeTitle = computed(() => `${props.node.directory ? props.node.path : `Pr
         :change-statuses="changeStatuses"
         :rollback-actions="rollbackActions"
         :rollback-armed="rollbackArmed"
+        :selected-path="selectedPath"
         :expanded="expanded"
-        @toggle-directory="forwardToggleDirectory"
+        :filtering="filtering"
+        @pin="emit('pin', $event)"
+        @expand="forwardExpand"
         @mention="forwardMention"
         @open="forwardOpen"
         @diff="forwardDiff"

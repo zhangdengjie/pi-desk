@@ -7,11 +7,14 @@ import MarkdownBody from "./MarkdownBody.vue";
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
 vi.mock("../services/desktop", () => ({ getBootstrapState: vi.fn() }));
+vi.mock("../services/browser", () => ({ browserService: { openUrl: vi.fn().mockResolvedValue({ attached: true }) } }));
 vi.mock("../services/repository", () => ({
   repositoryService: {
     previewFile: vi.fn(), openFile: vi.fn(), openFileWith: vi.fn(), saveFileAs: vi.fn(), revealFile: vi.fn(),
   },
 }));
+
+
 
 function mountMarkdown(text: string) {
   const pinia = createPinia();
@@ -89,18 +92,23 @@ describe("MarkdownBody", () => {
     wrapper.unmount();
   });
 
-  it("turns workspace file links into preview and context-menu targets while leaving web links external", async () => {
+  it("turns workspace file links into previews and routes web links to the managed browser", async () => {
     const { store, wrapper } = mountMarkdown("[result](reports/tg_groups.csv) and [web](https://example.com/docs)");
     store.openRepositoryFilePreview = vi.fn().mockResolvedValue(undefined);
+    store.openBrowserTab = vi.fn();
     const links = wrapper.findAll("a");
 
     expect(links[0].classes()).toContain("markdown-file-link");
     expect(links[0].attributes("title")).toBe("D:\\repo\\reports\\tg_groups.csv");
     expect(links[0].attributes("href")).toBe("#");
-    expect(links[1].attributes("target")).toBe("_blank");
+    expect(links[1].classes()).toContain("markdown-web-link");
+    expect(links[1].attributes("target")).toBeUndefined();
 
     await links[0].trigger("click");
     expect(store.openRepositoryFilePreview).toHaveBeenCalledWith("reports/tg_groups.csv", undefined);
+
+    await links[1].trigger("click");
+    expect(store.openBrowserTab).toHaveBeenCalledWith("https://example.com/docs");
 
     await links[0].trigger("contextmenu", { clientX: 80, clientY: 90 });
     await flushPromises();

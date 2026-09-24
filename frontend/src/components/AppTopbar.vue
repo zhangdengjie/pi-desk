@@ -1,11 +1,20 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { ArrowLeft, ArrowRight, CalendarClock, Check, ChevronDown, ChevronRight, FolderGit2, PanelLeftClose, PanelRightOpen } from "lucide-vue-next";
+import { ArrowLeft, ArrowRight, CalendarClock, Check, ChevronDown, ChevronRight, Info, PanelLeftClose, PanelRightOpen } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { type AppPage, useAppStore } from "../stores/app";
 import { tr } from "../i18n";
 
 const appStore = useAppStore();
+const contextElement = ref<HTMLElement>();
+const contextButton = ref<HTMLButtonElement>();
+const state = computed(() => appStore.activeSessionState);
+const stats = computed(() => appStore.sessionStatsByThread[appStore.activeThreadId]);
+const workspaceLabel = computed(() => appStore.activeThread ? appStore.remoteWorkspaceForThread(appStore.activeThread)?.remoteRoot || appStore.activeThread.workspacePath : "");
+watch(() => appStore.contextOpen, (open) => {
+  if (open) contextElement.value?.showPopover();
+  else { contextElement.value?.hidePopover(); contextButton.value?.focus(); }
+});
 const workspaceApplicationMenuOpen = ref(false);
 const workspaceApplicationButton = ref<HTMLButtonElement>();
 const activeWorkspaceApplication = computed(() => appStore.activeWorkspaceApplication);
@@ -79,6 +88,11 @@ function onDocumentPointerDown(event: PointerEvent) {
 }
 
 function onDocumentKeydown(event: KeyboardEvent) {
+  if (event.defaultPrevented) return;
+  if (event.ctrlKey && !event.altKey && !event.shiftKey && !appStore.settingsOpen && appStore.activeThread) {
+    const kind = event.key === "`" ? "terminal" : event.key.toLowerCase() === "t" ? "browser" : event.key.toLowerCase() === "p" ? "changes" : undefined;
+    if (kind) { event.preventDefault(); appStore.setInspectorTab(kind); return; }
+  }
   if (event.key !== "Escape") return;
   if (workspaceApplicationMenuOpen.value) {
     event.preventDefault();
@@ -136,6 +150,7 @@ onBeforeUnmount(() => {
           <FolderGit2 :size="14" />
           <span>{{ appStore.activeThread.workspace }}</span>
         </span>
+        <button v-if="appStore.activePage === 'task' && appStore.activeThread" id="thread-context-button" ref="contextButton" type="button" class="thread-context-button" :aria-expanded="appStore.contextOpen" aria-controls="thread-context" @click="appStore.contextOpen = !appStore.contextOpen"><Info :size="14" />{{ tr('inspector.context') }}</button>
       </div>
 
       <div class="topbar-actions flex shrink-0 items-center gap-1">
@@ -197,5 +212,22 @@ onBeforeUnmount(() => {
       </div>
 
     </div>
+    <section id="thread-context" ref="contextElement" popover class="thread-context-popover context-panel" aria-label="上下文" @toggle="appStore.contextOpen = ($event as ToggleEvent).newState === 'open'">
+
+      <dl v-if="appStore.activeThread">
+        <div><dt>{{ tr("inspector.workspace") }}</dt><dd :title="workspaceLabel">{{ workspaceLabel }}</dd></div>
+        <div><dt>{{ tr("inspector.piProcess") }}</dt><dd>{{ appStore.activeThread.started ? tr("inspector.generation", { generation: appStore.activeThread.generation }) : tr("common.notStarted") }}</dd></div>
+        <div><dt>{{ tr("inspector.session") }}</dt><dd :title="appStore.activeThread.title">{{ appStore.activeThread.title }}</dd></div>
+        <div><dt>{{ tr("inspector.sessionId") }}</dt><dd :title="state?.sessionId || appStore.activeThread.sessionId">{{ state?.sessionId || appStore.activeThread.sessionId || tr("inspector.createdOnPrompt") }}</dd></div>
+        <div><dt>{{ tr("inspector.model") }}</dt><dd>{{ state?.model ? `${state.model.provider}/${state.model.id}` : tr("common.auto") }}</dd></div>
+        <div><dt>{{ tr("inspector.reasoning") }}</dt><dd>{{ state?.thinkingLevel || tr("common.auto") }}</dd></div>
+        <div><dt>{{ tr("inspector.messages") }}</dt><dd>{{ stats?.totalMessages ?? state?.messageCount ?? 0 }}</dd></div>
+        <div><dt>{{ tr("inspector.tokens") }}</dt><dd>{{ stats?.tokens?.total?.toLocaleString() ?? "-" }}</dd></div>
+        <div><dt>{{ tr("inspector.cost") }}</dt><dd>{{ stats?.cost ? `$${stats.cost.toFixed(4)}` : "-" }}</dd></div>
+        <div><dt>{{ tr("inspector.contextUsage") }}</dt><dd>{{ stats?.contextUsage?.percent != null ? `${stats.contextUsage.percent.toFixed(1)}%` : "-" }}</dd></div>
+      </dl>
+      <div v-else class="panel-empty" :class="ui.empty"><span>{{ tr("inspector.selectTask") }}</span></div>
+
+    </section>
   </header>
 </template>

@@ -160,6 +160,96 @@ vi.mock("../services/terminal", () => ({
 import { consumeMentionInsert, useAppStore } from "./app";
 
 describe("app store", () => {
+  it("keeps background browser activity in its owning conversation without stealing a file tab", async () => {
+    const store = useAppStore();
+    store.scheduleDesktopStateSave = vi.fn();
+    store.threads = ["a", "b"].map(id => ({ id, title: id, workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }));
+    store.activateThread("a");
+    store.openPanelTab({ id: "file", kind: "file", title: "file.ts", pinned: true });
+    const status = { tabId: "browser-a", threadId: "a", attached: true, human: false, temporary: true, loading: false, canGoBack: false, canGoForward: false, url: "https://example.com", title: "Example" };
+    store.handleBrowserEvent({ type: "opened", threadId: "a", tabId: "browser-a", status });
+    expect(store.activePanelTab?.id).toBe("file");
+    expect(store.activePanel?.tabs.at(-1)?.title).toBe("Example");
+    store.handleBrowserEvent({ type: "opened", threadId: "b", tabId: "browser-b", status: { ...status, tabId: "browser-b", threadId: "b" } });
+    expect(store.activePanelTab?.id).toBe("file");
+    expect(store.inspectorByThread.b.tabs).toHaveLength(1);
+    store.catalogReady = true;
+    await store.persistDesktopState();
+    const saved = JSON.parse(mocks.saveDesktopState.mock.calls.at(-1)![0].preferences.panelState);
+    expect(saved.a.tabs.map((tab: { id: string }) => tab.id)).toEqual(["file"]);
+    store.handleBrowserEvent({ type: "state", threadId: "a", tabId: "browser-a", status: { ...status, temporary: false } });
+    await store.persistDesktopState();
+    expect(JSON.parse(mocks.saveDesktopState.mock.calls.at(-1)![0].preferences.panelState).a.tabs).toHaveLength(2);
+    store.handleBrowserEvent({ type: "closed", threadId: "b", tabId: "browser-b" });
+    expect(store.inspectorByThread.b.tabs).toHaveLength(0);
+    expect(store.activePanelTab?.id).toBe("file");
+  });
+  it("isolates panel tabs, preview slots, historical diffs and view state per conversation", async () => {
+    const store = useAppStore();
+    store.scheduleDesktopStateSave = vi.fn();
+    store.threads = ["a", "b"].map(id => ({ id, title: id, workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }));
+    store.activateThread("a");
+    await store.openRepositoryFilePreview("one.ts", undefined, false);
+    await store.openRepositoryFilePreview("two.ts", undefined, false);
+    expect(store.activePanel?.tabs.map(tab => tab.path)).toEqual(["two.ts"]);
+    store.pinPanelTab(store.activePanelTab!.id);
+    store.activePanelTab!.treeOpen = true;
+    store.activePanelTab!.scroll = { ".file-preview-content": [10, 240] };
+    await store.openRepositoryFilePreview("three.ts", undefined, false);
+    expect(store.activePanel?.tabs).toHaveLength(2);
+    await store.openRepositoryDiff("same.ts", "+first", "message-one");
+    const firstDiff = store.activePanelTab!.id;
+    await store.openRepositoryDiff("same.ts", "+second", "message-two");
+    expect(store.activePanelTab!.id).not.toBe(firstDiff);
+    expect(store.activeRepositoryDiff?.working).toBe("+second");
+    await store.openRepositoryDiff("same.ts", "+first", "message-one");
+    expect(store.activePanel?.tabs).toHaveLength(4);
+    expect(store.activePanelTab!.id).toBe(firstDiff);
+    store.setInspectorWidth(580);
+    store.contextOpen = true;
+    store.activateThread("b");
+    expect(store.inspectorOpen).toBe(false);
+    expect(store.contextOpen).toBe(false);
+    await store.openRepositoryDiff("same.ts", "+other conversation", "message-one");
+    expect(store.activePanel?.tabs).toHaveLength(1);
+    store.activateThread("a");
+    expect(store.activePanel?.tabs).toHaveLength(4);
+    expect(store.inspectorWidth).toBe(580);
+    expect(store.activeRepositoryDiff?.working).toBe("+first");
+    store.selectPanelTab(store.activePanel!.tabs[0].id);
+    expect(store.activePanelTab?.scroll).toEqual({ ".file-preview-content": [10, 240] });
+    expect(store.activePanelTab?.treeOpen).toBe(true);
+  });
+
+  it("persists panel metadata without cached file contents and collapses the last tab", async () => {
+    const store = useAppStore();
+    store.scheduleDesktopStateSave = vi.fn();
+    store.threads = [{ id: "a", title: "a", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];
+    store.activateThread("a");
+    store.catalogReady = true;
+    await store.openRepositoryFilePreview("main.go");
+    const fileId = store.activePanelTab!.id;
+    store.activePanelTab!.scroll = { ".file-preview-content": [0, 320] };
+    const browser = store.openBrowserTab("https://example.com");
+    const browser2 = store.openBrowserTab("https://example.org");
+    expect(browser.id).not.toBe(browser2.id);
+    store.reorderPanelTab(browser2.id, fileId);
+    await store.persistDesktopState();
+    const saved = mocks.saveDesktopState.mock.calls.at(-1)![0];
+    const panel = JSON.parse(saved.preferences.panelState).a;
+    expect(panel.tabs[0].id).toBe(browser2.id);
+    expect(panel.tabs.find((tab: { id: string }) => tab.id === fileId).preview).toBeUndefined();
+    expect(panel.tabs.find((tab: { id: string }) => tab.id === fileId).scroll).toEqual({ ".file-preview-content": [0, 320] });
+    const restored = useAppStore(createPinia());
+    restored.restoreDesktopPreferences(saved);
+    expect(restored.inspectorByThread.a.tabs).toEqual(panel.tabs);
+    store.inspectorByThread.a.tabs = [store.inspectorByThread.a.tabs.find(tab => tab.id === fileId)!];
+    store.selectPanelTab(fileId);
+    await store.closePanelTab(fileId);
+    expect(store.activePanel?.tabs).toHaveLength(0);
+    expect(store.inspectorOpen).toBe(false);
+  });
+
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
@@ -353,6 +443,11 @@ describe("app store", () => {
         language: "en",
         fontFamily: "serif",
         fontSize: 16,
+        lightCodeTheme: "vitesse-light",
+        darkCodeTheme: "catppuccin-mocha",
+        showCodeLineNumbers: false,
+        wrapCodeLines: true,
+        codeFontSize: 14,
         offlineMode: false,
         proxyEnabled: true,
         proxyUrl: "http://127.0.0.1:7890",
@@ -371,6 +466,7 @@ describe("app store", () => {
 
     expect(store).toMatchObject({
       appearance: "dark", language: "en", interfaceFont: "serif", interfaceFontSize: 16,
+      lightCodeTheme: "vitesse-light", darkCodeTheme: "catppuccin-mocha", showCodeLineNumbers: false, wrapCodeLines: true, codeFontSize: 14,
       offlineMode: false, proxyEnabled: true, proxyURL: "http://127.0.0.1:7890",
       streamingBehavior: "followUp", sidebarCollapsed: true, sidebarWidth: 344,
       inspectorOpen: false, inspectorWidth: 468, inspectorTab: "context", workspaceApplication: "vscode",
@@ -379,6 +475,7 @@ describe("app store", () => {
     expect(mocks.saveDesktopState).toHaveBeenCalledWith(expect.objectContaining({
       preferences: expect.objectContaining({
         proxyUrl: "http://127.0.0.1:7890", streamingBehavior: "followUp", fontFamily: "serif", fontSize: 16,
+        lightCodeTheme: "vitesse-light", darkCodeTheme: "catppuccin-mocha", showCodeLineNumbers: false, wrapCodeLines: true, codeFontSize: 14,
         sidebarWidth: 344, inspectorOpen: false, inspectorWidth: 468, workspaceApplication: "vscode",
       }),
     }));
@@ -502,6 +599,11 @@ describe("app store", () => {
     expect(store.language).toBe("zh-CN");
     expect(store.interfaceFont).toBe("default");
     expect(store.interfaceFontSize).toBe(14);
+    expect(store.lightCodeTheme).toBe("github-light");
+    expect(store.darkCodeTheme).toBe("github-dark");
+    expect(store.showCodeLineNumbers).toBe(true);
+    expect(store.wrapCodeLines).toBe(false);
+    expect(store.codeFontSize).toBe(12);
   });
 
   it("starts Pi asynchronously when a catalog task is selected and closes the oldest idle process above ten", async () => {
@@ -1281,6 +1383,24 @@ describe("app store", () => {
 
     expect(mocks.setModel).toHaveBeenCalledWith({ threadId: thread.id, provider: "custom", modelId: "gpt-5.6-sol" });
     expect(store.activeModelPending).toBe(false);
+    expect(store.activeSessionState?.model).toEqual(selected);
+  });
+
+  it("keeps the selected model when restarting before the first persisted prompt", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread!;
+    const selected = { provider: "质谱官方", id: "glm-5.3-flash", name: "GLM" };
+    await store.chooseModel(selected);
+    mocks.startSession.mockResolvedValue({ threadId: thread.id, generation: 5,
+      stateJson: JSON.stringify({ sessionId: "fresh", model: { provider: "default", id: "default" } }) });
+    mocks.getState.mockResolvedValue({ sessionId: "fresh", model: selected });
+    await store.ensureSession(thread);
+    expect(store.pendingModelByThread[thread.id]).toBeUndefined();
+    expect(thread.sessionFile).toBeFalsy();
+    await store.stopThread(thread.id);
+    await store.ensureSession(thread);
+    expect(mocks.setModel).toHaveBeenCalledTimes(2);
     expect(store.activeSessionState?.model).toEqual(selected);
   });
 
@@ -2953,6 +3073,47 @@ describe("app store", () => {
     expect(store.activeRepositoryError).toBe(tr("inspector.workspaceAccessDisabled"));
   });
 
+  it("isolates panel state and late file results between sessions in the same workspace", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "approve");
+    const firstId = store.activeThreadId;
+    let finish!: (value: { path: string; working: string }) => void;
+    mocks.diffRepository.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const pending = store.openRepositoryDiff("main.go");
+
+    await store.createThread("D:\\work\\repo", "approve");
+    const secondId = store.activeThreadId;
+    expect(store.inspectorOpen).toBe(false);
+    expect(store.activeRepositoryDiffPath).toBe("");
+    await store.openRepositoryDiff("main.go", "+second session");
+    finish({ path: "main.go", working: "+first session" });
+    await pending;
+    expect(store.activeRepositoryDiff?.working).toBe("+second session");
+
+    store.selectThread(firstId);
+    expect(store.inspectorOpen).toBe(true);
+    expect(store.activeRepositoryDiff?.working).toBe("+first session");
+    await store.openRepositoryFilePreview("main.go", 19);
+    store.setInspectorTab("context");
+    store.selectThread(secondId);
+    expect(store.inspectorTab).toBe("changes");
+    expect(store.activeRepositoryFilePreviewPath).toBe("");
+    expect(store.activeRepositoryFileTabs).toEqual([]);
+    expect(store.activeRepositoryDiff?.working).toBe("+second session");
+    store.toggleInspector();
+
+    store.selectThread(firstId);
+    expect(store.inspectorOpen).toBe(true);
+    expect(store.inspectorTab).toBe("changes");
+    expect(store.contextOpen).toBe(false);
+    expect(store.activeRepositoryFilePreviewPath).toBe("main.go");
+    expect(store.activeRepositoryFilePreview?.content).toBe("package main");
+    expect(store.activeRepositoryFilePreviewLine).toBe(19);
+    expect(store.activeRepositoryFileTabs).toEqual(["main.go"]);
+    store.selectThread(secondId);
+    expect(store.inspectorOpen).toBe(false);
+  });
+
   it("drops a late Repository diff after the same file is reopened", async () => {
     const store = useAppStore();
     await store.createThread("D:\\work\\repo", "approve");
@@ -2994,8 +3155,7 @@ describe("app store", () => {
     await store.createThread("D:\\work\\repo", "approve");
     store.inspectorOpen = false;
     store.inspectorTab = "context";
-    store.repositoryFilePreviewPathByThread[store.activeThreadId] = "README.md";
-    store.repositoryFilePreviewByThread[store.activeThreadId] = { path: "README.md", absolutePath: "D:\\work\\repo\\README.md", content: "old", size: 3, binary: false, truncated: false };
+    store.openPanelTab({ id: "readme", kind: "file", title: "README.md", path: "README.md", preview: { path: "README.md", absolutePath: "D:\\work\\repo\\README.md", content: "old", size: 3, binary: false, truncated: false } });
 
     await store.openRepositoryDiff("main.go");
     expect(mocks.diffRepository).toHaveBeenCalledWith({ workspaceId: "workspace-1" }, "main.go");
@@ -3024,7 +3184,7 @@ describe("app store", () => {
     expect(store.activeRepositoryDiffLoading).toBe(false);
   });
 
-  it("loads a linked file preview without changing the selected inspector tab", async () => {
+  it("opens a linked file in its own selected inspector tab", async () => {
     const store = useAppStore();
     await store.createThread("D:\\work\\repo", "approve");
     store.inspectorTab = "context";
@@ -3034,7 +3194,8 @@ describe("app store", () => {
     expect(mocks.previewRepositoryFile).toHaveBeenCalledWith({ workspaceId: "workspace-1" }, "main.go");
     expect(store.activeRepositoryFilePreview).toMatchObject({ absolutePath: "D:\\work\\repo\\main.go", content: "package main" });
     expect(store.activeRepositoryFilePreviewLine).toBe(19);
-    expect(store.inspectorTab).toBe("context");
+    expect(store.inspectorTab).toBe("changes");
+    expect(store.contextOpen).toBe(false);
     expect(store.inspectorOpen).toBe(true);
     await store.openPreviewedRepositoryFile();
     await store.openPreviewedRepositoryFile(true);
@@ -3064,6 +3225,24 @@ describe("app store", () => {
       id: "session-session-1", title: "Runtime audit", trust: "approve", sessionFile: "C:\\sessions\\one.jsonl", messageCount: 3,
     });
     expect(store.activeThreadId).toBe("session-session-1");
+  });
+
+  it("keeps discovered workspace identities out of restored desktop state", async () => {
+    mocks.listSessions.mockResolvedValueOnce([{
+      id: "outside", path: "C:\\sessions\\outside.jsonl", cwd: "D:\\outside", title: "History",
+      createdAt: "2026-08-10T08:00:00Z", modifiedAt: "2026-08-10T09:00:00Z", messageCount: 1,
+    }]);
+    mocks.getDesktopState.mockResolvedValueOnce({ threads: [{
+      id: "session-outside", title: "History", workspacePath: "D:\\outside",
+      sessionPath: "C:\\sessions\\outside.jsonl", trust: "deny", status: "idle",
+    }] });
+    const store = useAppStore();
+    await store.loadCatalog();
+    expect(store.threads[0].workspaceId).toBeUndefined();
+    await store.persistDesktopState();
+    expect(mocks.saveDesktopState.mock.lastCall?.[0].threads[0]).toMatchObject({
+      workspaceId: undefined, workspacePath: "D:\\outside", sessionPath: "C:\\sessions\\outside.jsonl",
+    });
   });
 
   it("restores an SSH anchor transcript by immutable WorkspaceID", async () => {
@@ -3857,30 +4036,11 @@ describe("app store", () => {
     expect(store.activeDraft).toBe("Keep this ");
   });
 
-  it("remembers the repository tree scroll offset per workspace", () => {
-    const store = useAppStore();
-    store.$patch({
-      threads: [
-        { id: "t-a", title: "A", workspace: "repo-a", workspacePath: "D:\\repo-a", trust: "approve", status: "idle", started: false, generation: 0 },
-        { id: "t-b", title: "B", workspace: "repo-b", workspacePath: "D:\\repo-b", trust: "approve", status: "idle", started: false, generation: 0 },
-      ],
-      activeThreadId: "t-a",
-    });
+  // The file tree's scroll offset is remembered by upstream's panel instead: `PanelTab.scroll`
+  // keyed by selector, restored on tab switch and written to desktop state. `InspectorPanel.test.ts`
+  // pins that behaviour, so no store bucket for it here.
 
-    expect(store.activeRepositoryTreeScrollTop).toBe(0);
-    store.rememberRepositoryTreeScroll(1234.6);
-    expect(store.repositoryTreeScrollTopByWorkspace["d:/repo-a"]).toBe(1235);
-    expect(store.activeRepositoryTreeScrollTop).toBe(1235);
-
-    store.rememberRepositoryTreeScroll(-12);
-    expect(store.repositoryTreeScrollTopByWorkspace["d:/repo-a"]).toBe(0);
-
-    store.activeThreadId = "t-b";
-    expect(store.activeRepositoryTreeScrollTop).toBe(0);
-    expect(Object.keys(store.repositoryTreeScrollTopByWorkspace)).toEqual(["d:/repo-a"]);
-  });
-
-  it("records repository tree expansion per workspace and keeps the top-level default", () => {
+  it("records repository tree expansion per workspace so every tab shares one tree", () => {
     const store = useAppStore();
     store.$patch({
       threads: [
@@ -3891,23 +4051,23 @@ describe("app store", () => {
     });
 
     expect(store.activeRepositoryTreeExpanded).toEqual({});
-    store.toggleRepositoryTreeDirectory("src");
-    store.toggleRepositoryTreeDirectory("src/deep");
+    store.setRepositoryTreeExpanded("src", false);
+    store.setRepositoryTreeExpanded("src/deep", true);
 
-    // A root directory defaults to open, so collapsing it records false.
+    // The component owns the default ("top level open"); the store only records explicit choices.
     expect(store.repositoryTreeExpandedByWorkspace["d:/repo-a"]).toEqual({ src: false, "src/deep": true });
+    expect(store.activeRepositoryTreeExpanded).toEqual({ src: false, "src/deep": true });
 
     store.activeThreadId = "t-b";
     expect(store.activeRepositoryTreeExpanded).toEqual({});
-    store.toggleRepositoryTreeDirectory("docs");
-    // Same default rule applies to the other workspace's root: first click collapses.
-    expect(store.repositoryTreeExpandedByWorkspace["d:/repo-b"]).toEqual({ docs: false });
-    store.toggleRepositoryTreeDirectory("docs");
+    store.setRepositoryTreeExpanded("docs", true);
     expect(store.repositoryTreeExpandedByWorkspace["d:/repo-b"]).toEqual({ docs: true });
+    store.setRepositoryTreeExpanded("docs", false);
+    expect(store.repositoryTreeExpandedByWorkspace["d:/repo-b"]).toEqual({ docs: false });
     expect(Object.keys(store.repositoryTreeExpandedByWorkspace).sort()).toEqual(["d:/repo-a", "d:/repo-b"]);
 
-    store.toggleRepositoryTreeDirectory("");
-    expect(store.repositoryTreeExpandedByWorkspace["d:/repo-b"]).toEqual({ docs: true });
+    store.setRepositoryTreeExpanded("", true);
+    expect(store.repositoryTreeExpandedByWorkspace["d:/repo-b"]).toEqual({ docs: false });
   });
 
   it("marks only the just-inserted mention draft as a programmatic insert", async () => {
