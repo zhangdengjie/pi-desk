@@ -8591,13 +8591,14 @@ article.mcp-server-row {
 }
 
 .composer-editor .markdown-editor {
-  min-height: 52px;
+  /* 13px of padding + one 22px line box; the box now grows exactly one line per newline. */
+  min-height: 35px;
   padding: 10px 12px 3px;
 }
 
 .composer-editor .markdown-editor [data-milkdown-root],
 .composer-editor .markdown-editor [contenteditable="true"] {
-  min-height: 39px;
+  min-height: 22px;
 }
 
 .composer-editor .markdown-editor [contenteditable="true"] {
@@ -8620,12 +8621,11 @@ article.mcp-server-row {
   pointer-events: none;
 }
 
-.composer-editor .markdown-editor [contenteditable="true"] > :first-child {
-  margin-top: 0;
-}
-
-.composer-editor .markdown-editor [contenteditable="true"] > :last-child {
-  margin-bottom: 0;
+/* Enter splits a paragraph, and the shared markdown rule gives every <p> a 0.8em bottom
+   margin, so each newline cost 12px on top of the 22px line box and the composer lurched.
+   A draft is raw text: stack it at exactly one line box per newline. */
+.composer-editor .markdown-editor [contenteditable="true"] > * {
+  margin: 0;
 }
 
 .composer-editor .markdown-editor [contenteditable="true"] pre {
