@@ -1,4 +1,5 @@
 import { mount } from "@vue/test-utils";
+import { nextTick } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ToolCallPanel from "./ToolCallPanel.vue";
 import { forgetPanelOpenStates } from "../utils/detailsOpenState";
@@ -68,6 +69,85 @@ describe("ToolCallPanel", () => {
     expect(wrapper.get("details").attributes("open")).toBeUndefined();
     wrapper.unmount();
     vi.useRealTimers();
+  });
+
+  // The window is capped (132px running, 300px settled), so a call that never crosses
+  // the live-window delay still has its newest lines below the fold unless the box
+  // follows its own tail. That is the case readers hit with a fast bash/git command in
+  // alwaysOpen.
+  it("follows the tail of a fast call's output window without waiting for the live delay", async () => {
+    const wrapper = mount(ToolCallPanel, {
+      props: { tool: { id: "tool-fast", name: "bash", output: "one", status: "running" }, panelMode: "alwaysOpen", runIsLive: true },
+    });
+    const panel = wrapper.get(".tool-output").element as HTMLElement;
+    Object.defineProperties(panel, {
+      clientHeight: { configurable: true, get: () => 132 },
+      scrollHeight: { configurable: true, get: () => 880 },
+    });
+
+    await wrapper.setProps({ tool: { id: "tool-fast", name: "bash", output: "one\ntwo", status: "running" }, panelMode: "alwaysOpen", runIsLive: true });
+    await nextTick();
+    expect(panel.scrollTop).toBe(880);
+
+    // The reader scrolls up inside the box: following again would yank them back.
+    panel.scrollTop = 120;
+    panel.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+    await wrapper.setProps({ tool: { id: "tool-fast", name: "bash", output: "one\ntwo\nthree", status: "running" }, panelMode: "alwaysOpen", runIsLive: true });
+    await nextTick();
+    expect(panel.scrollTop).toBe(120);
+
+    // Coming back to the bottom re-arms it on its own.
+    panel.scrollTop = 760;
+    panel.dispatchEvent(new Event("scroll"));
+    await wrapper.setProps({ tool: { id: "tool-fast", name: "bash", output: "one\ntwo\nthree\nfour", status: "running" }, panelMode: "alwaysOpen", runIsLive: true });
+    await nextTick();
+    expect(panel.scrollTop).toBe(880);
+    wrapper.unmount();
+  });
+
+  // A finished call of a run this window watched still lands on its last line: the box
+  // grows from 132px to 300px when the run settles, and the newest output is the reason
+  // the reader opened it.
+  it("leaves a settled call showing its last line", async () => {
+    const wrapper = mount(ToolCallPanel, {
+      props: { tool: { id: "tool-settle", name: "bash", output: "line one", status: "running" }, panelMode: "alwaysOpen", runIsLive: true },
+    });
+    const panel = wrapper.get(".tool-output").element as HTMLElement;
+    const sizes = { clientHeight: 132, scrollHeight: 880 };
+    Object.defineProperties(panel, {
+      clientHeight: { configurable: true, get: () => sizes.clientHeight },
+      scrollHeight: { configurable: true, get: () => sizes.scrollHeight },
+    });
+    await wrapper.setProps({ tool: { id: "tool-settle", name: "bash", output: "line one\nline two", status: "running" }, panelMode: "alwaysOpen", runIsLive: true });
+    await nextTick();
+
+    sizes.clientHeight = 300;
+    sizes.scrollHeight = 1600;
+    await wrapper.setProps({ tool: { id: "tool-settle", name: "bash", output: "line one\nline two", status: "complete" }, panelMode: "alwaysOpen", runIsLive: true });
+    await nextTick();
+
+    expect(panel.scrollTop).toBe(1600);
+    wrapper.unmount();
+  });
+
+  // The tail follow is for output that is arriving now. A long call the reader opens by
+  // hand afterwards has to start at the top, which is where they mean to read it.
+  it("does not jump a finished call the reader opens by hand", async () => {
+    const wrapper = mount(ToolCallPanel, {
+      props: { tool: { id: "tool-hand", name: "bash", output: "x".repeat(900), status: "complete" }, runIsLive: true },
+    });
+    const panel = wrapper.get(".tool-output").element as HTMLElement;
+    Object.defineProperties(panel, {
+      clientHeight: { configurable: true, get: () => 300 },
+      scrollHeight: { configurable: true, get: () => 1600 },
+    });
+
+    await wrapper.get("summary").trigger("click");
+    await nextTick();
+
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    expect(panel.scrollTop).toBe(0);
+    wrapper.unmount();
   });
 
   it("remembers a reader's expansion of a finished call across re-creation", async () => {

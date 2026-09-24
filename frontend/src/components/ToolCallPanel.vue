@@ -6,6 +6,7 @@ import type { StreamPanelMode, ToolExecution } from "../stores/app";
 import type { SubagentTaskState } from "../utils/subagentTasks";
 import { tr } from "../i18n";
 import { panelOpenState, pinPanelOpen } from "../utils/detailsOpenState";
+import { attachInnerTail, type InnerTail } from "../utils/innerTail";
 import { useRevealedText } from "../composables/useRevealedText";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 
@@ -70,15 +71,32 @@ const panelOpen = computed(() => {
 // a time. While the call runs, the window reveals them frame by frame and then follows
 // its own tail; the moment the call settles the full text is on screen.
 const shownOutput = useRevealedText(() => props.tool.output, () => props.tool.status === "running");
-let outputScrollFrame = 0;
-watch(() => [live.value, shownOutput.value.length] as const, () => {
-  if (!live.value || outputScrollFrame) return;
-  outputScrollFrame = requestAnimationFrame(() => {
-    outputScrollFrame = 0;
-    const panel = outputPanel.value;
-    if (panel) panel.scrollTop = panel.scrollHeight;
-  });
-}, { immediate: true });
+let innerTail: InnerTail | undefined;
+let innerTailEl: HTMLElement | undefined;
+
+// The output box is height-capped (132px while running, 300px once settled - layout.css),
+// so a long call never grows the row and the timeline has nothing left to follow: the
+// newest lines simply fall out of the bottom of that box and stay there. Follow the
+// box's own tail, and stand down the moment the reader scrolls up inside it.
+//
+// Gated on `belongsToLiveRun`, not on the delayed window: a call that finishes in half a
+// second still has to land showing what it printed. A finished call that the reader
+// opens by hand later is deliberately excluded - they mean to read it from the top.
+let wasRunning = props.tool.status === "running";
+watch(() => [panelOpen.value, props.tool.status, shownOutput.value.length] as const, () => {
+  const settling = wasRunning && props.tool.status !== "running";
+  wasRunning = props.tool.status === "running";
+  if (!panelOpen.value || !belongsToLiveRun.value) return;
+  if (props.tool.status !== "running" && !settling) return;
+  const panel = outputPanel.value;
+  if (!panel) return;
+  if (panel !== innerTailEl || !innerTail) {
+    innerTail?.destroy();
+    innerTail = attachInnerTail(panel);
+    innerTailEl = panel;
+  }
+  innerTail.step();
+}, { immediate: true, flush: "post" });
 
 const resultImages = computed(() => props.tool.images ?? []);
 
@@ -196,7 +214,9 @@ async function copyText(kind: "input" | "output", text: string) {
 onBeforeUnmount(() => {
   if (copyResetTimer) clearTimeout(copyResetTimer);
   if (liveWindowTimer !== undefined) clearTimeout(liveWindowTimer);
-  if (outputScrollFrame) cancelAnimationFrame(outputScrollFrame);
+  innerTail?.destroy();
+  innerTail = undefined;
+  innerTailEl = undefined;
 });
 </script>
 

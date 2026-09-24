@@ -11,6 +11,7 @@ import { mergeToolDiffs } from "../utils/toolDiff";
 import { parseSkillInvocation, replaceSkillInvocationUserMessage, skillInvocationCommandText } from "../utils/skillInvocation";
 import { splitTaggedThinking } from "../utils/taggedThinking";
 import { panelOpenState, pinPanelOpen } from "../utils/detailsOpenState";
+import { attachInnerTail, type InnerTail } from "../utils/innerTail";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 import MarkdownBody from "./MarkdownBody.vue";
 import ToolCallPanel from "./ToolCallPanel.vue";
@@ -81,7 +82,6 @@ watch(() => [runNotice.value?.status, runNotice.value?.retryAt], () => {
   }
 }, { immediate: true });
 onBeforeUnmount(() => {
-  if (reasoningScrollFrame) cancelAnimationFrame(reasoningScrollFrame);
   if (retryTimer !== undefined) window.clearInterval(retryTimer);
 });
 const runNoticeLabel = computed(() => {
@@ -338,20 +338,29 @@ function syncReasoningOpen(step: ExecutionStep, event: Event) {
 // window keeps its size and pulls its own tail into view instead.
 const executionDetails = ref<HTMLElement>();
 const liveReasoning = computed(() => executionSteps.value.find((step) => step.kind === "thinking" && liveReasoningWindow(step)));
-let reasoningScrollFrame = 0;
+let reasoningTail: InnerTail | undefined;
+let reasoningTailEl: HTMLElement | undefined;
 
 watch(() => [liveReasoning.value?.id ?? "", liveReasoning.value?.text?.length ?? 0] as const, () => {
-  if (reasoningScrollFrame) return;
-  reasoningScrollFrame = requestAnimationFrame(() => {
-    reasoningScrollFrame = 0;
-    const step = liveReasoning.value;
-    if (!step) return;
-    const tail = [...executionDetails.value?.querySelectorAll<HTMLElement>(".thinking-block") ?? []]
-      .find((panel) => panel.dataset.stepId === step.id)
-      ?.querySelector<HTMLElement>(".thinking-body");
-    if (tail) tail.scrollTop = tail.scrollHeight;
-  });
+  const step = liveReasoning.value;
+  if (!step) return;
+  const tail = [...executionDetails.value?.querySelectorAll<HTMLElement>(".thinking-block") ?? []]
+    .find((panel) => panel.dataset.stepId === step.id)
+    ?.querySelector<HTMLElement>(".thinking-body");
+  if (!tail) return;
+  if (tail !== reasoningTailEl || !reasoningTail) {
+    reasoningTail?.destroy();
+    reasoningTail = attachInnerTail(tail);
+    reasoningTailEl = tail;
+  }
+  reasoningTail.step();
 }, { flush: "post" });
+
+onBeforeUnmount(() => {
+  reasoningTail?.destroy();
+  reasoningTail = undefined;
+  reasoningTailEl = undefined;
+});
 </script>
 
 <template>
