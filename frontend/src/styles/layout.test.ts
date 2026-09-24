@@ -348,3 +348,17 @@ describe("draft editor base styles", () => {
     expect(text).toMatch(/img\.ProseMirror-separator\s*\{[^}]*display:\s*inline !important/s);
   });
 });
+
+describe("transcript line breaks", () => {
+  it("does not let a rendered <br> break the line twice", async () => {
+    const text = await layoutText();
+    // MarkdownBody renders with `breaks: true`, so markdown-it already emitted a <br> for every
+    // soft break and left the literal newline in the text node. If a paragraph inherits
+    // white-space: pre-wrap again, one Shift+Enter in the composer paints as a blank line.
+    const paragraph = text.match(/\.markdown-body p\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(paragraph).toContain("white-space: normal");
+    const message = text.match(/\.message-content p\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(message).toContain("white-space: pre-wrap");
+    expect(text.indexOf(".markdown-body p")).toBeGreaterThan(text.indexOf(".message-content p"));
+  });
+});

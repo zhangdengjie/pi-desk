@@ -1614,6 +1614,15 @@
   margin-bottom: 0;
 }
 
+/* MarkdownBody renders with `breaks: true`, so every soft break in the source already became a
+   <br>, and markdown-it keeps the literal newline in the text node next to it. The inherited
+   `white-space: pre-wrap` from `.message-content p` then broke a second line, so one Shift+Enter in
+   the composer showed up as a blank line in the transcript. Later in the file than that rule and of
+   equal specificity, so this one wins. */
+.markdown-body p {
+  white-space: normal;
+}
+
 .markdown-body p + p,
 .markdown-body p + ul,
 .markdown-body p + ol,

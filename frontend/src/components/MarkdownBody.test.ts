@@ -170,3 +170,14 @@ describe("MarkdownBody", () => {
     vi.useRealTimers();
   });
 });
+
+it("renders one newline as a single <br> inside one paragraph", async () => {
+  const { wrapper } = mountMarkdown("你好\n都说了封建时代");
+  const html = wrapper.get(".markdown-body").element.innerHTML;
+  // markdown-it runs with `breaks: true`, so the soft break becomes exactly one <br> and both lines
+  // stay inside one <p>. The literal newline left next to the <br> is what the old inherited
+  // `white-space: pre-wrap` turned into a second break, which read as a phantom blank line in the
+  // transcript; `.markdown-body p { white-space: normal }` in layout.css drops that second break.
+  expect(html.trim()).toBe('<p>你好<br>\n都说了封建时代</p>');
+  wrapper.unmount();
+});
