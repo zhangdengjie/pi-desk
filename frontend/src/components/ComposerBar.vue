@@ -616,6 +616,11 @@ onBeforeUnmount(() => {
       <small v-if="appStore.activeRetry.errorMessage">{{ appStore.activeRetry.errorMessage }}</small>
       <button type="button" title="Stop retry" @click="void appStore.abortActiveRetry()"><X :size="14" /></button>
     </div>
+    <!-- Automatic compaction emits no timeline entry until it succeeds, so the only signal is this banner. -->
+    <div v-else-if="appStore.activeSessionIsCompacting" class="retry-banner" :class="ui.status" role="status" aria-live="polite">
+      <LoaderCircle :size="14" class="is-spinning" aria-hidden="true" />
+      <span>{{ tr("topbar.compacting") }}</span>
+    </div>
     <div class="composer-input-stack" :class="{ 'has-todo': Boolean(piDeskTodo), 'has-queue': queuedMessages.length > 0 }">
       <PiDeskGoalPanel v-if="piDeskGoal" :key="piDeskGoalKey" :goal="piDeskGoal" :running="agentRunning" @command="(command: string) => void appStore.sendGoalCommand(command)" />
       <PiDeskTodoPanel v-if="piDeskTodo" :key="piDeskTodoKey" :todo="piDeskTodo" />

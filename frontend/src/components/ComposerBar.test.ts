@@ -211,6 +211,23 @@ describe("ComposerBar", () => {
     wrapper.unmount();
   });
 
+  it("shows a status banner while the session is compacting", () => {
+    const store = useAppStore();
+    store.$patch({
+      threads: [{ id: "thread", title: "Task", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "running", started: true, generation: 1 }],
+      activeThreadId: "thread",
+      sessionOperationByThread: { thread: "Compacting" },
+    });
+    const wrapper = mount(ComposerBar);
+    const banner = wrapper.get(".retry-banner");
+    expect(banner.attributes("role")).toBe("status");
+    expect(banner.text()).toContain("Compacting context");
+    expect(banner.find(".is-spinning").exists()).toBe(true);
+    // Same slot as the retry banner: directly above the input stack.
+    expect(banner.element.nextElementSibling).toBe(wrapper.get(".composer-input-stack").element);
+    wrapper.unmount();
+  });
+
   it("navigates commands and exposes the editable local queue and retry controls", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

@@ -108,6 +108,9 @@ const TODO_WIDGET_KEYS = ["pi-deck-todo", "pi-desk-todo"] as const;
 const REMOTE_RECONNECT_CODES = ["REMOTE_DISCONNECTED", "REMOTE_CONTEXT_CHANGED_WAIT_FOR_IDLE", "REMOTE_OUTCOME_UNKNOWN"] as const;
 const REMOTE_MUTATING_TOOLS = new Set(["write", "edit", "bash", "user_bash"]);
 
+// Raw marker kept in `sessionOperationByThread`; the banner localises it via `topbar.compacting`.
+const COMPACTING_OPERATION = "Compacting";
+
 function hasRemoteCode(message: string, code: (typeof REMOTE_RECONNECT_CODES)[number]): boolean {
   return message === code || message.startsWith(`${code}:`);
 }
@@ -1137,6 +1140,11 @@ export const useAppStore = defineStore("app", {
     },
     activeSessionOperation(state): string {
       return state.sessionOperationByThread[state.activeThreadId] ?? "";
+    },
+    // Automatic compaction stores the raw marker; the banner localises it. Both manual
+    // (`compactActiveSession`) and threshold/overflow compaction end up here.
+    activeSessionIsCompacting(state): boolean {
+      return state.sessionOperationByThread[state.activeThreadId] === COMPACTING_OPERATION;
     },
     activeWorkspaceTrustUpdating(state): boolean {
       const thread = state.threads.find((item) => item.id === state.activeThreadId);
@@ -2362,7 +2370,7 @@ export const useAppStore = defineStore("app", {
     async compactActiveSession(instructions = "") {
       const thread = this.activeThread;
       if (!thread?.started || this.sessionOperationByThread[thread.id]) return;
-      const operation = tr("topbar.compacting");
+      const operation = COMPACTING_OPERATION;
       this.sessionOperationByThread[thread.id] = operation;
       try {
         await agentService.compact({ threadId: thread.id, customInstructions: instructions || undefined });
@@ -3615,7 +3623,7 @@ export const useAppStore = defineStore("app", {
           if (payload.reason === "threshold" || payload.reason === "overflow") {
             thread.status = "running";
             this.waitingForOutputByThread[thread.id] = true;
-            this.sessionOperationByThread[thread.id] = "Compacting";
+            this.sessionOperationByThread[thread.id] = COMPACTING_OPERATION;
           }
           break;
         case "compaction_end":
