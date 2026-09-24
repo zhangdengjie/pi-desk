@@ -350,6 +350,51 @@ describe("ConversationPane", () => {
     wrapper.unmount();
     vi.useRealTimers();
   });
+  // A jump bigger than a typing step is eased over frames, and every step of that ease
+  // moves the scroll position - which the browser reports as a scroll event. If the
+  // follow read its own steps as "the reader left the tail", one jump would be enough
+  // to stop following the run for good.
+  it("keeps following the tail across an eased jump", async () => {
+    const frames: FrameRequestCallback[] = [];
+    const observers: Array<{ callback: () => void; targets: Element[] }> = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.stubGlobal("ResizeObserver", class {
+      record: { callback: () => void; targets: Element[] };
+      constructor(callback: () => void) {
+        this.record = { callback, targets: [] };
+        observers.push(this.record);
+      }
+      observe(target: Element) { this.record.targets.push(target); }
+      unobserve() {}
+      disconnect() {}
+    });
+    const wrapper = mountTranscript(4);
+    await flushPromises();
+
+    const sizes = { clientHeight: 600, scrollHeight: 1800 };
+    const timeline = wrapper.get(".timeline").element as HTMLElement;
+    Object.defineProperties(timeline, {
+      clientHeight: { configurable: true, get: () => sizes.clientHeight },
+      scrollHeight: { configurable: true, get: () => sizes.scrollHeight },
+    });
+    timeline.scrollTop = 1200;
+    await wrapper.get(".timeline").trigger("scroll");
+
+    // A panel opens below the fold: 900px of content in one frame.
+    sizes.scrollHeight = 2700;
+    const rowObserver = observers.find((entry) => entry.targets.some((target) => target.classList.contains("stub-message")))!;
+    rowObserver.callback();
+
+    expect(timeline.scrollTop).toBeGreaterThan(1200);
+    expect(timeline.scrollTop).toBeLessThan(2100);
+
+    await wrapper.get(".timeline").trigger("scroll");
+    for (let guard = 0; guard < 40 && frames.length; guard += 1) frames.shift()!(0);
+    expect(timeline.scrollTop).toBe(2700);
+    wrapper.unmount();
+  });
+
   it("leaves the reader's place alone when a collapsed panel grows above them", async () => {
     const frames: FrameRequestCallback[] = [];
     const observers: Array<{ callback: () => void; targets: Element[] }> = [];

@@ -148,6 +148,10 @@ function scrollToBottom() {
 // callbacks and stream signals land inside a single frame, and chasing each of them
 // would force extra layouts and let intermediate offsets reach the screen.
 let tailFrame = 0;
+// Our own writes to scrollTop come back as scroll events - synchronously in some
+// engines, on the next frame in others. Both cases have to be recognised, or the
+// follow reads its own steps as "the reader left the tail" and releases itself.
+let applyingTail = false;
 
 /**
  * Move the tail one step and report whether a jump is still in flight. The step itself
@@ -159,7 +163,11 @@ function stepTail(): boolean {
   const element = timeline.value;
   if (!element || !stickToBottom.value) return false;
   const next = nextTailScroll(element.scrollTop, element.scrollHeight, element.clientHeight);
-  if (next !== element.scrollTop) element.scrollTop = next;
+  if (next !== element.scrollTop) {
+    applyingTail = true;
+    element.scrollTop = next;
+    applyingTail = false;
+  }
   const chasing = element.scrollHeight - element.scrollTop - element.clientHeight > 1;
   if (!chasing) updateActiveNavigation();
   return chasing;
@@ -190,6 +198,12 @@ const FOLLOW_RESUME_PX = 24;
 function onTimelineScroll() {
   const element = timeline.value;
   if (!element) return;
+  // One of our own steps (in flight, or being written right now): the reader has not
+  // moved, so the follow stays armed.
+  if (applyingTail || tailFrame) {
+    updateActiveNavigation();
+    return;
+  }
   stickToBottom.value = isNearBottom(element.scrollTop, element.clientHeight, element.scrollHeight, FOLLOW_RESUME_PX);
   if (!stickToBottom.value) stopFollowingTail();
   updateActiveNavigation();
@@ -202,6 +216,7 @@ function onTimelineWheel(event: WheelEvent) {
   // so releasing the follow would be wrong.
   if (nestedScrollerCanGoUp(event.target, timeline.value)) return;
   stickToBottom.value = false;
+  stopFollowingTail();
 }
 
 // The follow only resumes on an actual arrival at the bottom, so the reader
