@@ -146,6 +146,7 @@ export type {
     UpsertMcpServerRequest,
     UpsertModelConfigRequest,
     UpsertPromptTemplateRequest,
+    UserConfigView,
     WindowState,
     WorkspaceApplication,
     WorkspaceRequest,

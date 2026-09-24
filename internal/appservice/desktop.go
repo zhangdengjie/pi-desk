@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"pi-desk/internal/domain"
+	"pi-desk/internal/userconfig"
 	"pi-desk/internal/workspace"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -210,4 +211,44 @@ func normalizeSemver(value string) string {
 		value = "v" + value
 	}
 	return value
+}
+
+// ReadUserConfig returns the hand-editable streaming config. It creates the file
+// with the defaults the first time, so the path advertised in the settings
+// dialog can actually be opened and edited.
+func (service *DesktopService) ReadUserConfig() domain.UserConfigView {
+	if _, err := userconfig.Ensure(); err != nil {
+		// Advisory only: a read-only home must still show the working defaults.
+		view := domain.UserConfigView{StreamPanels: userconfig.StreamPanelsAuto}
+		if path, pathErr := userconfig.Path(); pathErr == nil {
+			view.Path = path
+		}
+		view.Error = err.Error()
+		return view
+	}
+	config, path, err := userconfig.Load()
+	view := domain.UserConfigView{Path: path, StreamPanels: config.StreamPanels}
+	if err != nil {
+		view.Error = err.Error()
+	}
+	return view
+}
+
+// WriteUserConfig stores the panel policy in the same file the user edits by
+// hand, which keeps one source of truth: the dialog writes it, and so does a
+// text editor. Unknown keys survive because userconfig keeps them verbatim.
+func (service *DesktopService) WriteUserConfig(view domain.UserConfigView) (domain.UserConfigView, error) {
+	mode, ok := userconfig.Normal(view.StreamPanels)
+	if !ok {
+		return service.ReadUserConfig(), fmt.Errorf("unknown stream panel mode %q", view.StreamPanels)
+	}
+	config, _, err := userconfig.Load()
+	if err != nil {
+		return service.ReadUserConfig(), fmt.Errorf("read configuration: %w", err)
+	}
+	config.StreamPanels = mode
+	if _, err := userconfig.Save(config); err != nil {
+		return service.ReadUserConfig(), err
+	}
+	return service.ReadUserConfig(), nil
 }

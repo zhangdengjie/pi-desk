@@ -25,10 +25,28 @@ export function GetBootstrapState(): $CancellablePromise<domain$0.BootstrapState
     return $Call.ByID(3493914889);
 }
 
+/**
+ * ReadUserConfig returns the hand-editable streaming config. It creates the file
+ * with the defaults the first time, so the path advertised in the settings
+ * dialog can actually be opened and edited.
+ */
+export function ReadUserConfig(): $CancellablePromise<domain$0.UserConfigView> {
+    return $Call.ByID(1428877975);
+}
+
 export function SaveWindowState(state: domain$0.WindowState): $CancellablePromise<void> {
     return $Call.ByID(2027655592, state);
 }
 
 export function ToggleDebugMode(): $CancellablePromise<boolean> {
     return $Call.ByID(887430002);
+}
+
+/**
+ * WriteUserConfig stores the panel policy in the same file the user edits by
+ * hand, which keeps one source of truth: the dialog writes it, and so does a
+ * text editor. Unknown keys survive because userconfig keeps them verbatim.
+ */
+export function WriteUserConfig(view: domain$0.UserConfigView): $CancellablePromise<domain$0.UserConfigView> {
+    return $Call.ByID(706529932, view);
 }

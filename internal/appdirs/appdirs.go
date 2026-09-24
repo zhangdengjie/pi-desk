@@ -118,3 +118,16 @@ func expandHome(path string) string {
 	}
 	return filepath.Join(home, strings.TrimPrefix(path, "~/"))
 }
+
+// VendorDirName is the directory name Pi Desk owns inside the user configuration
+// directory. It is exported for the sibling config file under the home directory,
+// which follows the same naming (pi itself uses ~/.pi).
+func VendorDirName() string {
+	return vendorDirName
+}
+
+// ExpandHome resolves a leading ~/ for callers that take paths from the
+// environment, where a shell is not available to do the substitution.
+func ExpandHome(path string) string {
+	return expandHome(path)
+}

@@ -5,11 +5,16 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
 
+	"pi-desk/internal/appdirs"
 	"pi-desk/internal/domain"
+	"pi-desk/internal/userconfig"
 )
 
 type fakeProber struct {
@@ -151,5 +156,58 @@ func TestGetBootstrapStateCarriesProviderEnvIssues(t *testing.T) {
 	SetProviderEnvProbe(service, func() ([]domain.ProviderEnvIssue, error) { return nil, errors.New("models.json is unreadable") })
 	if issues := service.GetBootstrapState().ProviderEnvIssues; len(issues) != 0 {
 		t.Fatalf("a failed probe must report nothing, got %#v", issues)
+	}
+}
+
+// The config file is the single source of truth for the streaming panel policy, so
+// both the dialog and a text editor have to agree on what a read returns.
+func TestUserConfigRoundTrip(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv(appdirs.DataDirEnv, "")
+	t.Setenv(userconfig.PathEnv, filepath.Join(home, "config.json"))
+	service := NewDesktopService(fakeProber{}, nil)
+
+	view := service.ReadUserConfig()
+	if view.StreamPanels != userconfig.StreamPanelsAuto {
+		t.Fatalf("first read = %q, want %q", view.StreamPanels, userconfig.StreamPanelsAuto)
+	}
+	if view.Path == "" {
+		t.Fatal("the advertised path is empty")
+	}
+	if _, err := os.Stat(view.Path); err != nil {
+		t.Fatalf("a read must create the file it advertises: %v", err)
+	}
+
+	// An edit made outside the app is what the next read reports.
+	if err := os.WriteFile(view.Path, []byte(`{"streamPanels":"alwaysOpen"}`), 0o600); err != nil {
+		t.Fatalf("hand edit: %v", err)
+	}
+	if got := service.ReadUserConfig(); got.StreamPanels != userconfig.StreamPanelsAlwaysOpen {
+		t.Fatalf("after a hand edit = %q", got.StreamPanels)
+	}
+
+	updated, err := service.WriteUserConfig(domain.UserConfigView{StreamPanels: userconfig.StreamPanelsAlwaysClosed})
+	if err != nil {
+		t.Fatalf("WriteUserConfig: %v", err)
+	}
+	if updated.StreamPanels != userconfig.StreamPanelsAlwaysClosed {
+		t.Fatalf("write returned %q", updated.StreamPanels)
+	}
+	raw, err := os.ReadFile(view.Path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if !strings.Contains(string(raw), userconfig.StreamPanelsAlwaysClosed) {
+		t.Fatalf("the file does not carry the written value: %s", raw)
+	}
+
+	// A typo is refused instead of being stored, and it leaves the file alone.
+	if _, err := service.WriteUserConfig(domain.UserConfigView{StreamPanels: "alwaysMaybe"}); err == nil {
+		t.Fatal("an unknown mode must be rejected")
+	}
+	if got := service.ReadUserConfig(); got.StreamPanels != userconfig.StreamPanelsAlwaysClosed {
+		t.Fatalf("rejected write changed the file to %q", got.StreamPanels)
 	}
 }

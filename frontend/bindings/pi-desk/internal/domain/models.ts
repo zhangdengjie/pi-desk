@@ -1121,6 +1121,28 @@ export interface UpsertPromptTemplateRequest {
     "content": string;
 }
 
+/**
+ * UserConfigView is the resolved content of the user's hand-editable config file.
+ * 
+ * The path travels with the value on purpose: the settings dialog shows and opens
+ * exactly the file that was read, which may be the one PI_DESK_CONFIG or
+ * PI_DESK_DATA_DIR pointed at instead of ~/.pi-desk.
+ */
+export interface UserConfigView {
+    "path": string;
+
+    /**
+     * StreamPanels is "auto", "alwaysOpen" or "alwaysClosed". See userconfig.
+     */
+    "streamPanels": string;
+
+    /**
+     * Error reports an unreadable or unparsable file. The value above is then the
+     * default, because a broken config must never block the UI.
+     */
+    "error"?: string;
+}
+
 export interface WindowState {
     "x": number;
     "y": number;
