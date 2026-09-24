@@ -8632,6 +8632,40 @@ article.mcp-server-row {
   min-height: 22px;
 }
 
+/* prosemirror-view ships style/prosemirror.css and expects the host to load it: the editable
+   element gets class="ProseMirror" (prosemirror-view/dist/index.js) but the stylesheet was never
+   imported, so the bundle had zero `.ProseMirror` rules (`grep -c ProseMirror dist/assets/*.css`).
+   Without `white-space` the browser collapses a draft's spaces and line ends, and the `<img>`
+   separators ProseMirror inserts next to line breaks keep the app's generic image sizing, which
+   is what made the composer jump by half a line while typing and stay tall after clearing.
+   `break-spaces` is the second declaration below because Safari cannot wrap a preserved newline
+   inside a word. */
+.markdown-editor .ProseMirror {
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  white-space: break-spaces;
+  -webkit-font-variant-ligatures: none;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+}
+
+.markdown-editor .ProseMirror pre {
+  white-space: pre-wrap;
+}
+
+.markdown-editor .ProseMirror li {
+  position: relative;
+}
+
+.markdown-editor img.ProseMirror-separator {
+  display: inline !important;
+  width: auto !important;
+  max-width: none !important;
+  height: auto !important;
+  border: none !important;
+  margin: 0 !important;
+}
+
 .composer-editor .markdown-editor [contenteditable="true"] {
   position: relative;
   outline: 0;
