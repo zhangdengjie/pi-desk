@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { ArrowLeft, ArrowRight, CalendarClock, Check, ChevronDown, ChevronRight, Info, PanelLeftClose, PanelRightOpen } from "lucide-vue-next";
+import { CalendarClock, Check, ChevronDown, ChevronRight, Info, PanelLeftClose, PanelRightOpen } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { type AppPage, useAppStore } from "../stores/app";
 import { tr } from "../i18n";
@@ -31,28 +31,6 @@ const currentNavigationTarget = computed<NavigationTarget>(() => ({ page: appSto
 
 function sameNavigationTarget(left: NavigationTarget | undefined, right: NavigationTarget): boolean {
   return left?.page === right.page && left.threadId === right.threadId;
-}
-
-function findNavigationIndex(direction: -1 | 1): number {
-  for (let index = navigationIndex.value + direction; index >= 0 && index < navigationHistory.value.length; index += direction) {
-    const target = navigationHistory.value[index];
-    if (target.page === "scheduledTasks" || appStore.threads.some((thread) => thread.id === target.threadId)) return index;
-  }
-  return -1;
-}
-
-const canNavigateBack = computed(() => findNavigationIndex(-1) >= 0);
-const canNavigateForward = computed(() => findNavigationIndex(1) >= 0);
-
-function navigateHistory(direction: -1 | 1) {
-  const index = findNavigationIndex(direction);
-  if (index < 0) return;
-  const target = navigationHistory.value[index];
-  navigationIndex.value = index;
-  restoringNavigation = true;
-  if (target.page === "scheduledTasks") appStore.openScheduledTasks();
-  else appStore.selectThread(target.threadId);
-  queueMicrotask(() => { restoringNavigation = false; });
 }
 
 watch(currentNavigationTarget, (target) => {
@@ -120,16 +98,11 @@ onBeforeUnmount(() => {
     class="topbar relative z-40 col-span-full row-start-1 grid h-[var(--topbar-height)] min-w-0 border-b border-[var(--border)] bg-[var(--bg-workspace)] max-[760px]:[grid-template-columns:var(--sidebar-collapsed-width)_minmax(0,1fr)]"
     :class="[ui.root, appStore.sidebarCollapsed ? '[grid-template-columns:var(--sidebar-collapsed-width)_minmax(0,1fr)]' : '[grid-template-columns:var(--sidebar-width)_minmax(0,1fr)]']"
   >
-    <div class="topbar-brand flex min-w-0 items-center gap-2 border-r border-[var(--border)]" aria-label="Pi Desk">
+    <div class="topbar-brand flex min-w-0 items-center gap-2 border-r-0 bg-[var(--bg-workspace)]" aria-label="Pi Desk">
       <!-- No Tailwind layout utilities here: `tailwind.css` imports the framework `important`,
            so a `grid`/`flex` class would emit `display: grid !important` inside
            `@layer utilities` and no rule in `workbench.css` could hide the mark again.
            Geometry and colour live in `styles/workbench.css` (`.topbar-brand-mark`). -->
-      <span class="topbar-brand-mark" aria-hidden="true">Pi</span>
-      <div v-if="!appStore.sidebarCollapsed" class="topbar-history">
-        <button class="icon-button topbar-history-button" type="button" :title="tr('sidebar.back')" :aria-label="tr('sidebar.back')" :disabled="!canNavigateBack" @click="navigateHistory(-1)"><ArrowLeft :size="18" :stroke-width="1.8" /></button>
-        <button class="icon-button topbar-history-button" type="button" :title="tr('sidebar.forward')" :aria-label="tr('sidebar.forward')" :disabled="!canNavigateForward" @click="navigateHistory(1)"><ArrowRight :size="18" :stroke-width="1.8" /></button>
-      </div>
       <button
         v-if="!appStore.sidebarCollapsed"
         class="icon-button topbar-sidebar-toggle ml-auto size-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[var(--text-muted)] transition-colors duration-150 ease-out hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
