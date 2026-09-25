@@ -9,9 +9,9 @@
 		<key>CFBundleIconFile</key>
 		<string>icons</string>
 		<key>CFBundleIdentifier</key>
-		<string>dev.pi.desk</string>
+		<string>dev.pi.desk.dev</string>
 		<key>CFBundleName</key>
-		<string>Pi Desk</string>
+		<string>Pi Desk dev</string>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
