@@ -70,6 +70,24 @@ describe("MarkdownBody", () => {
     // Only the prose cell takes the width floor; short value cells stay natural.
     expect(wrapper.findAll(".markdown-cell.is-wide")).toHaveLength(1);
     expect(wrapper.get("td .markdown-cell.is-wide").text()).toContain("中文长文本");
+    // The pane is divided by this count, so it has to be on the wrapper the floor reads.
+    expect(scroll.attributes("style")).toContain("--markdown-table-cols:2");
+    wrapper.unmount();
+  });
+
+  it("floors prose by column count and keeps short labels on one line", () => {
+    const header = "| 持仓 | 成本 | 现价 | 盈亏 | 触发线 | 首触日 | 走向 | 执行 |";
+    const rule = "| --- | --- | --- | --- | --- | --- | --- | --- |";
+    const row =
+      "| 科大讯飞 | 42.785×200 | 39.20→38.32 | -10.4% | 兑现区39.8–40.5；收盘<39.00清；终极线38.67 | 9/1收40.22进兑现区；9/17收38.34双破 | 破线后阴跌至今 | ❌ 第三次点名 |";
+    const { wrapper } = mountMarkdown(`${header}\n${rule}\n${row}\n`);
+
+    expect(wrapper.get(".markdown-table-scroll").attributes("style")).toContain("--markdown-table-cols:8");
+    // A two-glyph label and a seven-glyph verdict must both be pinned to one line:
+    // at 31px these columns rendered as vertical text next to 200px prose columns.
+    expect(wrapper.findAll("td .markdown-cell.is-nowrap")).toHaveLength(4);
+    expect(wrapper.get("td .markdown-cell.is-nowrap").text()).toBe("科大讯飞");
+    expect(wrapper.findAll(".markdown-cell.is-wide")).toHaveLength(2);
     wrapper.unmount();
   });
 

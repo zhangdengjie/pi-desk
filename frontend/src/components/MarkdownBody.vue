@@ -59,8 +59,20 @@ markdown.renderer.rules.link_open = (tokens, index, options, environment, render
 // its own table layout (see .markdown-table-scroll in layout.css). So every
 // rendered table gets a scroll wrapper here, in the one place markdown becomes
 // HTML, which also keeps streamed reasoning and file previews on the same shape.
+// The column count travels with the table because the cell floor in layout.css has
+// to divide the pane by it: an absolute floor on every prose cell summed past the
+// reading axis on wide tables (8 columns × 200px in a 880px pane), so the table
+// overflowed and the label columns were left with one glyph per line.
+function tableColumnCount(tokens: CellTokens, index: number): number {
+  let columns = 0;
+  for (let i = index + 1; i < tokens.length && tokens[i].type !== "tr_close"; i++) {
+    if (tokens[i].type === "th_open" || tokens[i].type === "td_open") columns++;
+  }
+  return Math.max(columns, 1);
+}
+
 markdown.renderer.rules.table_open = (tokens, index, options, _env, self) =>
-  `<div class="markdown-table-scroll">${self.renderToken(tokens, index, options)}`;
+  `<div class="markdown-table-scroll" style="--markdown-table-cols:${tableColumnCount(tokens, index)}">${self.renderToken(tokens, index, options)}`;
 markdown.renderer.rules.table_close = (tokens, index, options, _env, self) =>
   `${self.renderToken(tokens, index, options)}</div>`;
 
@@ -71,19 +83,29 @@ markdown.renderer.rules.table_close = (tokens, index, options, _env, self) =>
 // A column floor is only useful on cells that actually hold prose: applied to "Go" or
 // "1.26.1" it inflates a two-column value table to hundreds of pixels of dead space.
 // CSS cannot express "floor, but never above the content" — min(340px, max-content)
-// computes to 0px in both engines — so the renderer decides from the cell's own text.
+// computes to 0px in both engines (re-measured 2026-09-25: min(max-content, 100cqi/cols)
+// leaves a label column at 41px), so the renderer decides from the cell's own text.
 const WIDE_CELL_MIN_CHARS = 24;
+// Short labels ("持仓", "科大讯飞", "❌ 第三次点名") have no soft-wrap opportunity either,
+// and auto table layout squeezes them to one glyph per line as soon as the prose
+// columns need the room. Under this many codepoints the cell is cheap enough to keep
+// on a single line unconditionally, so it never has to be floored by a percentage.
+const NOWRAP_MAX_CHARS = 8;
 
-function cellIsWide(tokens: Parameters<NonNullable<typeof markdown.renderer.rules.td_open>>[0], index: number): boolean {
+type CellTokens = Parameters<NonNullable<typeof markdown.renderer.rules.td_open>>[0];
+
+function cellFitClass(tokens: CellTokens, index: number): string {
   const inline = tokens[index + 1];
-  if (!inline || inline.type !== "inline") return false;
-  return Array.from(inline.content ?? "").length >= WIDE_CELL_MIN_CHARS;
+  if (!inline || inline.type !== "inline") return "";
+  const chars = Array.from(inline.content ?? "").length;
+  if (chars >= WIDE_CELL_MIN_CHARS) return " is-wide";
+  return chars <= NOWRAP_MAX_CHARS ? " is-nowrap" : "";
 }
 
 markdown.renderer.rules.th_open = (tokens, index, options, _env, self) =>
-  `${self.renderToken(tokens, index, options)}<div class="markdown-cell${cellIsWide(tokens, index) ? " is-wide" : ""}">`;
+  `${self.renderToken(tokens, index, options)}<div class="markdown-cell${cellFitClass(tokens, index)}">`;
 markdown.renderer.rules.td_open = (tokens, index, options, _env, self) =>
-  `${self.renderToken(tokens, index, options)}<div class="markdown-cell${cellIsWide(tokens, index) ? " is-wide" : ""}">`;
+  `${self.renderToken(tokens, index, options)}<div class="markdown-cell${cellFitClass(tokens, index)}">`;
 markdown.renderer.rules.th_close = (tokens, index, options, _env, self) =>
   `</div>${self.renderToken(tokens, index, options)}`;
 markdown.renderer.rules.td_close = (tokens, index, options, _env, self) =>
