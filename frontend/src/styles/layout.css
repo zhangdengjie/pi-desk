@@ -1793,13 +1793,8 @@
 /* CJK cells have no soft-wrap opportunity, so squeezing a wide table into the
    column width used to stack one glyph per line ("vertical text"). The table is
    now sized to max-content and the scroll wrapper emitted by MarkdownBody.vue
-   owns the horizontal overflow.
-   container-type does two jobs: it gives the cells a pane-relative unit (100cqi,
-   used by the floor below), and it makes the wrapper's inline size independent of
-   its content, which stops a shrink-to-fit flex parent from blowing the table past
-   the reading axis (measured: 2872px of prose inside a 1200px window without it). */
+   owns the horizontal overflow. */
 .markdown-body .markdown-table-scroll {
-  container-type: inline-size;
   max-width: 100%;
   margin: 9px 0;
   overflow-x: auto;
@@ -1838,28 +1833,9 @@
   overflow-wrap: break-word;
 }
 
-/* The floor is a share of the pane, clamped to a usable band: --markdown-table-cols
-   comes from the header row, so an 8-column table asks for ~93px per prose column
-   instead of 200px each (8 × 217 > 880 overflowed the table and starved the label
-   columns into vertical text). --markdown-cell-inset subtracts one column's padding +
-   border so the shares fit, and the ceiling stops a two-column table from claiming
-   half the pane as a minimum. Below 96px a CJK column is unreadable anyway, so the
-   floor wins over the clamp and the whole table overflows into the scroll wrapper. */
 .markdown-body .markdown-cell.is-wide {
-  min-width: min(
-    var(--markdown-cell-wrap-max),
-    max(
-      var(--markdown-cell-wrap-min),
-      calc(100cqi / var(--markdown-table-cols, 1) - var(--markdown-cell-inset))
-    )
-  );
+  min-width: var(--markdown-cell-wrap-min);
   overflow-wrap: anywhere;
-}
-
-/* Short labels are floored by keeping them on one line instead: "科大讯飞" at 31px was
-   two glyphs per line, and no percentage floor would have saved it. */
-.markdown-body .markdown-cell.is-nowrap {
-  white-space: nowrap;
 }
 
 .thinking-block,
