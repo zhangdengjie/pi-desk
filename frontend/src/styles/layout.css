@@ -1907,6 +1907,14 @@
   padding-left: 4px;
 }
 
+/* Grid items floor at their min-content width, and a tool call's <pre> has a min-content as wide as
+   its longest unbreakable line — one long bash command pushed the whole panel 21px past the reading
+   axis, where the timeline's clipped overflow-x cut it off with no right margin. Let the row shrink
+   to the column so the <pre> wraps (and scrolls) inside it. */
+.execution-process-details > * {
+  min-width: 0;
+}
+
 .execution-process-details > .markdown-body {
   /* Intermediate assistant text is rendered inside the open execution panel
      while a run is live. Cancel the panel indent so it shares the final answer axis. */

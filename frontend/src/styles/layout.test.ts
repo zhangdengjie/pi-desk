@@ -213,6 +213,14 @@ describe("streamed assistant output alignment", () => {
     expect(firstRuleBody(layout, ".execution-process > summary")).toMatch(/background:\s*var\(--bg-card\)/);
     expect(firstRuleBody(layout, ".composer")).toMatch(/background:\s*var\(--bg-composer\)/);
   });
+
+  it("floors execution panel rows at zero so a wide tool call cannot widen the transcript", async () => {
+    const layout = await layoutText();
+    // `.timeline { overflow-x: hidden }` cuts anything past the reading axis, so a grid row that
+    // floors at its min-content width shows a tool `<pre>` with no right margin at all.
+    expect(firstRuleBody(layout, ".execution-process-details > *")).toMatch(/min-width:\s*0/);
+    expect(firstRuleBody(layout, ".tool-call pre")).toMatch(/white-space:\s*pre-wrap/);
+  });
 });
 
 describe("assistant request status", () => {
