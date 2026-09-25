@@ -12,6 +12,7 @@ import { parseSkillInvocation, replaceSkillInvocationUserMessage, skillInvocatio
 import { splitTaggedThinking } from "../utils/taggedThinking";
 import { panelOpenState, pinPanelOpen } from "../utils/detailsOpenState";
 import { attachInnerTail, type InnerTail } from "../utils/innerTail";
+import { humanizeRunError } from "../utils/runErrors";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 import MarkdownBody from "./MarkdownBody.vue";
 import ToolCallPanel from "./ToolCallPanel.vue";
@@ -515,7 +516,7 @@ onBeforeUnmount(() => {
         <TriangleAlert v-else :size="14" aria-hidden="true" />
         <div class="message-run-notice-copy">
           <strong>{{ runNoticeLabel }}</strong>
-          <span v-if="runNotice.error" :title="runNotice.error">{{ runNotice.error }}</span>
+          <span v-if="runNotice.error" :title="runNotice.error">{{ humanizeRunError(runNotice.error) }}</span>
         </div>
       </div>
       <div v-if="confirmingDelete" class="message-delete-confirm" role="alert">
