@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, CalendarClock, Check, ChevronDown, ChevronRight,
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { type AppPage, useAppStore } from "../stores/app";
 import { tr } from "../i18n";
+import { threadTooltip } from "../utils/threadLabel";
 
 const appStore = useAppStore();
 const contextElement = ref<HTMLElement>();
@@ -144,7 +145,7 @@ onBeforeUnmount(() => {
     <div class="topbar-task flex min-w-0 items-center justify-between gap-3">
       <div class="topbar-title-group flex min-w-0 items-center gap-2.5">
         <CalendarClock v-if="appStore.activePage === 'scheduledTasks'" :size="17" class="text-[var(--text-muted)]" />
-        <strong class="font-display text-[calc(15px+var(--font-size-delta))] font-semibold tracking-[-0.01em] text-[var(--text)]" :title="appStore.activePage === 'scheduledTasks' ? tr('scheduledTasks.title') : appStore.activeThread?.title || 'Pi Desk'">{{ appStore.activePage === "scheduledTasks" ? tr("scheduledTasks.title") : appStore.activeThread?.title || "Pi Desk" }}</strong>
+        <strong class="font-display text-[calc(15px+var(--font-size-delta))] font-semibold tracking-[-0.01em] text-[var(--text)]" :title="appStore.activePage === 'scheduledTasks' ? tr('scheduledTasks.title') : threadTooltip(appStore.activeThread) || 'Pi Desk'">{{ appStore.activePage === "scheduledTasks" ? tr("scheduledTasks.title") : appStore.activeThread?.title || "Pi Desk" }}</strong>
         <span v-if="appStore.activePage === 'task' && appStore.activeExtensionTitle" class="extension-window-title min-w-0 truncate text-xs text-[var(--text-secondary)]" :title="appStore.activeExtensionTitle">{{ appStore.activeExtensionTitle }}</span>
         <span v-if="appStore.activePage === 'task' && appStore.activeThread" class="workspace-chip min-w-0 max-w-56 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-app)] px-2 py-1 text-xs text-[var(--text-secondary)]" :title="appStore.activeThread.workspacePath">
           <FolderGit2 :size="14" />

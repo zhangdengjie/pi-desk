@@ -29,6 +29,7 @@ import RuntimeBadge from "./RuntimeBadge.vue";
 import RemoveWorkspaceDialog from "./RemoveWorkspaceDialog.vue";
 import { useAppStore } from "../stores/app";
 import { tr } from "../i18n";
+import { threadTooltip } from "../utils/threadLabel";
 
 const appStore = useAppStore();
 const searchInput = ref<HTMLInputElement>();
@@ -404,7 +405,7 @@ onBeforeUnmount(() => {
             class="thread-row flex h-8 w-full min-w-0 items-center gap-2 rounded-md bg-transparent pl-8 pr-2 text-left text-[var(--font-size-label)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)]"
             :class="{ 'is-active bg-[var(--bg-active)] text-[var(--text)]': appStore.activeThreadId === thread.id }"
             type="button"
-            :title="thread.title"
+            :title="threadTooltip(thread)"
             @click="appStore.selectThread(thread.id)"
             @contextmenu.prevent="openTaskMenu($event, thread.id)"
           >

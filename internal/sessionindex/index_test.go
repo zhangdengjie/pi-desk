@@ -881,6 +881,45 @@ func messageContents(t *testing.T, messages []json.RawMessage) []string {
 	return result
 }
 
+// A session Pi never named falls back to its first prompt for the headline. Widening FirstMessage
+// (the tooltip source) must not widen that fallback, or the topbar gets a 400-rune string.
+func TestSummaryKeepsTheWholeFirstMessageButClampsTheFallbackTitle(t *testing.T) {
+	root := t.TempDir()
+	workspacePath := filepath.Join(root, "workspace")
+	sessions := filepath.Join(root, "sessions")
+	// sessionFiles only descends into the per-cwd subdirectories Pi creates (`--path--/`), never the
+	// root itself - a flat sessions/long.jsonl is invisible to List().
+	project := filepath.Join(sessions, "--workspace--")
+	for _, path := range []string{workspacePath, project} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// canonicalTestPath resolves symlinks, so it has to run after the mkdir (TempDir is under a
+	// symlinked /var -> /private/var on macOS).
+	workspace := canonicalTestPath(t, workspacePath)
+	prompt := strings.Repeat("字", 300)
+	writeSession(t, filepath.Join(project, "long.jsonl"), strings.Join([]string{
+		`{"type":"session","version":3,"id":"session-long","timestamp":"2026-08-10T08:00:00Z","cwd":` + quote(workspace) + "}",
+		`{"type":"message","id":"m1","timestamp":"2026-08-10T08:01:00Z","message":{"role":"user","content":[{"type":"text","text":"` + prompt + `"}]}}`,
+	}, "\n")+"\n")
+
+	summaries, err := New(sessions).List(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("want 1 summary, got %d", len(summaries))
+	}
+	got := summaries[0]
+	if r := len([]rune(got.FirstMessage)); r != 300 {
+		t.Fatalf("FirstMessage lost runes: %d", r)
+	}
+	if r := len([]rune(got.Title)); r > maxTitleRunes {
+		t.Fatalf("fallback Title escaped the headline clamp: %d runes", r)
+	}
+}
+
 func writeSession(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {

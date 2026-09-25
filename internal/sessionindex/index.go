@@ -28,6 +28,10 @@ const (
 	maxSessionBytes    = 64 << 20
 	maxLineBytes       = 8 << 20
 	maxTitleRunes      = 80
+	// The first message is only ever shown as a tooltip or a single clamped line, so it can carry the
+	// whole prompt instead of a headline: Pi cuts its own session *name* short, and a reader hovering
+	// the title wants the part that got dropped.
+	maxFirstMessageRunes = 400
 )
 
 type Summary struct {
@@ -1165,14 +1169,16 @@ func readSummary(path string) (Summary, bool) {
 			summary.ModifiedAt = info.ModTime().UTC()
 		}
 	}
-	summary.FirstMessage = compactText(summary.FirstMessage, maxTitleRunes)
+	summary.FirstMessage = compactText(summary.FirstMessage, maxFirstMessageRunes)
 	summary.Title = compactText(summary.Name, maxTitleRunes)
 	if corruptedAutomaticName(summary.Title, summary.FirstMessage) {
 		summary.Name = ""
 		summary.Title = ""
 	}
 	if summary.Title == "" {
-		summary.Title = summary.FirstMessage
+		// Still clamp: this fallback used to inherit FirstMessage's old 80-rune cap, and widening that
+		// one alone would push a 400-rune string into the topbar and every sidebar row.
+		summary.Title = compactText(summary.FirstMessage, maxTitleRunes)
 	}
 	if summary.Title == "" {
 		summary.Title = "Empty session"
