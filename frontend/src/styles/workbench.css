@@ -265,8 +265,13 @@
 }
 
 .topbar-title-group > strong {
+  /* No fixed `max-width: min(42vw, 540px)` here (that was the old cap, and the template used to
+     duplicate it as a `!important` utility): the title should use whatever the workspace chip and
+     the context control leave over, so a long thread name stops at the buttons instead of at an
+     arbitrary 540px with half the bar empty. `min-width: 0` + shrink is what makes it ellipsize;
+     `.workspace-chip { flex-shrink: 0 }` keeps the chip from being squeezed by the same title. */
+  flex: 0 1 auto;
   min-width: 0;
-  max-width: min(42vw, 540px);
   overflow: hidden;
   color: var(--text);
   font-size: var(--font-size-title);
@@ -278,6 +283,9 @@
 .workspace-chip {
   display: inline-flex;
   min-width: 0;
+  /* The title is the flexible one now; a long thread name must not squeeze the chip down to an
+     unreadable sliver. Below 1050px the chip is hidden outright, so it never competes there. */
+  flex-shrink: 0;
   max-width: 230px;
   align-items: center;
   gap: 6px;

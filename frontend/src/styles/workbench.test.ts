@@ -109,6 +109,26 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/@media \(max-width: 760px\)[\s\S]*\.topbar-actions \.workspace-application-anchor\s*{\s*display:\s*none/);
   });
 
+  it("lets the topbar title take the free width instead of a fixed cap", async () => {
+    const css = await workbenchText();
+    const rules = css.replace(/\/\*[\s\S]*?\*\//g, ""); // the comment in that rule quotes the old cap
+    const topbar = await topbarText();
+    // `.topbar-title-group > strong` is the authoritative rule (the same selector without `>` also
+    // exists in layout.css for the font axes - the child combinator is what wins here).
+    const strong = rules.match(/\.topbar-title-group > strong\s*{([^}]*)}/);
+    expect(strong, "missing .topbar-title-group > strong").not.toBeNull();
+    expect(strong![1]).toMatch(/flex:\s*0 1 auto/);
+    expect(strong![1]).toMatch(/min-width:\s*0/);
+    expect(strong![1]).not.toMatch(/max-width/);
+    // The chip keeps its size; the title is the flexible one.
+    expect(rules).toMatch(/\.workspace-chip\s*{[^}]*flex-shrink:\s*0/s);
+    const title = topbar.match(/<strong class="([^"]*)" :title="appStore\.activePage === 'scheduledTasks'/);
+    expect(title, "topbar title <strong> not found in AppTopbar.vue").not.toBeNull();
+    // AGENTS.md §4.2: layout belongs to the stylesheet - and every utility here ships `!important`,
+    // so a leftover `max-w-[…]` would silently beat the CSS again.
+    expect(title![1]).not.toMatch(/min-w-0|max-w-|truncate/);
+  });
+
   it("keeps the reading and composer axes bounded", async () => {
     const css = await workbenchText();
     expect(css).toMatch(/--conversation-content-width:\s*880px/);
