@@ -1,13 +1,10 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
-import { editorViewCtx, type Editor } from "@milkdown/core";
-import { TextSelection } from "@milkdown/prose/state";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
 import { prepareImage } from "../utils/imageAttachments";
 import { repositoryService } from "../services/repository";
 import ComposerBar from "./ComposerBar.vue";
-import MarkdownEditorCore from "./MarkdownEditorCore.vue";
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -163,13 +160,14 @@ describe("ComposerBar", () => {
     vi.mocked(repositoryService.clipboardFiles).mockResolvedValue([{ path: "docs/需求 文档.pdf", name: "需求 文档.pdf" }, { path: "main.go", name: "main.go" }]);
     const wrapper = mount(ComposerBar);
     await flushPromises();
-    const setup = wrapper.findComponent(MarkdownEditorCore).vm.$ as unknown as { setupState: { get(): Editor | undefined } };
-    const view = setup.setupState.get()?.action((ctx) => ctx.get(editorViewCtx));
-    if (!view) throw new Error("editor not ready");
-    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
-    await wrapper.get("[contenteditable='true']").trigger("paste", { clipboardData: { items: [], getData: () => "" } });
+    const editor = wrapper.get<HTMLTextAreaElement>(".draft-input");
+    const field = editor.element;
+    field.setSelectionRange(field.value.length, field.value.length);
+    await editor.trigger("paste", { clipboardData: { items: [], getData: () => "" } });
     await flushPromises();
-    expect(wrapper.get("[contenteditable='true']").text()).toBe('Review: @"docs/需求 文档.pdf" @main.go');
+    // The reference paste keeps its trailing space on a textarea (the markdown serializer used to
+    // drop it on the floor); that space is what stops a following word gluing onto the mention.
+    expect(field.value).toBe('Review: @"docs/需求 文档.pdf" @main.go ');
     expect(store.activeDraft).toContain('@"docs/需求 文档.pdf" @main.go');
     expect(store.activeAttachments).toEqual([]);
     wrapper.unmount();
@@ -185,7 +183,8 @@ describe("ComposerBar", () => {
     vi.mocked(repositoryService.clipboardFiles).mockImplementation(() => new Promise((resolve) => { complete = resolve; }));
     const wrapper = mount(ComposerBar);
     await flushPromises();
-    await wrapper.get("[contenteditable='true']").trigger("paste", { clipboardData: { items: [], getData: () => "" } });
+    const draftField = wrapper.get<HTMLTextAreaElement>(".draft-input");
+    await draftField.trigger("paste", { clipboardData: { items: [], getData: () => "" } });
     expect(wrapper.get(".send-button").attributes("disabled")).toBeDefined();
     store.updateDraft("newer");
     await flushPromises();
@@ -193,7 +192,7 @@ describe("ComposerBar", () => {
     await flushPromises();
     expect(store.activeDraft).toBe("newer");
     expect(wrapper.get(".attachment-error").text()).toMatch(/draft changed|输入内容发生/);
-    await wrapper.get("[contenteditable='true']").trigger("paste", { clipboardData: { items: [], getData: () => "" } });
+    await draftField.trigger("paste", { clipboardData: { items: [], getData: () => "" } });
     store.activeThreadId = "another";
     store.activeThreadId = "paste";
     complete([{ path: "main.go", name: "main.go" }]);
@@ -210,11 +209,11 @@ describe("ComposerBar", () => {
     });
     const wrapper = mount(ComposerBar);
     await flushPromises();
-    await wrapper.get("[contenteditable='true']").trigger("paste", { clipboardData: { items: [], getData: () => "/plain/path.txt" } });
+    await wrapper.get(".draft-input").trigger("paste", { clipboardData: { items: [], getData: () => "/plain/path.txt" } });
     await flushPromises();
     expect(store.activeDraft).toBe("/plain/path.txt");
     vi.mocked(repositoryService.clipboardFiles).mockRejectedValue(new Error("copied files must be inside the current workspace"));
-    await wrapper.get("[contenteditable='true']").trigger("paste", { clipboardData: { items: [], getData: () => "" } });
+    await wrapper.get(".draft-input").trigger("paste", { clipboardData: { items: [], getData: () => "" } });
     await flushPromises();
     expect(store.activeDraft).toBe("/plain/path.txt");
     expect(wrapper.get(".attachment-error").text()).toContain("inside the current workspace");
@@ -284,8 +283,9 @@ describe("ComposerBar", () => {
     store.abortActiveRetry = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(ComposerBar, { global: { plugins: [pinia] } });
 
-    expect(wrapper.find("textarea").exists()).toBe(false);
-    expect(wrapper.find(".composer-markdown-layer").exists()).toBe(false);
+    // The draft surface is a plain textarea now, with no markdown layer under it.
+    expect(wrapper.find(".draft-input").exists()).toBe(true);
+    expect(wrapper.find(".markdown-editor").exists()).toBe(false);
     expect(wrapper.text()).toContain("Inspect logs");
     expect(wrapper.text()).toContain("Run tests");
     expect(wrapper.text()).toContain("Retry 2 of 4");
@@ -303,10 +303,10 @@ describe("ComposerBar", () => {
     ]);
 
     await flushPromises();
-    const editor = wrapper.get("[contenteditable='true']");
+    const editor = wrapper.get<HTMLTextAreaElement>(".draft-input");
     for (let index = 0; index < 3; index += 1) await editor.trigger("keydown", { key: "ArrowDown" });
     await editor.trigger("keydown", { key: "Enter" });
-    expect(editor.element.textContent).toBe("/review ");
+    expect(editor.element.value).toBe("/review ");
     expect(store.activeDraft).toBe("/review ");
     expect(store.sendActivePrompt).not.toHaveBeenCalled();
 
@@ -733,7 +733,7 @@ describe("ComposerBar", () => {
     store.sendActivePrompt = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(ComposerBar, { global: { plugins: [pinia] } });
     await flushPromises();
-    const editor = wrapper.get("[contenteditable='true']");
+    const editor = wrapper.get<HTMLTextAreaElement>(".draft-input");
 
     await editor.trigger("keydown", { key: "Enter" });
     expect(store.sendActivePrompt).toHaveBeenCalledOnce();
@@ -745,138 +745,29 @@ describe("ComposerBar", () => {
     expect(store.sendActivePrompt).toHaveBeenCalledOnce();
   });
 
-  it.each(["", "typescript", "c++", "objective-c", "CSharp"])("converts a typed fence (%s) on Enter and keeps code newlines in the draft", async (language) => {
+  it("keeps a typed fence and list literal in the draft and sends on Enter", async () => {
+    // Option A of the composer swap: the draft is exactly what is typed. Converting ```lang into a
+    // code block, continuing list items, and rendering pasted Markdown in the box all belonged to
+    // the ProseMirror surface and are gone on purpose — Pi parses the same characters downstream,
+    // and `MarkdownEditor.vue` still ships for any surface that wants the rendering.
     const store = useAppStore();
     store.$patch({
-      threads: [{ id: "code", title: "Code", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
-      activeThreadId: "code",
+      threads: [{ id: "literal", title: "Literal", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
+      activeThreadId: "literal",
+      draftsByThread: { literal: "```ts\nconst a = 1;\n```" },
     });
     store.sendActivePrompt = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(ComposerBar);
     await flushPromises();
-    const setup = wrapper.findComponent(MarkdownEditorCore).vm.$ as unknown as { setupState: { get(): Editor | undefined } };
-    const view = setup.setupState.get()?.action((ctx) => ctx.get(editorViewCtx));
-    if (!view) throw new Error("Milkdown editor did not start");
-    view.dispatch(view.state.tr.insertText(`\`\`\`${language}`));
-    await flushPromises();
 
-    const editor = wrapper.get("[contenteditable='true']");
-    await editor.trigger("keydown", { key: "Enter", code: "Enter" });
-    expect(editor.find("pre code").exists()).toBe(true);
-    expect(view.state.selection.$from.parent.attrs.language).toBe(language);
-    view.dispatch(view.state.tr.insertText("first"));
-    await editor.trigger("keydown", { key: "Enter", code: "Enter" });
-    view.dispatch(view.state.tr.insertText("second"));
-    await editor.trigger("keydown", { key: "Enter", code: "Enter", shiftKey: true });
-    view.dispatch(view.state.tr.insertText("third"));
-    await flushPromises();
+    const editor = wrapper.get<HTMLTextAreaElement>(".draft-input");
+    expect(editor.element.value).toBe("```ts\nconst a = 1;\n```");
+    expect(editor.find("pre, code, li, strong").exists()).toBe(false);
 
-    expect(editor.get("pre code").element.textContent).toBe("first\nsecond\nthird");
-    expect(store.draftsByThread.code).toBe(`\`\`\`${language}\nfirst\nsecond\nthird\n\`\`\``);
-    expect(store.sendActivePrompt).not.toHaveBeenCalled();
-    await wrapper.get(".send-button").trigger("click");
+    await editor.trigger("keydown", { key: "Enter" });
     expect(store.sendActivePrompt).toHaveBeenCalledOnce();
     wrapper.unmount();
   });
-
-  it("creates a code block after a soft line break and exits it with a closing fence", async () => {
-    const store = useAppStore();
-    store.$patch({
-      threads: [{ id: "code-lines", title: "Code lines", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
-      activeThreadId: "code-lines", draftsByThread: { "code-lines": "Before" },
-    });
-    store.sendActivePrompt = vi.fn().mockResolvedValue(undefined);
-    const wrapper = mount(ComposerBar);
-    await flushPromises();
-    const setup = wrapper.findComponent(MarkdownEditorCore).vm.$ as unknown as { setupState: { get(): Editor | undefined } };
-    const view = setup.setupState.get()?.action((ctx) => ctx.get(editorViewCtx));
-    if (!view) throw new Error("Milkdown editor did not start");
-    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
-    const editor = wrapper.get("[contenteditable='true']");
-    await editor.trigger("keydown", { key: "Enter", code: "Enter", shiftKey: true });
-    view.dispatch(view.state.tr.insertText("```"));
-    await editor.trigger("keydown", { key: "Enter", code: "Enter" });
-
-    expect(editor.findAll("p")[0].text()).toBe("Before");
-    expect(editor.find("pre code").exists()).toBe(true);
-    view.dispatch(view.state.tr.insertText("const ready = true;"));
-    await editor.trigger("keydown", { key: "Enter", code: "Enter" });
-    view.dispatch(view.state.tr.insertText("```"));
-    await editor.trigger("keydown", { key: "Enter", code: "Enter" });
-
-    expect(editor.findAll("pre")).toHaveLength(1);
-    expect(editor.get("pre code").element.textContent).toBe("const ready = true;\n");
-    expect(editor.findAll("p").at(-1)?.text()).toBe("");
-    view.dispatch(view.state.tr.insertText("After"));
-    expect(editor.findAll("p").at(-1)?.text()).toBe("After");
-    expect(store.sendActivePrompt).not.toHaveBeenCalled();
-    wrapper.unmount();
-  });
-
-  it("creates a code block at the start of a new line inside a list item", async () => {
-    const store = useAppStore();
-    store.$patch({
-      threads: [{ id: "list-code", title: "List code", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
-      activeThreadId: "list-code", draftsByThread: { "list-code": "1. Before" },
-    });
-    const wrapper = mount(ComposerBar);
-    await flushPromises();
-    const setup = wrapper.findComponent(MarkdownEditorCore).vm.$ as unknown as { setupState: { get(): Editor | undefined } };
-    const view = setup.setupState.get()?.action((ctx) => ctx.get(editorViewCtx));
-    if (!view) throw new Error("Milkdown editor did not start");
-    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
-    const editor = wrapper.get("[contenteditable='true']");
-    await editor.trigger("keydown", { key: "Enter", code: "Enter", shiftKey: true });
-    view.dispatch(view.state.tr.insertText("```"));
-    await editor.trigger("keydown", { key: "Enter", code: "Enter" });
-    expect(editor.find("li pre code").exists()).toBe(true);
-    wrapper.unmount();
-  });
-
-  it.each(["1. first", "- first"])("continues and exits a list (%s) with Enter without sending", async (draft) => {
-    const store = useAppStore();
-    store.$patch({
-      threads: [{ id: "list", title: "List", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
-      activeThreadId: "list", draftsByThread: { list: draft },
-    });
-    store.sendActivePrompt = vi.fn().mockResolvedValue(undefined);
-    const wrapper = mount(ComposerBar);
-    await flushPromises();
-    const setup = wrapper.findComponent(MarkdownEditorCore).vm.$ as unknown as { setupState: { get(): Editor | undefined } };
-    const view = setup.setupState.get()?.action((ctx) => ctx.get(editorViewCtx));
-    if (!view) throw new Error("Milkdown editor did not start");
-    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
-    const editor = wrapper.get("[contenteditable='true']");
-    await editor.trigger("keydown", { key: "Enter", code: "Enter" });
-    view.dispatch(view.state.tr.insertText("second"));
-    expect(editor.findAll("li").map((item) => item.text())).toEqual(["first", "second"]);
-    await editor.trigger("keydown", { key: "Enter", code: "Enter" });
-    await editor.trigger("keydown", { key: "Enter", code: "Enter" });
-    expect(view.state.selection.$from.depth).toBe(1);
-    expect(store.sendActivePrompt).not.toHaveBeenCalled();
-    wrapper.unmount();
-  });
-
-  it("renders pasted Markdown lists, bold, and code without interpreting code contents", async () => {
-    const store = useAppStore();
-    store.$patch({
-      threads: [{ id: "markdown", title: "Markdown", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
-      activeThreadId: "markdown",
-    });
-    const wrapper = mount(ComposerBar);
-    await flushPromises();
-    const editor = wrapper.get("[contenteditable='true']");
-    const text = "1. **first**\n2. second\n\n```html\n<br> **literal**\n```";
-    await editor.trigger("paste", { clipboardData: { items: [], getData: () => text } });
-    await flushPromises();
-    expect(editor.findAll("ol > li")).toHaveLength(2);
-    expect(editor.get("strong").text()).toBe("first");
-    expect(editor.get("pre code").text()).toBe("<br> **literal**");
-    expect(store.activeDraft).toContain("**first**");
-    expect(store.activeDraft).toContain("<br> **literal**");
-    wrapper.unmount();
-  });
-
   it("shows Pi startup progress in the lower-left composer toolbar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);

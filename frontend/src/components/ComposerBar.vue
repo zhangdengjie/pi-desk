@@ -10,7 +10,10 @@ import { parsePiDeskTodoWidget, PI_DESK_TODO_WIDGET_KEY } from "../utils/todoWid
 import { parsePiDeskGoalWidget, PI_DESK_GOAL_WIDGET_KEY } from "../utils/goalWidget";
 import { tr } from "../i18n";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
-import MarkdownEditor from "./MarkdownEditor.vue";
+// The draft is typed, not authored: a textarea keeps the caret, IME and undo semantics the browser
+// already owns. `MarkdownEditor.vue` stays untouched behind the same four method names, so swapping
+// the surface back is a two-line diff here.
+import DraftInput from "./DraftInput.vue";
 import PiDeskTodoPanel from "./PiDeskTodoPanel.vue";
 import PiDeskGoalPanel from "./PiDeskGoalPanel.vue";
 
@@ -333,6 +336,9 @@ function onKeydown(event: KeyboardEvent) {
     }
   }
   if (event.key === "Enter" && !event.shiftKey) {
+    // Enter that confirms an IME composition is not Enter-presses-send: the draft is still holding
+    // pinyin when this fires, so let the key reach the field.
+    if (event.isComposing || event.keyCode === 229) return;
     event.preventDefault();
     event.stopPropagation();
     if (!event.repeat && markdownEditor.value?.handleEnter(event)) return;
@@ -692,7 +698,7 @@ onBeforeUnmount(() => {
         role="status"
       >{{ tr("composer.providerEnvMissing", { provider: issue.provider, variable: issue.variable }) }}</div>
       <div class="composer-editor" @keydown.capture="onKeydown" @paste.capture="onPaste">
-        <MarkdownEditor
+        <DraftInput
           ref="markdownEditor"
           v-model="draft"
           :placeholder="tr('composer.placeholder')"

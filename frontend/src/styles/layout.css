@@ -8638,6 +8638,34 @@ article.mcp-server-row {
   overflow-y: auto;
 }
 
+/* The draft surface is a textarea now, so this carries over the metrics the contenteditable used to
+   get from `.composer-editor .markdown-editor [contenteditable="true"]` — same reading font, same
+   13px of vertical padding, same one-line floor — and adds what a textarea needs instead: no resize
+   handle, no border of its own, and the native placeholder in place of the `::before` trick.
+   Deliberately no utility classes on the element: `ui.root` carries `font-body`, and every Tailwind
+   utility here is `!important`, so it would silently win over the font below (AGENTS.md §4). */
+.composer-editor .draft-input {
+  display: block;
+  width: 100%;
+  min-height: 35px;
+  padding: 10px 12px 3px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-reading);
+  font-size: calc(15px + var(--font-size-delta));
+  font-weight: 400;
+  line-height: 1.5;
+  caret-color: var(--text);
+  overflow-wrap: anywhere;
+  resize: none;
+  outline: 0;
+}
+
+.composer-editor .draft-input::placeholder {
+  color: var(--text-muted);
+}
+
 .composer-editor .markdown-editor {
   /* 13px of padding + one 22px line box; the box now grows exactly one line per newline. */
   min-height: 35px;
