@@ -7,7 +7,7 @@ import type { ExecutionStep, StreamPanelMode, TimelineMessage, ToolDiff } from "
 import { useAppStore } from "../stores/app";
 import type { PreparedImage } from "../utils/imageAttachments";
 import { resolveWorkspaceFileLink, type WorkspaceFileLink } from "../utils/fileLinks";
-import { mergeToolDiffs } from "../utils/toolDiff";
+import { mergeToolDiffs, completedToolDiff } from "../utils/toolDiff";
 import { parseSkillInvocation, replaceSkillInvocationUserMessage, skillInvocationCommandText } from "../utils/skillInvocation";
 import { splitTaggedThinking } from "../utils/taggedThinking";
 import { panelOpenState, pinPanelOpen } from "../utils/detailsOpenState";
@@ -147,15 +147,18 @@ const changedFiles = computed(() => {
   const files = new Map<string, WorkspaceFileLink & { diffs: ToolDiff[] }>();
   for (const step of executionSteps.value) {
     for (const tool of step.tools ?? []) {
-      if (tool.resultReceived !== true || tool.status !== "complete" || !tool.diff?.path) continue;
-      const file = resolveWorkspaceFileLink(tool.diff.path, root);
+      // Shared with the virtualizer's row estimate (`completedToolDiff`), so the card and
+      // the space reserved for it cannot disagree.
+      const diff = completedToolDiff(tool);
+      if (!diff) continue;
+      const file = resolveWorkspaceFileLink(diff.path, root);
       if (!file) continue;
       const key = windows ? file.absolutePath.toLowerCase() : file.absolutePath;
       const existing = files.get(key);
       if (existing) {
-        existing.diffs.push(tool.diff);
+        existing.diffs.push(diff);
       } else {
-        files.set(key, { ...file, diffs: [tool.diff] });
+        files.set(key, { ...file, diffs: [diff] });
       }
     }
   }

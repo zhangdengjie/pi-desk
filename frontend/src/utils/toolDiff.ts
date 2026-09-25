@@ -153,6 +153,28 @@ function editStartLines(edits: Array<{ oldText: string; newText: string }>, disp
   });
 }
 
+export interface CompletedToolLike {
+  status?: string;
+  resultReceived?: boolean;
+  diff?: ToolDiff;
+}
+
+/**
+ * The diff a finished tool result actually puts on screen, or nothing while the call is
+ * still running (or failed without a diff).
+ *
+ * Both readers of this go through the same predicate on purpose: the changed-files card
+ * in `ConversationMessage` renders one row per returned diff, and the virtualizer's row
+ * estimate has to book the same card. When the estimate ignored it, every row below a
+ * settled answer was corrected on the next measure pass - visible as the transcript
+ * shifting right after a run ends.
+ */
+export function completedToolDiff(tool: CompletedToolLike | undefined): ToolDiff | undefined {
+  if (!tool?.diff?.path) return undefined;
+  if (tool.resultReceived !== true || tool.status !== "complete") return undefined;
+  return tool.diff;
+}
+
 export function buildToolDiff(name: string, args: unknown, details?: unknown): ToolDiff | undefined {
   const normalizedName = name.toLowerCase();
   const path = toolPath(args);
