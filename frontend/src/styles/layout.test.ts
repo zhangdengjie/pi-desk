@@ -151,6 +151,9 @@ describe("message editor theme colors", () => {
     const scroll = firstRuleBody(layout, ".markdown-body .markdown-table-scroll");
     expect(scroll).toMatch(/max-width:\s*100%/);
     expect(scroll).toMatch(/overflow-x:\s*auto/);
+    // The pane-relative unit the prose floor divides by, and the reason a
+    // shrink-to-fit parent cannot blow the table past the reading axis.
+    expect(scroll).toMatch(/container-type:\s*inline-size/);
     const table = firstRuleBody(layout, ".markdown-body table");
     expect(table).toMatch(/width:\s*max-content/);
     // Clamped to the pane on the upper side only: min-width:100% stretched a table of
@@ -167,10 +170,19 @@ describe("message editor theme colors", () => {
     expect(cell).not.toMatch(/min-width/);
     // The floor is opt-in per cell, so "Go | 1.26.1" keeps its natural width.
     const wide = firstRuleBody(layout, ".markdown-body .markdown-cell.is-wide");
-    expect(wide).toMatch(/min-width:\s*var\(--markdown-cell-wrap-min\)/);
+    // …and it is a share of the pane, not an absolute: 8 prose columns at 200px each
+    // summed past the reading axis and starved the label columns into vertical text.
+    expect(wide).toMatch(/min-width:\s*min\(\s*var\(--markdown-cell-wrap-max\)/);
+    expect(wide).toMatch(/100cqi \/ var\(--markdown-table-cols, 1\)/);
+    expect(wide).toMatch(/max\(\s*var\(--markdown-cell-wrap-min\),/);
     expect(wide).toMatch(/overflow-wrap:\s*anywhere/);
-    // The floor is a token, so themes/densities can retune it in one place.
-    expect(await tokensText()).toMatch(/--markdown-cell-wrap-min:\s*200px/);
+    // Short labels are pinned to one line instead of floored by a percentage.
+    expect(firstRuleBody(layout, ".markdown-body .markdown-cell.is-nowrap")).toMatch(/white-space:\s*nowrap/);
+    // The band and the per-column chrome are tokens, so themes/densities retune them
+    // in one place.
+    expect(await tokensText()).toMatch(/--markdown-cell-wrap-min:\s*96px/);
+    expect(await tokensText()).toMatch(/--markdown-cell-wrap-max:\s*200px/);
+    expect(await tokensText()).toMatch(/--markdown-cell-inset:\s*17px/);
     // And it must not move onto the cell itself — WebKit ignores width there.
     expect(firstRuleBody(layout, ".markdown-body th,\n.markdown-body td")).not.toMatch(/max-width/);
     expect(firstRuleBody(layout, ".markdown-body th,\n.markdown-body td")).not.toMatch(/min-width/);
