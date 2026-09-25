@@ -534,20 +534,57 @@ function floatingMenuStyle(anchor: HTMLElement | undefined, preferredWidth: numb
 function floatingCompletionMenuStyle(): Record<string, string> {
   const composerRect = composer.value?.getBoundingClientRect();
   if (!composerRect) return {};
+
   const viewportGap = 16;
   const menuGap = 8;
+  const headerHeight = getTopbarHeight(); // 顶部栏高度
+  const expectedMenuHeight = 240; // 预期菜单高度
+
   const width = Math.min(Math.max(190, composerRect.width - 20), window.innerWidth - viewportGap * 2);
   const left = Math.min(
     Math.max(viewportGap, composerRect.left + 10),
     window.innerWidth - width - viewportGap,
   );
+
+  // 计算上方可用空间
+  const spaceAbove = composerRect.top - headerHeight - menuGap;
+
+  // 如果上方空间不够放下预期高度，则向下弹出
+  const showDownward = spaceAbove < expectedMenuHeight;
+
+  if (showDownward) {
+    // 向下弹出 (锚定在 composer 底部)
+    const spaceBelow = window.innerHeight - composerRect.bottom - viewportGap - menuGap;
+    return {
+      left: `${left}px`,
+      right: "auto",
+      top: `${composerRect.bottom + menuGap}px`,
+      bottom: "auto",
+      width: `${width}px`,
+      maxHeight: `${Math.max(80, spaceBelow)}px`,
+    };
+  }
+
+  // 向上弹出 (原本的逻辑，加入了 headerHeight 防撞)
   return {
     left: `${left}px`,
     right: "auto",
     bottom: `${window.innerHeight - composerRect.top + menuGap}px`,
+    top: "auto",
     width: `${width}px`,
-    maxHeight: `${Math.max(80, composerRect.top - viewportGap - menuGap)}px`,
+    maxHeight: `${Math.max(80, spaceAbove - viewportGap)}px`,
   };
+}
+
+function getTopbarHeight(): number {
+  // 1. 读取 CSS 变量字符串 (例如 "44px")
+  const rawValue = getComputedStyle(document.documentElement)
+    .getPropertyValue('--topbar-height')
+    .trim();
+
+  // 2. 解析为数字 (例如 44)，如果读取不到则回退兜底值 44
+  const parsed = parseInt(rawValue, 10);
+  return Number.isNaN(parsed) ? 44 : parsed;
 }
 
 function positionOpenMenus() {
