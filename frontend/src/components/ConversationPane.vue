@@ -59,7 +59,7 @@ type ConversationNavigationItem = SearchMatch & { title: string; answer: string 
 function previewText(text: string, maxLength = 120): string {
   const normalized = text
     .replace(/```[\s\S]*?```/g, " ")
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "图片")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, tr("conversation.imagePlaceholder"))
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/[\\`*_>#~]/g, "")
     .replace(/\s+/g, " ")

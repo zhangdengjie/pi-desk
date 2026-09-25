@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { AtSign, ChevronDown, ChevronRight, File, Folder, FolderOpen, Undo2 } from "lucide-vue-next";
 import { computed, ref } from "vue";
+import { tr } from "../i18n";
 import type { RepositoryTreeNode } from "../utils/fileMentions";
 
 const props = defineProps<{
@@ -29,7 +30,7 @@ const open = computed({
   set: (value) => emit("expand", props.node.path, value),
 });
 // The tree lists git-ignored paths greyed out, so a folder name has to say which of the two it is.
-const treeTitle = computed(() => `${props.node.directory ? props.node.path : `Preview ${props.node.path}`}${props.node.ignored ? " (git-ignored)" : ""}`);
+const treeTitle = computed(() => `${props.node.directory ? props.node.path : tr("files.previewFile", { path: props.node.path })}${props.node.ignored ? ` (${tr("files.gitIgnoredTag")})` : ""}`);
 
 function forwardMention(path: string, directory: boolean) {
   emit("mention", path, directory);
@@ -60,7 +61,7 @@ function forwardExpand(path: string, value: boolean) {
        Indentation is likewise owned by `.file-tree-children`, so no `--tree-depth` here. -->
   <div class="file-tree-node">
     <div class="file-tree-row" :class="{ 'is-selected': selectedPath === node.path }">
-      <button v-if="node.directory" class="file-tree-toggle" type="button" :title="open ? 'Collapse folder' : 'Expand folder'" @click="open = !open">
+      <button v-if="node.directory" class="file-tree-toggle" type="button" :title="open ? tr('files.collapseFolder') : tr('files.expandFolder')" @click="open = !open">
         <ChevronDown v-if="open" :size="13" />
         <ChevronRight v-else :size="13" />
       </button>
@@ -84,7 +85,7 @@ function forwardExpand(path: string, value: boolean) {
         class="file-tree-change change-status"
         type="button"
         :data-status="changeStatuses[node.path]"
-        :title="`View diff for ${node.path}`"
+        :title="tr('files.viewDiffFor', { path: node.path })"
         @click="emit('diff', node.path)"
       >{{ changeStatuses[node.path] }}</button>
       <span v-else class="file-tree-change-spacer" />
@@ -98,7 +99,7 @@ function forwardExpand(path: string, value: boolean) {
       >
         <Undo2 :size="13" />
       </button>
-      <button class="file-tree-mention" type="button" :title="node.directory ? 'Mention folder' : 'Mention file'" @click="emit('mention', node.path, node.directory)">
+      <button class="file-tree-mention" type="button" :title="node.directory ? tr('files.mentionFolder') : tr('files.mentionFile')" @click="emit('mention', node.path, node.directory)">
         <AtSign :size="13" />
       </button>
     </div>

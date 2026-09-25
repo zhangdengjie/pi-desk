@@ -360,37 +360,37 @@ watch(() => currentTab.value?.id, async () => {
 <template>
   <aside ref="panelElement" class="inspector panel-workbench" :class="ui.root" :aria-label="tr('inspector.label')" @scroll.capture="saveScroll">
     <div class="panel-tabbar">
-      <div class="panel-tabs" role="tablist" aria-label="工作区标签">
+      <div class="panel-tabs" role="tablist" :aria-label="tr('inspector.workspaceTabs')">
         <div v-for="tab in appStore.activePanel?.tabs" :key="tab.id" :data-panel-tab="tab.id" class="panel-tab" :class="{ 'is-active': currentTab?.id === tab.id, 'is-preview': tab.kind === 'file' && !tab.pinned }">
           <button type="button" role="tab" @pointerdown="startTabDrag($event, tab.id)" @pointerup="finishTabDrag" @pointercancel="tabDrag = undefined" :aria-selected="currentTab?.id === tab.id" :tabindex="currentTab?.id === tab.id ? 0 : -1" :title="tab.path || tab.url || tab.title" @click="clickTab(tab.id)" @dblclick="appStore.pinPanelTab(tab.id)" @keydown="onTabKey($event, tab)">
-            <component :is="tabIcon(tab)" :size="17" /><span>{{ tab.title }}</span><span v-if="tab.kind === 'diff'" class="panel-tab-kind">审查</span>
+            <component :is="tabIcon(tab)" :size="17" /><span>{{ tab.title }}</span><span v-if="tab.kind === 'diff'" class="panel-tab-kind">{{ tr('inspector.reviewBadge') }}</span>
           </button>
-          <button class="panel-tab-close" type="button" :aria-label="'关闭 ' + tab.title" @click="void appStore.closePanelTab(tab.id)"><X :size="14" /></button>
+          <button class="panel-tab-close" type="button" :aria-label="tr('inspector.closeTab', { title: tab.title })" @click="void appStore.closePanelTab(tab.id)"><X :size="14" /></button>
         </div>
       </div>
-      <button id="panel-add-button" class="panel-icon-button" type="button" popovertarget="panel-add-menu" aria-label="新建标签" title="新建标签"><Plus :size="20" /></button>
-      <button class="panel-icon-button panel-expand" type="button" :aria-label="appStore.activePanel?.expanded ? '还原面板' : '展开面板'" @click="toggleExpanded"><Minimize2 v-if="appStore.activePanel?.expanded" :size="17" /><Maximize2 v-else :size="17" /></button>
+      <button id="panel-add-button" class="panel-icon-button" type="button" popovertarget="panel-add-menu" :aria-label="tr('inspector.newTab')" :title="tr('inspector.newTab')"><Plus :size="20" /></button>
+      <button class="panel-icon-button panel-expand" type="button" :aria-label="appStore.activePanel?.expanded ? tr('inspector.restorePanel') : tr('inspector.expandPanel')" @click="toggleExpanded"><Minimize2 v-if="appStore.activePanel?.expanded" :size="17" /><Maximize2 v-else :size="17" /></button>
       <button class="panel-icon-button" type="button" :aria-label="tr('topbar.closeInspector')" @click="appStore.toggleInspector()"><PanelRightClose :size="18" /></button>
     </div>
-    <div id="panel-add-menu" ref="addMenu" popover class="panel-menu" aria-label="新建标签">
-      <button type="button" @click="addTab('terminal')"><Terminal :size="18" />终端<kbd>Ctrl+`</kbd></button>
-      <button type="button" @click="addTab('browser')"><Globe :size="18" />浏览器<kbd>Ctrl+T</kbd></button>
-      <button type="button" @click="addTab('changes')"><FolderOpen :size="18" />文件<kbd>Ctrl+P</kbd></button>
+    <div id="panel-add-menu" ref="addMenu" popover class="panel-menu" :aria-label="tr('inspector.newTab')">
+      <button type="button" @click="addTab('terminal')"><Terminal :size="18" />{{ tr('inspector.terminal') }}<kbd>Ctrl+`</kbd></button>
+      <button type="button" @click="addTab('browser')"><Globe :size="18" />{{ tr('inspector.browser') }}<kbd>Ctrl+T</kbd></button>
+      <button type="button" @click="addTab('changes')"><FolderOpen :size="18" />{{ tr('inspector.files') }}<kbd>Ctrl+P</kbd></button>
     </div>
     <div v-if="currentTab?.kind === 'file' || currentTab?.kind === 'diff'" class="panel-pathbar">
-      <nav class="code-breadcrumb" :title="currentTab.path" aria-label="File path">
+      <nav class="code-breadcrumb" :title="currentTab.path" :aria-label="tr('inspector.filePath')">
         <template v-for="(part, index) in breadcrumbs(currentTab.path || '')" :key="index">
           <ChevronRight v-if="index" :size="15" aria-hidden="true" />
           <span :class="{ 'is-current': index === breadcrumbs(currentTab.path || '').length - 1 }">{{ part }}</span>
         </template>
       </nav>
-      <button class="panel-icon-button" :class="{ 'is-active': currentTab.treeOpen }" type="button" aria-label="文件目录" :aria-expanded="!!currentTab.treeOpen" title="文件目录" @click="toggleTree"><FolderOpen :size="19" /></button>
+      <button class="panel-icon-button" :class="{ 'is-active': currentTab.treeOpen }" type="button" :aria-label="tr('inspector.fileTree')" :aria-expanded="!!currentTab.treeOpen" :title="tr('inspector.fileTree')" @click="toggleTree"><FolderOpen :size="19" /></button>
       <div v-if="!remoteWorkspace" class="panel-open-split">
-        <button type="button" title="使用系统默认应用打开文件" @click="void appStore.openActiveRepositoryFile()"><ExternalLink :size="18" />打开</button>
-        <button id="panel-open-button" type="button" popovertarget="panel-open-menu" aria-label="打开选项"><ChevronDown :size="14" /></button>
+        <button type="button" :title="tr('inspector.openWithDefaultApp')" @click="void appStore.openActiveRepositoryFile()"><ExternalLink :size="18" />{{ tr('inspector.open') }}</button>
+        <button id="panel-open-button" type="button" popovertarget="panel-open-menu" :aria-label="tr('inspector.openOptions')"><ChevronDown :size="14" /></button>
       </div>
     </div>
-    <div id="panel-open-menu" ref="openMenu" popover class="panel-menu"><button type="button" @click="openMenu?.hidePopover(); void appStore.openActiveRepositoryFile(true)"><FolderOpen :size="17" />在文件资源管理器中显示</button></div>
+    <div id="panel-open-menu" ref="openMenu" popover class="panel-menu"><button type="button" @click="openMenu?.hidePopover(); void appStore.openActiveRepositoryFile(true)"><FolderOpen :size="17" />{{ tr('inspector.showInExplorer') }}</button></div>
     <p v-if="currentTab?.error && (currentTab.kind === 'browser' || currentTab.kind === 'terminal')" class="diff-notice error-text" role="alert">{{ currentTab.error }}</p>
     <div class="panel-body" :class="{ 'has-tree': (currentTab?.kind === 'file' || currentTab?.kind === 'diff') && currentTab.treeOpen }">
     <div v-if="currentTab?.kind === 'file'" :key="currentTab.id" class="inspector-content file-preview-panel">
@@ -432,19 +432,19 @@ watch(() => currentTab.value?.id, async () => {
         <div v-else-if="appStore.activeRepositoryDiffError && !activeDiff" class="repository-state error-text" :class="ui.empty">{{ appStore.activeRepositoryDiffError }}</div>
         <template v-else-if="activeDiff">
           <div v-if="appStore.activeRepositoryDiffError" class="diff-notice error-text">{{ appStore.activeRepositoryDiffError }}</div>
-          <div v-if="activeDiff.binary" class="repository-state" :class="ui.empty"><FileDiff :size="18" /><span>Binary file changed</span></div>
+          <div v-if="activeDiff.binary" class="repository-state" :class="ui.empty"><FileDiff :size="18" /><span>{{ tr('inspector.binaryDiff') }}</span></div>
           <template v-else>
             <section v-if="activeDiff.staged" class="diff-section">
-              <header>Staged changes</header>
-              <pre aria-label="Staged diff"><code><span v-for="row in visibleDiffRows(activeDiff.staged, 'staged')" :key="row.key" class="diff-line" :class="row.kind"><span class="diff-line-number" aria-hidden="true">{{ row.lineNumber }}</span><span class="diff-line-text"><span v-for="(segment, index) in row.segments" :key="index" :class="segment.classes">{{ segment.text }}</span></span></span></code></pre>
+              <header>{{ tr('inspector.stagedChanges') }}</header>
+              <pre :aria-label="tr('inspector.stagedDiff')"><code><span v-for="row in visibleDiffRows(activeDiff.staged, 'staged')" :key="row.key" class="diff-line" :class="row.kind"><span class="diff-line-number" aria-hidden="true">{{ row.lineNumber }}</span><span class="diff-line-text"><span v-for="(segment, index) in row.segments" :key="index" :class="segment.classes">{{ segment.text }}</span></span></span></code></pre>
             </section>
             <section v-if="activeDiff.working" class="diff-section">
-              <header>{{ activeDiff.session ? tr("inspector.sessionChanges") : "Working tree" }}</header>
-              <pre aria-label="Working tree diff"><code><span v-for="row in visibleDiffRows(activeDiff.working, 'working')" :key="row.key" class="diff-line" :class="row.kind"><span class="diff-line-number" aria-hidden="true">{{ row.lineNumber }}</span><span class="diff-line-text"><span v-for="(segment, index) in row.segments" :key="index" :class="segment.classes">{{ segment.text }}</span></span></span></code></pre>
+              <header>{{ activeDiff.session ? tr("inspector.sessionChanges") : tr('inspector.workingTree') }}</header>
+              <pre :aria-label="tr('inspector.workingDiff')"><code><span v-for="row in visibleDiffRows(activeDiff.working, 'working')" :key="row.key" class="diff-line" :class="row.kind"><span class="diff-line-number" aria-hidden="true">{{ row.lineNumber }}</span><span class="diff-line-text"><span v-for="(segment, index) in row.segments" :key="index" :class="segment.classes">{{ segment.text }}</span></span></span></code></pre>
             </section>
             <section v-if="activeDiff.content || (!activeDiff.staged && !activeDiff.working)" class="diff-section">
-              <header>Untracked file</header>
-              <pre aria-label="Untracked file content"><code><span v-for="row in visibleDiffRows(activeDiff.content ?? '', 'content')" :key="row.key" class="diff-line is-addition"><span class="diff-line-number" aria-hidden="true">{{ row.lineNumber }}</span><span class="diff-line-text"><span v-for="(segment, index) in row.segments" :key="index" :class="segment.classes">{{ segment.text }}</span></span></span></code></pre>
+              <header>{{ tr('inspector.untrackedFile') }}</header>
+              <pre :aria-label="tr('inspector.untrackedContent')"><code><span v-for="row in visibleDiffRows(activeDiff.content ?? '', 'content')" :key="row.key" class="diff-line is-addition"><span class="diff-line-number" aria-hidden="true">{{ row.lineNumber }}</span><span class="diff-line-text"><span v-for="(segment, index) in row.segments" :key="index" :class="segment.classes">{{ segment.text }}</span></span></span></code></pre>
             </section>
           </template>
           <div v-if="activeDiff.truncated" class="diff-notice">Preview truncated at the safety limit.</div>

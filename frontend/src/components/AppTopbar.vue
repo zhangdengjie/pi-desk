@@ -212,7 +212,7 @@ onBeforeUnmount(() => {
       </div>
 
     </div>
-    <section id="thread-context" ref="contextElement" popover class="thread-context-popover context-panel" aria-label="上下文" @toggle="appStore.contextOpen = ($event as ToggleEvent).newState === 'open'">
+    <section id="thread-context" ref="contextElement" popover class="thread-context-popover context-panel" :aria-label="tr('inspector.context')" @toggle="appStore.contextOpen = ($event as ToggleEvent).newState === 'open'">
 
       <dl v-if="appStore.activeThread">
         <div><dt>{{ tr("inspector.workspace") }}</dt><dd :title="workspaceLabel">{{ workspaceLabel }}</dd></div>

@@ -1,5 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, expect, it, vi } from "vitest";
+import { tr } from "../i18n";
 import BrowserPane from "./BrowserPane.vue";
 
 const browser = vi.hoisted(() => ({
@@ -44,8 +45,8 @@ it("opens DevTools for this exact tab without a handback control", async () => {
   const wrapper = mount(BrowserPane, { props: { tab: { id: "page", kind: "browser", title: "Browser" } } });
   try {
     await flushPromises();
-    expect(wrapper.text()).not.toMatch(/接管|交还/);
-    await wrapper.get('[aria-label="打开调试模式"]').trigger("click");
+    expect(wrapper.text()).not.toMatch(/接管|交还|Take over|Hand back/);
+    await wrapper.get(`[aria-label="${tr("browser.devtools")}"]`).trigger("click");
     expect(browser.command).toHaveBeenCalledWith("page", "devtools");
     await wrapper.get("input").setValue("example.test/path");
     await wrapper.get("form").trigger("submit");
@@ -64,7 +65,7 @@ it("shows the blank-page prompt without letting the native surface cover it", as
   try {
     await flushPromises();
     expect(wrapper.get("input").element.value).toBe("");
-    expect(wrapper.get(".browser-empty").text()).toContain("粘贴或输入 URL");
+    expect(wrapper.get(".browser-empty").text()).toContain(tr("browser.emptyHint"));
     scheduled.splice(0).forEach(callback => callback(0));
     await flushPromises();
     expect(browser.bounds).toHaveBeenCalledWith("blank", expect.any(Object), false);

@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Globe, RefreshCw, Square, PanelsTopLeft, Boo
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { browserService, onBrowserEvent } from "../services/browser";
 import { useAppStore, type PanelTab } from "../stores/app";
+import { tr } from "../i18n";
 import type { BrowserStatus } from "../../bindings/pi-desk/internal/domain";
 
 const props = defineProps<{ tab: PanelTab }>();
@@ -56,7 +57,7 @@ function hide() {
 }
 function receive(next: BrowserStatus) {
   status.value = next;
-  if (document.activeElement?.getAttribute("aria-label") !== "浏览器地址") address.value = next.url === "about:blank" ? "" : next.url || "";
+  if (document.activeElement?.getAttribute("aria-label") !== tr("browser.address")) address.value = next.url === "about:blank" ? "" : next.url || "";
   error.value = next.error || "";
 }
 async function connect() {
@@ -106,17 +107,17 @@ onBeforeUnmount(() => {
 <template>
   <div class="inspector-content browser-panel">
     <div class="browser-toolbar">
-      <button class="icon-button" aria-label="后退" title="后退" :disabled="!status?.canGoBack" @click="command('back')"><ChevronLeft :size="20" aria-hidden="true" /></button>
-      <button class="icon-button" aria-label="前进" title="前进" :disabled="!status?.canGoForward" @click="command('forward')"><ChevronRight :size="20" aria-hidden="true" /></button>
-      <button class="icon-button" :aria-label="status?.loading ? '停止加载' : '刷新'" :title="status?.loading ? '停止加载' : '刷新'" :disabled="!status?.attached" @click="command(status?.loading ? 'stop' : 'reload')"><Square v-if="status?.loading" :size="18" aria-hidden="true" /><RefreshCw v-else :size="20" aria-hidden="true" /></button>
-      <form class="browser-address" @submit.prevent="navigate"><input v-model="address" aria-label="浏览器地址" placeholder="输入网址后回车" spellcheck="false" autocomplete="off" :disabled="!status?.attached" /></form>
-      <button v-if="status?.temporary" class="icon-button" aria-label="保留此页面" title="保留此页面" @click="run(() => browserService.keepTab(tab.id))"><Bookmark :size="20" aria-hidden="true" /></button>
-      <button class="icon-button" aria-label="打开调试模式" title="打开调试模式（当前网页开发者工具）" :disabled="!status?.attached" @click="command('devtools')"><PanelsTopLeft :size="20" aria-hidden="true" /></button>
+      <button class="icon-button" :aria-label="tr('browser.back')" :title="tr('browser.back')" :disabled="!status?.canGoBack" @click="command('back')"><ChevronLeft :size="20" aria-hidden="true" /></button>
+      <button class="icon-button" :aria-label="tr('browser.forward')" :title="tr('browser.forward')" :disabled="!status?.canGoForward" @click="command('forward')"><ChevronRight :size="20" aria-hidden="true" /></button>
+      <button class="icon-button" :aria-label="status?.loading ? tr('browser.stop') : tr('browser.reload')" :title="status?.loading ? tr('browser.stop') : tr('browser.reload')" :disabled="!status?.attached" @click="command(status?.loading ? 'stop' : 'reload')"><Square v-if="status?.loading" :size="18" aria-hidden="true" /><RefreshCw v-else :size="20" aria-hidden="true" /></button>
+      <form class="browser-address" @submit.prevent="navigate"><input v-model="address" :aria-label="tr('browser.address')" :placeholder="tr('browser.addressPlaceholder')" spellcheck="false" autocomplete="off" :disabled="!status?.attached" /></form>
+      <button v-if="status?.temporary" class="icon-button" :aria-label="tr('browser.keepPage')" :title="tr('browser.keepPage')" @click="run(() => browserService.keepTab(tab.id))"><Bookmark :size="20" aria-hidden="true" /></button>
+      <button class="icon-button" :aria-label="tr('browser.devtools')" :title="tr('browser.devtoolsHint')" :disabled="!status?.attached" @click="command('devtools')"><PanelsTopLeft :size="20" aria-hidden="true" /></button>
     </div>
-    <div v-if="error" class="browser-error" role="alert">{{ error }}<button v-if="!status?.attached" @click="connect">重试</button></div>
+    <div v-if="error" class="browser-error" role="alert">{{ error }}<button v-if="!status?.attached" @click="connect">{{ tr('browser.retry') }}</button></div>
     <div ref="viewport" class="browser-native-viewport">
-      <span v-if="connecting" class="browser-placeholder">正在打开内嵌浏览器…</span>
-      <div v-else-if="empty" class="browser-empty"><Globe :size="64" :stroke-width="1.5" aria-hidden="true" /><h3>浏览器</h3><p>粘贴或输入 URL 以打开网页。</p></div>
+      <span v-if="connecting" class="browser-placeholder">{{ tr('browser.opening') }}</span>
+      <div v-else-if="empty" class="browser-empty"><Globe :size="64" :stroke-width="1.5" aria-hidden="true" /><h3>{{ tr('browser.title') }}</h3><p>{{ tr('browser.emptyHint') }}</p></div>
     </div>
   </div>
 </template>

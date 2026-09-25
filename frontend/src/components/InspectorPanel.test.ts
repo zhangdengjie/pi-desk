@@ -1,6 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { tr } from "../i18n";
 import { type PanelTab, useAppStore } from "../stores/app";
 import InspectorPanel from "./InspectorPanel.vue";
 import { buildToolDiff } from "../utils/toolDiff";
@@ -67,13 +68,13 @@ describe("InspectorPanel", () => {
     await fileButton.trigger('dblclick');
     await flushPromises();
     expect(store.activePanelTab?.pinned).toBe(true);
-    expect(wrapper.get('[aria-label="文件目录"]').attributes('aria-expanded')).toBe('true');
-    await wrapper.get('[aria-label="文件目录"]').trigger('click');
+    expect(wrapper.get(`[aria-label="${tr("inspector.fileTree")}"]`).attributes('aria-expanded')).toBe('true');
+    await wrapper.get(`[aria-label="${tr("inspector.fileTree")}"]`).trigger('click');
     expect(wrapper.find('.panel-directory').exists()).toBe(false);
     await store.openRepositoryDiff('main.py', '@@ -1 +1 @@\n-print(1)\n+print(2)', 'message');
     await flushPromises();
     Element.prototype.scrollIntoView = vi.fn();
-    await wrapper.get('[aria-label="文件目录"]').trigger('click');
+    await wrapper.get(`[aria-label="${tr("inspector.fileTree")}"]`).trigger('click');
     expect(wrapper.find('.panel-directory').exists()).toBe(true);
     expect(wrapper.find('.repository-diff').exists()).toBe(true);
     wrapper.unmount();
