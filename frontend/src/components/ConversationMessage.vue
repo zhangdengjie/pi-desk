@@ -524,7 +524,7 @@ onBeforeUnmount(() => {
         <button class="is-danger" type="button" :disabled="Boolean(appStore.activeSessionOperation)" @click="void deleteMessage()">{{ tr('conversation.delete') }}</button>
       </div>
       <div v-if="showMessageMeta" class="message-meta">
-        <span v-if="message.delivery" class="delivery-label">{{ message.delivery === "steer" ? "Steer" : "Follow up" }}</span>
+        <span v-if="message.delivery" class="delivery-label">{{ message.delivery === "steer" ? tr('composer.steer') : tr('composer.followUp') }}</span>
         <time v-if="message.role === 'user' && message.timestamp" class="message-meta-time">{{ message.timestamp }}</time>
         <div v-if="showActions" class="message-actions" role="toolbar" :aria-label="tr('conversation.actions')">
           <button class="message-action message-action--copy" type="button" :title="tr('conversation.copy')" @click="void copyMessage()">

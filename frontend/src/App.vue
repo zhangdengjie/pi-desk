@@ -155,7 +155,7 @@ watch(() => appStore.interfaceFontSize, syncDocumentFontSize, { immediate: true 
       :value="appStore.sidebarWidth"
       :min="MIN_SIDEBAR_WIDTH"
       :max="MAX_SIDEBAR_WIDTH"
-      label="Resize task sidebar"
+      :label="tr('topbar.resizeTaskSidebar')"
       @resize="appStore.setSidebarWidth($event)"
       @commit="appStore.setSidebarWidth($event, true)"
     />
@@ -170,7 +170,7 @@ watch(() => appStore.interfaceFontSize, syncDocumentFontSize, { immediate: true 
       :value="appStore.inspectorWidth"
       :min="MIN_INSPECTOR_WIDTH"
       :max="MAX_INSPECTOR_WIDTH"
-      label="Resize inspector"
+      :label="tr('topbar.resizeInspector')"
       @resize="appStore.setInspectorWidth($event)"
       @commit="appStore.setInspectorWidth($event, true)"
     />

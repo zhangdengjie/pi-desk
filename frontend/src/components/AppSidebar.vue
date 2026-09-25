@@ -314,7 +314,7 @@ onBeforeUnmount(() => {
     >
       <PanelLeftOpen :size="17" />
     </button>
-    <nav v-else class="primary-nav grid gap-0.5 border-b border-[var(--border)] px-2.5 py-1.5" aria-label="Primary">
+    <nav v-else class="primary-nav grid gap-0.5 border-b border-[var(--border)] px-2.5 py-1.5" :aria-label="tr('sidebar.primaryNav')">
       <button v-if="!appStore.sidebarCollapsed" class="new-task-button flex h-8 w-full items-center gap-2 whitespace-nowrap rounded-md border border-transparent bg-transparent px-2.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-[var(--focus)]" type="button" :title="tr('sidebar.newTask')" :aria-label="tr('sidebar.newTask')" @click="appStore.openNewTask">
         <MessageCirclePlus :size="20" :stroke-width="1.7" />
         <span>{{ tr("sidebar.newTask") }}</span>

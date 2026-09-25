@@ -332,7 +332,7 @@ function sourceIcon(source: SlashCommand["source"]) {
               <label class="setting-row setting-row-select" :class="ui.row">
                 <span><strong>{{ tr("settings.steeringQueue") }}</strong><small>{{ tr("settings.steeringQueueHelp") }}</small></span>
                 <select :class="ui.select"
-                  aria-label="Steering queue processing"
+                  :aria-label="tr('settings.steeringQueueProcessing')"
                   :value="appStore.activeSessionState?.steeringMode || 'one-at-a-time'"
                   :disabled="!appStore.activeThread?.started || runtimeLoading"
                   @change="void updateRuntimeBehavior(() => appStore.setSteeringMode(queueMode($event)))"
@@ -443,7 +443,7 @@ function sourceIcon(source: SlashCommand["source"]) {
 
         <div v-else class="settings-content model-config-content runtime-settings-content">
           <div class="settings-fill-body runtime-resources-body">
-            <div class="resource-filters" role="tablist" aria-label="Resource type">
+            <div class="resource-filters" role="tablist" :aria-label="tr('settings.resourceType')">
               <button v-for="source in (['all', 'skill', 'extension', 'prompt'] as const)" :key="source" :class="ui.tab" type="button" role="tab" :aria-selected="resourceSource === source" @click="resourceSource = source">
                 {{ source === "all" ? tr("settings.all") : source === "skill" ? tr("settings.skills") : source === "extension" ? tr("settings.extensions") : tr("settings.prompts") }}
                 <span>{{ resourceCounts[source] }}</span>

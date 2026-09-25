@@ -620,7 +620,7 @@ onBeforeUnmount(() => {
     <div v-if="appStore.activeRetry" class="retry-banner" :class="ui.status" role="status">
       <span>Retry {{ appStore.activeRetry.attempt }} of {{ appStore.activeRetry.maxAttempts }}</span>
       <small v-if="appStore.activeRetry.errorMessage">{{ appStore.activeRetry.errorMessage }}</small>
-      <button type="button" title="Stop retry" @click="void appStore.abortActiveRetry()"><X :size="14" /></button>
+      <button type="button" :title="tr('composer.stopRetry')" @click="void appStore.abortActiveRetry()"><X :size="14" /></button>
     </div>
     <!-- Automatic compaction emits no timeline entry until it succeeds, so the only signal is this banner. -->
     <div v-else-if="appStore.activeSessionIsCompacting" class="retry-banner" :class="ui.status" role="status" aria-live="polite">
@@ -684,7 +684,7 @@ onBeforeUnmount(() => {
           <button class="attachment-preview-open" type="button" :title="tr('composer.viewImage')" @click="previewImage = image">
             <img :src="image.previewUrl" :alt="image.name" />
           </button>
-          <button class="attachment-preview-remove" type="button" title="Remove image" @click.stop="appStore.removeActiveAttachment(image.id)"><X :size="12" /></button>
+          <button class="attachment-preview-remove" type="button" :title="tr('composer.removeImage')" @click.stop="appStore.removeActiveAttachment(image.id)"><X :size="12" /></button>
         </div>
       </div>
       <div v-if="attachmentError" class="attachment-error" role="alert">{{ attachmentError }}</div>
