@@ -2125,6 +2125,62 @@ describe("app store", () => {
     });
   });
 
+  it("adopts the streamed row ids when the settled transcript replaces them", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread!;
+    store.messagesByThread[thread.id] = [
+      { id: "history-old-1", entryId: "old-1", role: "user", text: "Earlier prompt", thinking: "", timestamp: "", streaming: false, tools: [] },
+      { id: "user-2f1c", role: "user", text: "/eod", thinking: "", timestamp: "", streaming: false, tools: [] },
+      { id: "assistant-9d3a", role: "assistant", text: "Done", thinking: "", timestamp: "", streaming: false, tools: [] },
+    ];
+
+    store.applySessionSnapshot(thread, { messages: [
+      { role: "user", content: "Earlier prompt", piDeskEntryId: "old-1" },
+      // A prompt template comes back expanded, so this row's text is not the streamed
+      // text - it is still the same row and must keep the id the row is keyed by.
+      { role: "user", content: "展开后的模板正文", piDeskEntryId: "entry-2" },
+      { role: "assistant", content: "Done", piDeskEntryId: "entry-3" },
+    ], messageCount: 3 });
+
+    expect(store.activeMessages.map((message) => message.id)).toEqual(["history-old-1", "user-2f1c", "assistant-9d3a"]);
+    // The entry id still comes from the snapshot: it is what edit/delete/fork use.
+    expect(store.activeMessages.map((message) => message.entryId)).toEqual(["old-1", "entry-2", "entry-3"]);
+  });
+
+  it("leaves ids alone when the tail is already persisted history", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread!;
+    store.messagesByThread[thread.id] = [
+      { id: "history-old-1", entryId: "old-1", role: "user", text: "Earlier prompt", thinking: "", timestamp: "", streaming: false, tools: [] },
+      { id: "history-old-2", entryId: "old-2", role: "assistant", text: "Earlier reply", thinking: "", timestamp: "", streaming: false, tools: [] },
+    ];
+
+    store.applySessionSnapshot(thread, { messages: [
+      { role: "user", content: "Earlier prompt", piDeskEntryId: "old-1" },
+      { role: "assistant", content: "Earlier reply", piDeskEntryId: "old-2" },
+    ], messageCount: 2 });
+
+    expect(store.activeMessages.map((message) => message.id)).toEqual(["history-old-1", "history-old-2"]);
+  });
+
+  it("does not re-pair rows when the settled tail diverges", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread!;
+    store.messagesByThread[thread.id] = [
+      { id: "assistant-9d3a", role: "assistant", text: "Streamed answer", thinking: "", timestamp: "", streaming: false, tools: [] },
+    ];
+
+    store.applySessionSnapshot(thread, { messages: [
+      { role: "assistant", content: "A different answer entirely", piDeskEntryId: "entry-9" },
+    ], messageCount: 1 });
+
+    // Nothing matched, so the snapshot keeps its own id rather than borrowing one.
+    expect(store.activeMessages.map((message) => message.id)).toEqual(["history-entry-9"]);
+  });
+
   it("keeps automatic compaction busy until Pi settles", async () => {
     const store = useAppStore();
     await store.createThread("D:\\work\\repo", "deny");

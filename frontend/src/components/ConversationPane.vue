@@ -7,7 +7,7 @@ import ComposerBar from "./ComposerBar.vue";
 import ConversationMessage from "./ConversationMessage.vue";
 import { useAppStore } from "../stores/app";
 import { CONVERSATION_VIRTUALIZATION_THRESHOLD, estimateMessageSize, shouldVirtualizeMessages } from "../utils/conversationVirtualization";
-import { isNearBottom, nestedScrollerCanGoUp, nextTailScroll } from "../utils/scroll";
+import { isNearBottom, createSettleSnap, nestedScrollerCanGoUp, nextTailScroll } from "../utils/scroll";
 import { streamTuning } from "../utils/streamTuning";
 import { groupConversationTurns } from "../utils/conversationGrouping";
 import { tr } from "../i18n";
@@ -25,6 +25,10 @@ const messages = computed(() => groupConversationTurns(appStore.activeMessages))
 const shouldVirtualize = computed(() => shouldVirtualizeMessages(messages.value)
   || (appStore.activeThread?.messageCount ?? 0) > CONVERSATION_VIRTUALIZATION_THRESHOLD);
 const lastMessage = computed(() => messages.value.at(-1));
+// The run's own liveness, not `waitingForOutput`: that flag also drops for the gap
+// between a tool call and its answer, and a snap there would yank the tail to the
+// bottom in the middle of a live run.
+const streamLive = computed(() => lastMessage.value?.streaming === true);
 const streamSignal = computed(() => {
   const message = lastMessage.value;
   if (!message) return [appStore.activeThreadId, "", 0, 0, 0, 0, "", appStore.activeWaitingForOutput] as const;
@@ -124,13 +128,32 @@ function measureVirtualRow(element: Element | ComponentPublicInstance | null) {
 // a reasoning window collapses. ResizeObserver runs after layout and before
 // paint, so it is where the correction belongs.
 let rowObserver: ResizeObserver | undefined;
+// A virtualized list mounts a fresh row element on every scroll, and the old ones leave the
+// document without anything to unsubscribe them. Keeping them observed made the callback
+// fire for rows that render nothing any more - the browser reports the resulting churn as
+// `ResizeObserver loop completed with undelivered notifications`.
+const observedRows = new Set<Element>();
 
 function observeRowOutput(element: Element) {
   rowObserver ??= new ResizeObserver(() => {
+    // No `measureElement` here. The virtualizer's offsets are what place a row on screen, so
+    // feeding live measurements back from the observer that a position change itself wakes
+    // up made the estimates and the measurements trade turns every frame - the viewport then
+    // alternates between two positions (a screen recording of a 354-line session showed
+    // ~1500px apart at ~15Hz). Height changes are absorbed by keeping the estimate stable
+    // across a row's whole life instead - see estimatedChangedFilesSize.
     noteSelfGrowth();
     if (stickToBottom.value) followTail();
   });
-  rowObserver.observe(element);
+  if (!observedRows.has(element)) {
+    observedRows.add(element);
+    rowObserver.observe(element);
+  }
+  for (const row of observedRows) {
+    if (row.isConnected) continue;
+    observedRows.delete(row);
+    rowObserver.unobserve(row);
+  }
 }
 
 function observeTranscriptRow(ref: Element | ComponentPublicInstance | null) {
@@ -155,6 +178,18 @@ let tailFrame = 0;
 // follow reads its own steps as "the reader left the tail" and releases itself.
 let applyingTail = false;
 
+// The end of a run delivers its height in mixed-sign batches inside ~1.2s of the
+// scroll.stop edge: `agent_end` collapses the execution panels and inserts the
+// changed-files card, `agent_settled` replaces the transcript rows with their
+// persisted versions, and the repository refresh runs after that. Widening the snap band
+// only during that window changes nothing else: an upward wheel still releases the
+// follow, and once it expires the configured easing is back.
+const settleSnap = createSettleSnap(1200);
+watch(streamLive, (live, wasLive) => {
+  if (wasLive === true && !live) settleSnap.arm();
+});
+
+
 /**
  * Move the tail one step and report whether a jump is still in flight. The step itself
  * runs in the caller's frame on purpose: a ResizeObserver callback is the last place
@@ -164,7 +199,12 @@ let applyingTail = false;
 function stepTail(): boolean {
   const element = timeline.value;
   if (!element || !stickToBottom.value) return false;
-  const next = nextTailScroll(element.scrollTop, element.scrollHeight, element.clientHeight);
+  const next = nextTailScroll(
+    element.scrollTop,
+    element.scrollHeight,
+    element.clientHeight,
+    settleSnap.limit(streamTuning.scroll.snapWithinPx),
+  );
   if (next !== element.scrollTop) {
     applyingTail = true;
     element.scrollTop = next;
@@ -438,6 +478,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   stopFollowingTail();
   rowObserver?.disconnect();
+  observedRows.clear();
   document.removeEventListener("keydown", onDocumentKeydown, true);
   hideHoveredNavigation();
 });

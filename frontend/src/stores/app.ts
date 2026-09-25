@@ -785,6 +785,41 @@ function liveCompactionMessage(payload: Record<string, unknown>): TimelineMessag
   };
 }
 
+/**
+ * Give the rows of the run that just settled back the ids they streamed under.
+ *
+ * A live turn is keyed by the RPC message id; the transcript snapshot that replaces it a
+ * moment later is keyed by the session entry id (`historicalIdentity`). Same row, two
+ * ids - and two ids mean Vue tears the row down and builds it again: the markdown is
+ * parsed a second time, `useRevealedText` restarts, the reader's expanded panels are
+ * forgotten (`detailsOpenState` remembers them by message id) and the virtualizer
+ * re-measures every row below. Adopting the streamed id makes the settled transcript a
+ * patch instead of a rebuild.
+ *
+ * Deliberately narrow: only the tail still keyed by a streamed id is touched, and it is
+ * matched from the end so a repeated prompt cannot re-pair older rows. `entryId` is left
+ * as the snapshot set it - edit/delete/fork address the session entry through that, not
+ * through the display id.
+ */
+function adoptStreamedIds(historical: TimelineMessage[], previous: TimelineMessage[]): void {
+  let incoming = historical.length - 1;
+  let streamed = previous.length - 1;
+  while (incoming >= 0 && streamed >= 0) {
+    const next = historical[incoming];
+    const live = previous[streamed];
+    // A row on a session entry id on either side means the run ends here.
+    if (live.id.startsWith("history-") || !next.id.startsWith("history-")) return;
+    // A prompt can come back expanded (prompt templates, skills), so the one row that
+    // cannot be anything else is allowed to differ in text.
+    const sameText = next.role === live.role && next.text === live.text;
+    const samePrompt = next.role === "user" && live.role === "user";
+    if (!sameText && !samePrompt) return;
+    next.id = live.id;
+    incoming -= 1;
+    streamed -= 1;
+  }
+}
+
 function copyMessages(messages: TimelineMessage[]): TimelineMessage[] {
   return messages.map((message) => ({
     ...message,
@@ -1671,6 +1706,7 @@ export const useAppStore = defineStore("app", {
       const entries = (snapshot.messages as Array<Record<string, unknown>> | null) ?? [];
       this.transcriptEntriesByThread[thread.id] = entries;
       const historical = historicalMessages(entries, this.compactionEstimatesByThread[thread.id]);
+      adoptStreamedIds(historical, this.messagesByThread[thread.id] ?? []);
       for (const message of historical) {
         if (message.compaction?.estimatedTokensAfter !== undefined) {
           this.applyCompactionEstimate(thread.id, message.compaction, false);

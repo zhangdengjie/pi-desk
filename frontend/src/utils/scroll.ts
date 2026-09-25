@@ -45,3 +45,40 @@ export function nextTailScroll(
   if (distance <= snapWithin) return scrollHeight;
   return currentTop + Math.max(1, distance * factor);
 }
+
+/**
+ * The short window right after a run stops, where the follow pins instead of easing.
+ *
+ * Easing exists for a *mid-stream* discrete jump: one block lands and the tail is
+ * caught up with over a few frames, which reads as motion rather than a teleport.
+ * The end of a run is the opposite shape. Three batches of height land within a couple
+ * of frames of each other - `agent_end` collapsing the execution panels and inserting
+ * the changed-files card, then `agent_settled` replacing the transcript rows with their
+ * persisted versions, then the repository refresh - and their signs disagree (panels
+ * shrink, the card grows). Easing that batch spreads several hundred pixels of motion
+ * over a dozen frames *while the height is still changing*, so the ease overshoots and
+ * reverses between frames: that is the shake a reader sees at the end of an answer,
+ * not at the beginning.
+ *
+ * So the batch snaps, and only the batch: the window is armed on the live-to-idle edge
+ * and expires on its own. The reader keeps every escape hatch - the follow still
+ * releases on an upward wheel, and past the window the easing is exactly what it was.
+ */
+export function createSettleSnap(durationMs: number, now: () => number = Date.now) {
+  let until = 0;
+  return {
+    /** A run just stopped (`streaming` true -> false). */
+    arm() {
+      until = now() + durationMs;
+    },
+    /**
+     * The `snapWithin` to hand `nextTailScroll`: unbounded inside the window, the
+     * configured band outside it.
+     */
+    limit(snapWithin: number) {
+      return now() < until ? Number.POSITIVE_INFINITY : snapWithin;
+    },
+  };
+}
+
+export type SettleSnap = ReturnType<typeof createSettleSnap>;
