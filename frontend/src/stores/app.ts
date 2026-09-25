@@ -16,6 +16,7 @@ import { skillInvocationCommandText, skillInvocationTitleText } from "../utils/s
 import { runtimeErrorText } from "../utils/runtimeError";
 import { subagentSummaryFromResult, type SubagentTaskSummary } from "../utils/subagentTasks";
 import { buildToolDiff } from "../utils/toolDiff";
+import { threadTitleText } from "../utils/threadLabel";
 import { setAppLanguage, tr } from "../i18n";
 import {
   localDateTimeToISO,
@@ -117,25 +118,6 @@ function hasRemoteCode(message: string, code: (typeof REMOTE_RECONNECT_CODES)[nu
 
 function requiresRemoteReconnect(message: string): boolean {
   return REMOTE_RECONNECT_CODES.some((code) => hasRemoteCode(message, code));
-}
-
-const THREAD_TITLE_MAX_CHARS = 40;
-
-// Derives a readable sidebar title from a raw first prompt: first line only,
-// markdown and URL noise stripped, long URLs reduced to their host, and a
-// clean single-character ellipsis instead of a mid-token cut.
-function threadTitleText(value: string): string {
-  const firstLine = value.split("\n").find((line) => line.trim())?.trim() ?? "";
-  const cleaned = firstLine
-    .replace(/^#+\s*/, "")
-    .replace(/`+/g, "")
-    .replace(/<(https?:\/\/[^>\s]+)>/g, "$1")
-    .replace(/(?:https?:\/\/|www\.)([a-z0-9.-]+(?::\d+)?)[^\s<>()"'，。；、！？：]*\/?/gi, (_match, host: string) => host.replace(/^www\./, ""))
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!cleaned) return "";
-  if (cleaned.length <= THREAD_TITLE_MAX_CHARS) return cleaned;
-  return `${cleaned.slice(0, THREAD_TITLE_MAX_CHARS - 1)}…`;
 }
 
 export interface WorkspaceSummary {
