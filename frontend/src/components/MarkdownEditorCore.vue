@@ -5,8 +5,9 @@ import { codeBlockSchema, commonmark, createCodeBlockInputRule, hardbreakSchema,
 import { markRule } from "@milkdown/prose";
 import { exitCode, newlineInCode } from "@milkdown/prose/commands";
 import { textblockTypeInputRule } from "@milkdown/prose/inputrules";
-import { Fragment, Slice } from "@milkdown/prose/model";
+import { Fragment, Slice, type NodeType } from "@milkdown/prose/model";
 import { TextSelection } from "@milkdown/prose/state";
+import type { EditorView } from "@milkdown/prose/view";
 import { gfm } from "@milkdown/preset-gfm";
 import { Milkdown, useEditor } from "@milkdown/vue";
 import { $inputRule, replaceAll } from "@milkdown/utils";
@@ -24,6 +25,32 @@ const root = ref<HTMLDivElement>();
 let lastMarkdown = props.modelValue;
 let replacingMarkdown = false;
 const codeFence = /^ {0,3}(?:`{3,}|~{3,})([^\s`~]*)[ \t\n]$/;
+
+// A draft is one paragraph holding `<br>` hard breaks, so a caret at a line edge has two DOM
+// readings: just before or just after the break. The commonmark Shift-Enter command always ends up
+// on the far side, which is what made an empty first line untypeable — the character landed on the
+// line below it and the reader saw a newline appear out of nowhere. Put the break on the side the
+// caret was aiming at instead: at a line start it goes below the caret, anywhere else above it.
+// And when the caret already sits on its own line's break, Shift-Enter moves down rather than
+// stacking a second break, which is the "one Enter, two newlines" the reader reported.
+function insertDraftBreak(view: EditorView, hardbreak: NodeType): boolean {
+  const { selection } = view.state;
+  const { $from, empty } = selection;
+  if (!empty || $from.depth !== 1 || $from.parent.type.name !== "paragraph") return false;
+  const atLineStart = $from.parentOffset === 0;
+  if (!atLineStart) {
+    let pos = $from.pos;
+    while (view.state.doc.resolve(pos).nodeAfter?.type.name === "hardbreak") pos += 1;
+    if (pos > $from.pos) {
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)).scrollIntoView());
+      return true;
+    }
+  }
+  const tr = view.state.tr.replaceWith($from.pos, $from.pos, hardbreak.create());
+  tr.setSelection(TextSelection.create(tr.doc, atLineStart ? $from.pos : $from.pos + 1));
+  view.dispatch(tr.scrollIntoView());
+  return true;
+}
 
 function contentElement(): HTMLElement | undefined {
   return root.value?.querySelector<HTMLElement>("[contenteditable='true']") ?? undefined;
@@ -55,7 +82,7 @@ const { loading, get } = useEditor((editorRoot) => Editor.make()
       ...options,
       handleKeyDown(view, event) {
         if (event.key === "Enter" && event.shiftKey && !event.isComposing && event.keyCode !== 229) {
-          return newlineInCode(view.state, view.dispatch);
+          return newlineInCode(view.state, view.dispatch) || insertDraftBreak(view, hardbreakSchema.type(ctx));
         }
         return false;
       },
@@ -164,11 +191,24 @@ function applyMarkdown(value: string, flush = false): boolean {
   const editor = get();
   if (!editor) return false;
   const trailingWhitespace = value.match(/[ \t]+$/)?.[0] ?? "";
-  const parsedValue = trailingWhitespace ? value.slice(0, -trailingWhitespace.length) : value;
+  // Markdown drops leading blank lines, so a draft that opens on an empty line would lose it at the
+  // next re-parse (edit-a-message, @-mention, thread restore). Lift them out and put them back as
+  // hard breaks — the same rescue `trailingWhitespace` gets below.
+  const leadingBreaks = value.match(/^\n+/)?.[0].length ?? 0;
+  const body = value.slice(leadingBreaks, value.length - trailingWhitespace.length);
+  const parsedValue = body;
   lastMarkdown = value;
   replacingMarkdown = true;
   try {
     editor.action(replaceAll(parsedValue, flush));
+    if (leadingBreaks) {
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const hardbreak = hardbreakSchema.type(ctx);
+        const nodes = Array.from({ length: leadingBreaks }, () => hardbreak.create());
+        view.dispatch(view.state.tr.insert(1, Fragment.fromArray(nodes)));
+      });
+    }
     if (trailingWhitespace) {
       editor.action((ctx) => {
         const view = ctx.get(editorViewCtx);

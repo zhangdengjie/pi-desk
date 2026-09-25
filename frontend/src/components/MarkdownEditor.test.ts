@@ -156,6 +156,85 @@ describe("MarkdownEditor", () => {
     wrapper.unmount();
   });
 
+  it("keeps the caret on the empty line when Shift Enter opens one above the text", async () => {
+    const wrapper = mount(MarkdownEditor, {
+      props: { modelValue: "second\nthird", placeholder: "Write", ariaLabel: "Prompt" },
+    });
+    await flushPromises();
+
+    const editor = wrapper.get<HTMLElement>("[contenteditable='true']");
+    const milkdown = (wrapper.findComponent(MarkdownEditorCore).vm.$ as unknown as {
+      setupState: { get(): Editor | undefined };
+    }).setupState.get();
+    milkdown?.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      view.dispatch(view.state.tr.setSelection(TextSelection.atStart(view.state.doc)));
+    });
+
+    await editor.trigger("keydown", { key: "Enter", code: "Enter", shiftKey: true });
+
+    // The break must sit after the caret, not before it: on the far side the next character lands on
+    // the text line and the empty line the reader aimed at never gets typed into.
+    expect(String(wrapper.emitted("update:modelValue")?.at(-1)?.[0])).toBe("\nsecond\nthird");
+    milkdown?.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      expect(view.state.selection.from).toBe(1);
+      expect(view.state.doc.firstChild?.firstChild?.type.name).toBe("hardbreak");
+    });
+    wrapper.unmount();
+  });
+
+  it("moves the caret down when Shift Enter lands on a line's own break", async () => {
+    const wrapper = mount(MarkdownEditor, {
+      props: { modelValue: "first\nsecond", placeholder: "Write", ariaLabel: "Prompt" },
+    });
+    await flushPromises();
+
+    const editor = wrapper.get<HTMLElement>("[contenteditable='true']");
+    const milkdown = (wrapper.findComponent(MarkdownEditorCore).vm.$ as unknown as {
+      setupState: { get(): Editor | undefined };
+    }).setupState.get();
+    const caretAt = (pos: number) => milkdown?.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)));
+    });
+    // 6 is the end of "first", which sits directly before that line's own break.
+    caretAt(6);
+
+    await editor.trigger("keydown", { key: "Enter", code: "Enter", shiftKey: true });
+
+    milkdown?.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const breaks: string[] = [];
+      view.state.doc.descendants((node) => {
+        if (node.type.name === "hardbreak") breaks.push(node.type.name);
+      });
+      expect(breaks).toEqual(["hardbreak"]);
+      expect(view.state.selection.from).toBe(7);
+    });
+    expect(wrapper.emitted("update:modelValue")?.at(-1)).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it("keeps a draft's leading blank line through a re-parse", async () => {
+    const wrapper = mount(MarkdownEditor, {
+      props: { modelValue: "second\nthird", placeholder: "Write", ariaLabel: "Prompt" },
+    });
+    await flushPromises();
+
+    // Markdown drops leading blank lines, so restoring a draft that opens on an empty line used to
+    // eat that line. `applyMarkdown` lifts the newlines out and puts them back as hard breaks.
+    await wrapper.setProps({ modelValue: "\nsecond\nthird" });
+    await flushPromises();
+    const editor = wrapper.get<HTMLElement>("[contenteditable='true']");
+    expect(editor.element.innerHTML).toMatch(/^<p><br/);
+
+    await wrapper.setProps({ modelValue: "\n\nsecond" });
+    await flushPromises();
+    expect(wrapper.get<HTMLElement>("[contenteditable='true']").element.innerHTML).toMatch(/^<p><br[^>]*><br/);
+    wrapper.unmount();
+  });
+
   it("shows saved soft line breaks as newlines when restoring a draft", async () => {
     const wrapper = mount(MarkdownEditor, {
       props: { modelValue: "first\nsecond", placeholder: "Write", ariaLabel: "Prompt" },
