@@ -7,7 +7,7 @@ import TerminalPane from "./TerminalPane.vue";
 const terminalHarness = vi.hoisted(() => ({
   dataHandler: undefined as ((data: string) => void) | undefined,
   resizeHandler: undefined as ((size: { cols: number; rows: number }) => void) | undefined,
-  eventHandler: undefined as ((event: { threadId: string; type: "output" | "error" | "exit"; sequence: number; dataB64?: string; exitCode?: number; error?: string }) => void) | undefined,
+  eventHandler: undefined as ((event: { threadId: string; sessionId?: string; type: "output" | "error" | "exit"; sequence: number; dataB64?: string; exitCode?: number; error?: string }) => void) | undefined,
   write: vi.fn((_data: unknown, callback?: () => void) => { callback?.(); }),
   reset: vi.fn(),
   clear: vi.fn(),
