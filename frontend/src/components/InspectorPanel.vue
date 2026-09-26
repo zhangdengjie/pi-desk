@@ -40,6 +40,61 @@ const expandedDirectories = computed(() => appStore.activeRepositoryTreeExpanded
 const panelElement = ref<HTMLElement>();
 const addMenu = ref<HTMLElement>();
 const openMenu = ref<HTMLElement>();
+const addButton = ref<HTMLElement>();
+const openButton = ref<HTMLElement>();
+
+/**
+ * The two inspector menus (`+` and "打开 ▾").
+ *
+ * They used to be native `popover`s placed with CSS anchor positioning. Neither half holds in
+ * WKWebView: `position-anchor` is not resolved for a box in the top layer, so the menu fell back to
+ * its static position - the viewport's top-left corner, far away from the `+` that opened it. So the
+ * menus are plain `v-if` boxes now (the pattern `AppMenuBar.vue` already uses) and `placeMenu()`
+ * writes viewport coordinates taken from the button's own rect, clamped to the panel's rect.
+ */
+const panelMenu = ref<"add" | "open">();
+
+function placeMenu(menu: HTMLElement | undefined, button: HTMLElement | undefined) {
+  if (!menu || !button) return;
+  const edge = 8, gap = 4;
+  const anchor = button.getBoundingClientRect();
+  const panel = panelElement.value?.getBoundingClientRect();
+  // The menu belongs to the panel, not to the window: it must not spill over the divider into the
+  // conversation column. So both the horizontal clamp and the width cap come from the panel's own
+  // rect, and the cap is applied before measuring - a 250px box does not fit a 240px panel.
+  const room = Math.max(140, (panel ? panel.width : window.innerWidth) - edge * 2);
+  menu.style.minWidth = `${Math.min(250, room)}px`;
+  menu.style.maxWidth = `${room}px`;
+  const width = menu.offsetWidth, height = menu.offsetHeight;
+  const minLeft = (panel ? panel.left : 0) + edge;
+  const maxLeft = (panel ? panel.right : window.innerWidth) - edge - width;
+  // Right edges stay aligned with the button - that is what the old `right: anchor(right)` did - and
+  // the box flips above the button when there is no room below.
+  const left = Math.max(minLeft, Math.min(maxLeft, anchor.right - width));
+  const below = anchor.bottom + gap;
+  const top = below + height > window.innerHeight - edge ? Math.max(edge, anchor.top - gap - height) : below;
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+}
+
+async function togglePanelMenu(name: "add" | "open") {
+  if (panelMenu.value === name) { panelMenu.value = undefined; return; }
+  panelMenu.value = name;
+  // `nextTick` is a microtask, so the box is mounted, measured and moved before the browser paints:
+  // no frame at the wrong coordinates.
+  await nextTick();
+  placeMenu(name === "add" ? addMenu.value : openMenu.value, name === "add" ? addButton.value : openButton.value);
+}
+
+const menuDismissible = "#panel-add-menu, #panel-add-button, #panel-open-menu, #panel-open-button";
+function onDocumentPointerDown(event: PointerEvent) {
+  if (!panelMenu.value) return;
+  if (event.target instanceof Element && event.target.closest(menuDismissible)) return;
+  panelMenu.value = undefined;
+}
+function onDocumentKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape" && panelMenu.value) panelMenu.value = undefined;
+}
 let tabDrag: { id: string; x: number; y: number } | undefined;
 let draggedClick = false;
 function startTabDrag(event: PointerEvent, id: string) {
@@ -107,7 +162,7 @@ function tabIcon(tab: PanelTab) {
   return { files: FolderOpen, file: FileCode2, diff: FileDiff, browser: Globe, terminal: Terminal }[tab.kind];
 }
 function addTab(kind: "changes" | "browser" | "terminal") {
-  addMenu.value?.hidePopover();
+  panelMenu.value = undefined;
   // The + menu is the "give me another one" entry point, so a terminal gets a fresh session here.
   // The topbar shortcut keeps meaning "show me a terminal" and still reuses the one that is open.
   if (kind === "terminal") { appStore.openTerminalTab(); return; }
@@ -371,11 +426,15 @@ onMounted(() => {
   if (currentTab.value && ((currentTab.value.kind === "file" && !currentTab.value.preview) || (currentTab.value.kind === "diff" && !currentTab.value.diff))) void appStore.loadPanelFile(appStore.activeThreadId, currentTab.value.id);
   window.addEventListener("focus", refreshPreview);
   document.addEventListener("visibilitychange", refreshPreviewWhenVisible);
+  document.addEventListener("pointerdown", onDocumentPointerDown, true);
+  document.addEventListener("keydown", onDocumentKeydown);
 });
 onBeforeUnmount(() => {
   window.clearTimeout(rollbackArmTimer);
   window.removeEventListener("focus", refreshPreview);
   document.removeEventListener("visibilitychange", refreshPreviewWhenVisible);
+  document.removeEventListener("pointerdown", onDocumentPointerDown, true);
+  document.removeEventListener("keydown", onDocumentKeydown);
 });
 watch(() => appStore.activeThreadId, () => {
   void appStore.refreshActiveRepository();
@@ -409,14 +468,14 @@ watch(() => currentTab.value?.id, async () => {
           <button class="panel-tab-close" type="button" :aria-label="tr('inspector.closeTab', { title: tab.title })" @click="void appStore.closePanelTab(tab.id)"><X :size="14" /></button>
         </div>
       </div>
-      <button id="panel-add-button" class="panel-icon-button" type="button" popovertarget="panel-add-menu" :aria-label="tr('inspector.newTab')" :title="tr('inspector.newTab')"><Plus :size="20" /></button>
+      <button id="panel-add-button" ref="addButton" class="panel-icon-button" type="button" aria-haspopup="menu" :aria-expanded="panelMenu === 'add'" @click="togglePanelMenu('add')" :aria-label="tr('inspector.newTab')" :title="tr('inspector.newTab')"><Plus :size="20" /></button>
       <button class="panel-icon-button panel-expand" type="button" :aria-label="appStore.activePanel?.expanded ? tr('inspector.restorePanel') : tr('inspector.expandPanel')" @click="toggleExpanded"><Minimize2 v-if="appStore.activePanel?.expanded" :size="17" /><Maximize2 v-else :size="17" /></button>
       <button class="panel-icon-button" type="button" :aria-label="tr('topbar.closeInspector')" @click="appStore.toggleInspector()"><PanelRightClose :size="18" /></button>
     </div>
-    <div id="panel-add-menu" ref="addMenu" popover class="panel-menu" :aria-label="tr('inspector.newTab')">
-      <button type="button" @click="addTab('terminal')"><Terminal :size="18" />{{ tr('inspector.terminal') }}<kbd>Ctrl+`</kbd></button>
-      <button type="button" @click="addTab('browser')"><Globe :size="18" />{{ tr('inspector.browser') }}<kbd>Ctrl+T</kbd></button>
-      <button type="button" @click="addTab('changes')"><FolderOpen :size="18" />{{ tr('inspector.files') }}<kbd>Ctrl+P</kbd></button>
+    <div v-if="panelMenu === 'add'" id="panel-add-menu" ref="addMenu" class="panel-menu" role="menu" :aria-label="tr('inspector.newTab')">
+      <button type="button" role="menuitem" @click="addTab('terminal')"><Terminal :size="18" />{{ tr('inspector.terminal') }}<kbd>Ctrl+`</kbd></button>
+      <button type="button" role="menuitem" @click="addTab('browser')"><Globe :size="18" />{{ tr('inspector.browser') }}<kbd>Ctrl+T</kbd></button>
+      <button type="button" role="menuitem" @click="addTab('changes')"><FolderOpen :size="18" />{{ tr('inspector.files') }}<kbd>Ctrl+P</kbd></button>
     </div>
     <div v-if="currentTab?.kind === 'file' || currentTab?.kind === 'diff'" class="panel-pathbar">
       <nav class="code-breadcrumb" :title="currentTab.path" :aria-label="tr('inspector.filePath')">
@@ -428,10 +487,10 @@ watch(() => currentTab.value?.id, async () => {
       <button class="panel-icon-button" :class="{ 'is-active': currentTab.treeOpen }" type="button" :aria-label="tr('inspector.fileTree')" :aria-expanded="!!currentTab.treeOpen" :title="tr('inspector.fileTree')" @click="toggleTree"><FolderOpen :size="19" /></button>
       <div v-if="!remoteWorkspace" class="panel-open-split">
         <button type="button" :title="tr('inspector.openWithDefaultApp')" @click="void appStore.openActiveRepositoryFile()"><ExternalLink :size="18" />{{ tr('inspector.open') }}</button>
-        <button id="panel-open-button" type="button" popovertarget="panel-open-menu" :aria-label="tr('inspector.openOptions')"><ChevronDown :size="14" /></button>
+        <button id="panel-open-button" ref="openButton" type="button" aria-haspopup="menu" :aria-expanded="panelMenu === 'open'" @click="togglePanelMenu('open')" :aria-label="tr('inspector.openOptions')"><ChevronDown :size="14" /></button>
       </div>
     </div>
-    <div id="panel-open-menu" ref="openMenu" popover class="panel-menu"><button type="button" @click="openMenu?.hidePopover(); void appStore.openActiveRepositoryFile(true)"><FolderOpen :size="17" />{{ tr('inspector.showInExplorer') }}</button></div>
+    <div v-if="panelMenu === 'open'" id="panel-open-menu" ref="openMenu" class="panel-menu" role="menu" :aria-label="tr('inspector.openOptions')" @click="panelMenu = undefined"><button type="button" role="menuitem" @click="void appStore.openActiveRepositoryFile(true)"><FolderOpen :size="17" />{{ tr('inspector.showInExplorer') }}</button></div>
     <p v-if="currentTab?.error && (currentTab.kind === 'browser' || currentTab.kind === 'terminal')" class="diff-notice error-text" role="alert">{{ currentTab.error }}</p>
     <div class="panel-body" :class="{ 'has-tree': (currentTab?.kind === 'file' || currentTab?.kind === 'diff') && currentTab.treeOpen }">
     <div v-if="currentTab?.kind === 'file'" :key="currentTab.id" class="inspector-content file-preview-panel">

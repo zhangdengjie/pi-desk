@@ -1,5 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
+import { nextTick } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { tr } from "../i18n";
 import { type PanelTab, useAppStore } from "../stores/app";
@@ -44,6 +45,82 @@ describe("InspectorPanel", () => {
     expect(store.activePanel?.activeId).toBe("two");
     point.mockRestore();
     wrapper.unmount();
+  });
+
+  it("opens the + menu as a box that belongs to the button, and dismisses it again", async () => {
+    // Regression: the menu used to be a native `popover` placed by CSS anchor positioning. WKWebView
+    // does not resolve the anchor for a top-layer box, so it opened in the viewport's top-left corner,
+    // far from the "+" - and because jsdom has no popover API at all, no test could see it happen.
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.activeThreadId = "add-menu";
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    store.scheduleDesktopStateSave = vi.fn();
+    const setInspectorTab = vi.fn();
+    store.setInspectorTab = setInspectorTab;
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    setInspectorTab.mockClear(); // onMounted opens the files tab when the panel has none
+
+    expect(wrapper.find("#panel-add-menu").exists()).toBe(false);
+    await wrapper.get("#panel-add-button").trigger("click");
+    expect(wrapper.get("#panel-add-button").attributes("aria-expanded")).toBe("true");
+    const menu = wrapper.get("#panel-add-menu");
+    expect(menu.findAll("button")).toHaveLength(3);
+    expect(menu.element.className).toContain("panel-menu");
+
+    // Light dismiss: a pointerdown anywhere outside the button and the box closes it.
+    document.dispatchEvent(new Event("pointerdown"));
+    await nextTick();
+    expect(wrapper.find("#panel-add-menu").exists()).toBe(false);
+
+    // Escape does too (dispatched on the document - the wrapper is not attached to it), and picking an
+    // item closes the menu before the tab opens.
+    await wrapper.get("#panel-add-button").trigger("click");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await nextTick();
+    expect(wrapper.find("#panel-add-menu").exists()).toBe(false);
+    await wrapper.get("#panel-add-button").trigger("click");
+    await wrapper.findAll("#panel-add-menu button")[2].trigger("click");
+    expect(wrapper.find("#panel-add-menu").exists()).toBe(false);
+    expect(setInspectorTab).toHaveBeenCalledWith("changes");
+    wrapper.unmount();
+  });
+
+  it("keeps the + menu inside the panel instead of letting it cross the divider", async () => {
+    // The panel is 240px wide here and the menu wants 250px, so right-aligning it on the `+` would
+    // push its left edge over the divider into the conversation column.
+    const rectOf = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      const box = this.id === "panel-add-button"
+        ? { left: 488, right: 520, top: 8, bottom: 40 }
+        : this.classList.contains("panel-workbench")
+          ? { left: 300, right: 540, top: 0, bottom: 600 }
+          : { left: 0, right: 0, top: 0, bottom: 0 };
+      return { ...box, width: box.right - box.left, height: box.bottom - box.top, x: box.left, y: box.top, toJSON: () => ({}) } as DOMRect;
+    });
+    const widthOf = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+      // Behave like a browser that honours max-width, which is what caps the box on a narrow panel.
+      return this.classList.contains("panel-menu") ? Math.min(250, parseFloat(this.style.maxWidth) || 250) : 0;
+    });
+    const heightOf = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(140);
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.activeThreadId = "narrow-panel";
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    store.scheduleDesktopStateSave = vi.fn();
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+
+    await wrapper.get("#panel-add-button").trigger("click");
+    const menu = wrapper.get("#panel-add-menu").element as HTMLElement;
+    expect(menu.style.maxWidth).toBe("224px");
+    expect(parseFloat(menu.style.left)).toBeGreaterThanOrEqual(300);
+    expect(menu.style.left).toBe("308px");
+    expect(menu.style.top).toBe("44px");
+    wrapper.unmount();
+    rectOf.mockRestore();
+    widthOf.mockRestore();
+    heightOf.mockRestore();
   });
 
   it("renames a tab from a double click and remembers that the name was chosen", async () => {
