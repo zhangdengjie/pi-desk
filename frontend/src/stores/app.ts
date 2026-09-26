@@ -38,6 +38,9 @@ export interface PanelTab {
   agent?: boolean;
   browserTemporary?: boolean;
   pinned?: boolean;
+  /** Set once the user renames a tab through the tab bar. Titles that keep being re-derived -
+   *  the browser tab following its page - must stop overwriting a name someone chose. */
+  renamed?: boolean;
   treeOpen?: boolean;
   /** Unused by the file tree: expansion is bucketed per workspace in
    *  `repositoryTreeExpandedByWorkspace` so tabs of one repository share it. Kept because desktop
@@ -1323,6 +1326,14 @@ export const useAppStore = defineStore("app", {
       if (tab) tab.pinned = true;
       this.scheduleDesktopStateSave();
     },
+    renamePanelTab(id: string, title: string) {
+      const tab = this.activePanel?.tabs.find((item) => item.id === id);
+      const next = title.trim().slice(0, 80);
+      if (!tab || !next || tab.title === next) return;
+      tab.title = next;
+      tab.renamed = true;
+      this.scheduleDesktopStateSave();
+    },
     reorderPanelTab(id: string, target: string) {
       const tabs = this.activePanel?.tabs;
       if (!tabs || id === target) return;
@@ -1407,7 +1418,7 @@ export const useAppStore = defineStore("app", {
           }
         }
         tab.url = event.status.url;
-        tab.title = event.status.title || (event.status.url && event.status.url !== "about:blank" ? event.status.url : "浏览器");
+        if (!tab.renamed) tab.title = event.status.title || (event.status.url && event.status.url !== "about:blank" ? event.status.url : "浏览器");
         tab.browserTemporary = event.status.temporary;
         tab.loading = event.status.loading;
         tab.error = event.status.error;

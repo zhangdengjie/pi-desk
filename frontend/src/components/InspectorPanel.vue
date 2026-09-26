@@ -60,6 +60,32 @@ function clickTab(id: string) {
   if (!draggedClick) appStore.selectPanelTab(id);
   draggedClick = false;
 }
+const renamingID = ref("");
+const renameDraft = ref("");
+function onTabDoubleClick(tab: PanelTab) {
+  // Double-click has pinned an unpinned file preview since upstream, and that gesture still means
+  // "stop replacing me"; every other tab gets a name of its own instead.
+  if (tab.kind === "file" && !tab.pinned) { appStore.pinPanelTab(tab.id); return; }
+  void startRename(tab);
+}
+async function startRename(tab: PanelTab) {
+  renamingID.value = tab.id;
+  renameDraft.value = tab.title;
+  await nextTick();
+  const input = panelElement.value?.querySelector<HTMLInputElement>(".panel-tab-rename");
+  input?.focus();
+  input?.select();
+}
+function commitRename() {
+  const id = renamingID.value, draft = renameDraft.value;
+  renamingID.value = "";
+  renameDraft.value = "";
+  if (id) appStore.renamePanelTab(id, draft);
+}
+function cancelRename() {
+  renamingID.value = "";
+  renameDraft.value = "";
+}
 const scrollSelectors = [".file-preview-content", ".repository-diff", ".spreadsheet-scroll", ".file-markdown-preview", ".panel-file-tree", ".xterm-viewport"];
 function saveScroll(event: Event) {
   const tab = currentTab.value, target = event.target;
@@ -98,6 +124,7 @@ function toggleExpanded() {
 function onTabKey(event: KeyboardEvent, tab: PanelTab) {
   const tabs = appStore.activePanel?.tabs ?? [], index = tabs.indexOf(tab);
   if (event.key === "Delete") { event.preventDefault(); void appStore.closePanelTab(tab.id); return; }
+  if (event.key === "F2") { event.preventDefault(); void startRename(tab); return; }
   const next = event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
   if (next < 0) return;
   event.preventDefault();
@@ -362,7 +389,18 @@ watch(() => currentTab.value?.id, async () => {
     <div class="panel-tabbar">
       <div class="panel-tabs" role="tablist" :aria-label="tr('inspector.workspaceTabs')">
         <div v-for="tab in appStore.activePanel?.tabs" :key="tab.id" :data-panel-tab="tab.id" class="panel-tab" :class="{ 'is-active': currentTab?.id === tab.id, 'is-preview': tab.kind === 'file' && !tab.pinned }">
-          <button type="button" role="tab" @pointerdown="startTabDrag($event, tab.id)" @pointerup="finishTabDrag" @pointercancel="tabDrag = undefined" :aria-selected="currentTab?.id === tab.id" :tabindex="currentTab?.id === tab.id ? 0 : -1" :title="tab.path || tab.url || tab.title" @click="clickTab(tab.id)" @dblclick="appStore.pinPanelTab(tab.id)" @keydown="onTabKey($event, tab)">
+          <input
+            v-if="renamingID === tab.id"
+            class="panel-tab-rename"
+            type="text"
+            :value="renameDraft"
+            :aria-label="tr('inspector.renameTab')"
+            @input="renameDraft = ($event.target as HTMLInputElement).value"
+            @keydown.enter.prevent="commitRename()"
+            @keydown.esc.prevent="cancelRename()"
+            @blur="commitRename()"
+          />
+          <button v-else type="button" role="tab" @pointerdown="startTabDrag($event, tab.id)" @pointerup="finishTabDrag" @pointercancel="tabDrag = undefined" :aria-selected="currentTab?.id === tab.id" :tabindex="currentTab?.id === tab.id ? 0 : -1" :title="tab.path || tab.url || tab.title" @click="clickTab(tab.id)" @dblclick="onTabDoubleClick(tab)" @keydown="onTabKey($event, tab)">
             <component :is="tabIcon(tab)" :size="17" /><span>{{ tab.title }}</span><span v-if="tab.kind === 'diff'" class="panel-tab-kind">{{ tr('inspector.reviewBadge') }}</span>
           </button>
           <button class="panel-tab-close" type="button" :aria-label="tr('inspector.closeTab', { title: tab.title })" @click="void appStore.closePanelTab(tab.id)"><X :size="14" /></button>

@@ -32,6 +32,9 @@
 .panel-tab > button[role="tab"] { flex: 1; touch-action: none; user-select: none; }
 .panel-tab > button > svg { flex: 0 0 auto; }
 .panel-tab > button > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Double-click a tab to name it. The input replaces the tab button rather than nesting inside it -
+ * interactive content is not allowed inside a button - so it has to carry the tab's own shape. */
+.panel-tab > .panel-tab-rename { box-sizing: border-box; width: 168px; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-workspace); color: var(--text); font-family: inherit; font-size: 13px; outline: none; }
 .panel-tab.is-preview > button[role="tab"] > span:first-of-type { font-style: italic; }
 .panel-tab .panel-tab-close { width: 26px; flex: 0 0 26px; padding: 0 6px; color: var(--panel-muted); }
 .panel-tab-kind { font-size: 11px; white-space: nowrap; opacity: .8; }

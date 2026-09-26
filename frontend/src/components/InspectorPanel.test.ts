@@ -46,6 +46,55 @@ describe("InspectorPanel", () => {
     wrapper.unmount();
   });
 
+  it("renames a tab from a double click and remembers that the name was chosen", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.activeThreadId = "rename";
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    store.scheduleDesktopStateSave = vi.fn();
+    store.openPanelTab({ id: "term", kind: "terminal", title: tr("inspector.terminal") });
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+
+    await wrapper.get('[role="tab"]').trigger("dblclick");
+    expect(wrapper.find('[role="tab"]').exists()).toBe(false);
+    const input = wrapper.get(".panel-tab-rename");
+    await input.setValue("构建终端");
+    await input.trigger("keydown", { key: "Enter" });
+
+    expect(store.activePanel?.tabs[0].title).toBe("构建终端");
+    expect(store.activePanel?.tabs[0].renamed).toBe(true);
+    expect(wrapper.find(".panel-tab-rename").exists()).toBe(false);
+    expect(wrapper.get('[role="tab"]').text()).toContain("构建终端");
+
+    await wrapper.get('[role="tab"]').trigger("dblclick");
+    await wrapper.get(".panel-tab-rename").trigger("keydown", { key: "Escape" });
+    expect(store.activePanel?.tabs[0].title).toBe("构建终端");
+    expect(wrapper.find(".panel-tab-rename").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("still pins an unpinned file preview on double click instead of renaming it", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{ id: "pin", title: "Pin", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
+      activeThreadId: "pin",
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    store.scheduleDesktopStateSave = vi.fn();
+    repositoryMocks.previewFile.mockResolvedValue({ path: "main.py", content: "print(1)" });
+    store.openPanelTab({ id: "pin:main.py", kind: "file", title: "main.py", path: "main.py" });
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+
+    await wrapper.get('[role="tab"]').trigger("dblclick");
+
+    expect(wrapper.find(".panel-tab-rename").exists()).toBe(false);
+    expect(store.activePanel?.tabs[0].pinned).toBe(true);
+    wrapper.unmount();
+  });
+
   it("keeps the directory node mounted while previewing and pinning a file, and toggles it for diffs", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
