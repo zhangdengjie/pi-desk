@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	ptylib "github.com/aymanbagabas/go-pty"
 )
@@ -58,6 +59,19 @@ type Event struct {
 	Data       []byte
 	ExitCode   int
 	Error      string
+	// EmittedAt is the wall-clock millisecond at which the pseudo-terminal produced Data. The pane
+	// uses it to tell a query it can still answer in time from one that only surfaced after the app
+	// was backgrounded; see stampEvent.
+	EmittedAt int64
+}
+
+// stampEvent puts the wall-clock production time on an event. The pane only reads it for output, but
+// stamping every kind keeps a caller from having to remember which ones carry bytes.
+func stampEvent(event Event) Event {
+	if event.EmittedAt == 0 {
+		event.EmittedAt = time.Now().UnixMilli()
+	}
+	return event
 }
 
 type process interface {
@@ -395,7 +409,7 @@ func isTerminalTeardown(err error) bool {
 
 func (manager *Manager) emit(event Event) {
 	if manager.onEvent != nil {
-		manager.onEvent(event)
+		manager.onEvent(stampEvent(event))
 	}
 }
 

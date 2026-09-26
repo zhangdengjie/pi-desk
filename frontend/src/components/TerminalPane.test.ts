@@ -7,7 +7,7 @@ import TerminalPane from "./TerminalPane.vue";
 const terminalHarness = vi.hoisted(() => ({
   dataHandler: undefined as ((data: string) => void) | undefined,
   resizeHandler: undefined as ((size: { cols: number; rows: number }) => void) | undefined,
-  eventHandler: undefined as ((event: { threadId: string; sessionId?: string; type: "output" | "error" | "exit"; sequence: number; dataB64?: string; exitCode?: number; error?: string }) => void) | undefined,
+  eventHandler: undefined as ((event: { threadId: string; sessionId?: string; type: "output" | "error" | "exit"; sequence: number; dataB64?: string; exitCode?: number; error?: string; emittedAt?: number }) => void) | undefined,
   write: vi.fn((_data: unknown, callback?: () => void) => { callback?.(); }),
   resize: vi.fn(),
   reset: vi.fn(),
@@ -192,6 +192,49 @@ describe("TerminalPane", () => {
     terminalHarness.dataHandler?.("ls\r");
     await flushPromises();
     expect(terminalMocks.write).toHaveBeenCalledWith("thread-1", undefined, "ls\r");
+    wrapper.unmount();
+
+    terminalHarness.write.mockImplementation((_data: unknown, callback?: () => void) => { callback?.(); });
+  });
+
+  it("only answers a query whose bytes are fresh enough to still be worth an answer", async () => {
+    // Switching apps while a long task runs is the case that put `11;rgb:fdfd/fcfc/f9f9` on the
+    // prompt: WKWebView holds the events back, the pane parses the query after the asking process is
+    // gone, and the shell reads the reply as keystrokes.
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-1", title: "Stale", workspace: "repo", workspacePath: "/repo", trust: "approve",
+        status: "idle", started: true, generation: 0,
+      }],
+      activeThreadId: "thread-1",
+    });
+    terminalMocks.snapshot.mockResolvedValue({ threadId: "thread-1", running: true, sequence: 1 });
+    const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
+    await flushPromises();
+    terminalMocks.write.mockClear();
+
+    terminalHarness.eventHandler?.({ threadId: "thread-1", type: "output", sequence: 2, emittedAt: Date.now(), dataB64: btoa("\u001b]11;?\u001b\\") });
+    await flushPromises();
+    terminalHarness.dataHandler?.("\u001b]11;rgb:fdfd/fdfd/fdfd\u001b\\");
+    await flushPromises();
+    expect(terminalMocks.write).toHaveBeenCalledTimes(1);
+
+    let finishStale: (() => void) | undefined;
+    terminalHarness.write.mockImplementation((_data: unknown, callback?: () => void) => { finishStale = callback; });
+    terminalHarness.eventHandler?.({ threadId: "thread-1", type: "output", sequence: 3, emittedAt: Date.now() - 5000, dataB64: btoa("\u001b[6n") });
+    await flushPromises();
+    terminalHarness.dataHandler?.("\u001b[2;1R");
+    await flushPromises();
+    expect(terminalMocks.write).toHaveBeenCalledTimes(1);
+
+    // The window closes with the chunk, not forever: a program that asks from now on is answered.
+    finishStale?.();
+    terminalHarness.dataHandler?.("\u001b[2;1R");
+    await flushPromises();
+    expect(terminalMocks.write).toHaveBeenCalledTimes(2);
     wrapper.unmount();
 
     terminalHarness.write.mockImplementation((_data: unknown, callback?: () => void) => { callback?.(); });

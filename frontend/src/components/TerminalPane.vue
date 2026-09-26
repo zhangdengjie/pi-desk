@@ -53,7 +53,7 @@ let pendingRemoteStartThreadID = "";
 // were produced at.
 let ptyGeometry = { columns: 0, rows: 0 };
 let wantedGeometry = { columns: 0, rows: 0 };
-// True while the snapshot bytes are in xterm's parse queue. See the `onData` handler.
+// True while the bytes in xterm's parse queue must not be answered. See writeOutput.
 let replaying = false;
 
 function terminalTheme() {
@@ -92,11 +92,25 @@ function decodeBase64(value?: string): Uint8Array {
   return bytes;
 }
 
-function writeOutput(value?: string, done?: () => void) {
+function writeOutput(value?: string, muteReplies = false) {
   const bytes = decodeBase64(value);
-  if (!bytes.length || !terminal) { done?.(); return; }
+  if (!bytes.length || !terminal) { if (muteReplies) replaying = false; return; }
+  if (muteReplies) replaying = true;
   pendingWrites++;
-  terminal.write(bytes, () => { pendingWrites = Math.max(0, pendingWrites - 1); done?.(); });
+  terminal.write(bytes, () => {
+    pendingWrites = Math.max(0, pendingWrites - 1);
+    if (muteReplies) replaying = false;
+  });
+}
+
+// A reply to a query the program asked seconds ago is not an answer, it is type. The asking process
+// is gone and whatever owns the tty now reads `ESC ] 11 ; rgb:...` as keystrokes - which is how
+// `11;rgb:fdfd/fcfc/f9f9` ended up on the user's prompt line after they switched apps and back. So
+// only bytes that reached the pane inside the reply window may make xterm answer them.
+const replyWindowMs = 500;
+function repliesAreStale(event: TerminalEvent) {
+  const emittedAt = event.emittedAt ?? 0;
+  return emittedAt > 0 && Date.now() - emittedAt > replyWindowMs;
 }
 
 // xterm parses write() payloads on an internal queue while reset() runs synchronously, so bytes a
@@ -130,7 +144,7 @@ function applyEvent(event: TerminalEvent) {
     return;
   }
   lastSequence = event.sequence;
-  if (event.type === "output") writeOutput(event.dataB64);
+  if (event.type === "output") writeOutput(event.dataB64, repliesAreStale(event));
   if (event.type === "error") {
     error.value = event.error || tr("terminal.streamFailed");
     appStore.handleTerminalEvent(event);
@@ -176,8 +190,7 @@ async function hydrate(load: () => ReturnType<typeof terminalService.snapshot>) 
     appStore.setTerminalGeneration(state.threadId, props.sessionId, state.generation);
     running.value = state.running;
     shell.value = state.shell || "";
-    replaying = true;
-    writeOutput(state.outputB64, () => { replaying = false; });
+    writeOutput(state.outputB64, true);
     hydrated = true;
     for (const event of pendingEvents.sort((left, right) => left.sequence - right.sequence)) applyEvent(event);
     pendingEvents = [];
@@ -308,10 +321,8 @@ onMounted(() => {
     return true;
   });
   disposeInput = terminal.onData((data) => {
-    // While the snapshot is being parsed, xterm answers every query those bytes contain - and the
-    // program was answered the first time round. A second copy goes into the pty's input queue, no
-    // reader takes it, and the tty echoes it back: `^[]11;rgb:fdfcfcfc/f9f9f9^[\` across the screen.
-    // Only the replay is muted; queries that arrive afterwards must still be answered.
+    // `replaying` marks bytes xterm must not answer: the snapshot, whose queries were answered when
+    // they first went by, and any chunk that arrived too late to be worth an answer. See writeOutput.
     if (replaying) return;
     const threadID = activeThread.value?.id;
     if (!threadID || !running.value) return;

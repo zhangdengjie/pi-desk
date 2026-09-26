@@ -13,6 +13,8 @@ export interface TerminalEvent {
   dataB64?: string;
   exitCode?: number;
   error?: string;
+  /** Wall-clock millisecond at which the pseudo-terminal produced `dataB64`. */
+  emittedAt?: number;
 }
 
 export type TerminalWorkspaceReference = string | { workspaceId: string };

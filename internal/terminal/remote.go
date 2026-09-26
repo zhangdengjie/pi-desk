@@ -351,7 +351,7 @@ func (manager *RemoteManager) consume(running *remoteSession) {
 
 func (manager *RemoteManager) emit(event Event) {
 	if manager.onEvent != nil {
-		manager.onEvent(event)
+		manager.onEvent(stampEvent(event))
 	}
 }
 

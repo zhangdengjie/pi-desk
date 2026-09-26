@@ -60,7 +60,7 @@ func (service *TerminalService) ServiceStartup(ctx context.Context, _ applicatio
 			ThreadID: event.ThreadID, SessionID: event.SessionID,
 			Type: event.Type, Generation: event.Generation, Sequence: event.Sequence,
 			DataB64:  base64.StdEncoding.EncodeToString(event.Data),
-			ExitCode: event.ExitCode, Error: event.Error,
+			ExitCode: event.ExitCode, Error: event.Error, EmittedAt: event.EmittedAt,
 		})
 	}
 	runtime := terminalruntime.NewManager(ctx, emit)

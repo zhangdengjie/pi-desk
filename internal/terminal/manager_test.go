@@ -376,6 +376,27 @@ func TestSnapshotReportsTheGeometryTheReplayWasProducedAt(t *testing.T) {
 	}
 }
 
+// The pane needs to know how old a chunk is: a query that surfaces after the app was backgrounded has
+// no reader left to receive its reply, and writing one is the same as typing into the shell.
+func TestOutputEventsCarryTheTimeThePseudoTerminalProducedThem(t *testing.T) {
+	process := newFakeProcess()
+	events := make(chan Event, 4)
+	manager := newManager(context.Background(), &fakeStarter{process: process}, func(event Event) { events <- event })
+	t.Cleanup(manager.Shutdown)
+
+	if _, err := manager.Start(StartConfig{ThreadID: "thread-1", CWD: t.TempDir(), Columns: 80, Rows: 24}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := process.output.Write([]byte("hi\r\n")); err != nil {
+		t.Fatal(err)
+	}
+
+	event := waitForTerminalEvent(t, events, "output")
+	if event.EmittedAt == 0 || event.EmittedAt > time.Now().UnixMilli()+1000 {
+		t.Fatalf("output event carries an implausible production time: %d", event.EmittedAt)
+	}
+}
+
 func waitForTerminalEvent(t *testing.T, events <-chan Event, eventType string) Event {
 	t.Helper()
 	deadline := time.After(2 * time.Second)

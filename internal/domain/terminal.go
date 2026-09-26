@@ -52,4 +52,7 @@ type TerminalEvent struct {
 	DataB64    string `json:"dataB64,omitempty"`
 	ExitCode   int    `json:"exitCode,omitempty"`
 	Error      string `json:"error,omitempty"`
+	// EmittedAt is the wall-clock millisecond the pseudo-terminal produced DataB64. A pane that only
+	// gets to those bytes long after that has missed its chance to answer any query inside them.
+	EmittedAt int64 `json:"emittedAt,omitempty"`
 }
