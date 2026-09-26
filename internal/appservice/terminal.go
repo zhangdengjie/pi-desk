@@ -308,6 +308,8 @@ func mapTerminalSnapshot(snapshot terminalruntime.Snapshot) domain.TerminalState
 		Running:    snapshot.Running,
 		Generation: snapshot.Generation,
 		Sequence:   snapshot.Sequence,
+		Columns:    snapshot.Columns,
+		Rows:       snapshot.Rows,
 		OutputB64:  base64.StdEncoding.EncodeToString(snapshot.Output),
 	}
 }

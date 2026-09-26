@@ -1057,6 +1057,13 @@ export interface TerminalState {
     "running": boolean;
     "generation"?: number;
     "sequence": number;
+
+    /**
+     * Columns and Rows are the geometry the pseudo-terminal answers to right now, i.e. the width the
+     * replayed bytes in OutputB64 were produced at. A pane that re-mounts has to replay at that size.
+     */
+    "columns"?: number;
+    "rows"?: number;
     "outputB64"?: string;
 }
 

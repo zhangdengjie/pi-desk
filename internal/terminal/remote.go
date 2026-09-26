@@ -141,7 +141,7 @@ func (manager *RemoteManager) Start(config StartConfig) (Snapshot, error) {
 	}
 	if running := manager.sessions[key]; running != nil {
 		manager.mu.Unlock()
-		if err := running.terminal.Resize(config.Columns, config.Rows); err != nil {
+		if err := manager.Resize(config.ThreadID, config.SessionID, config.Columns, config.Rows); err != nil {
 			return Snapshot{}, err
 		}
 		return manager.Snapshot(config.ThreadID, config.SessionID), nil
@@ -174,7 +174,8 @@ func (manager *RemoteManager) Start(config StartConfig) (Snapshot, error) {
 		key: key, binding: binding, terminal: terminal, remoteSeq: remoteSequence,
 		info: Snapshot{
 			ThreadID: config.ThreadID, SessionID: strings.TrimSpace(config.SessionID), CWD: binding.cwd,
-			Shell: "remote shell", Running: true, Generation: generation, Sequence: remoteSequence, Output: boundedReplay(replay),
+			Shell: "remote shell", Running: true, Generation: generation, Sequence: remoteSequence,
+			Columns: config.Columns, Rows: config.Rows, Output: boundedReplay(replay),
 		},
 	}
 	manager.sessions[key] = running
@@ -205,11 +206,22 @@ func (manager *RemoteManager) Resize(threadID, sessionID string, columns, rows i
 	if err := validateDimensions(columns, rows); err != nil {
 		return err
 	}
-	terminal := manager.runningTerminal(threadID, sessionID)
-	if terminal == nil {
+	manager.mu.Lock()
+	running := manager.sessions[sessionKey(threadID, sessionID)]
+	manager.mu.Unlock()
+	if running == nil {
 		return ErrNotRunning
 	}
-	return terminal.Resize(columns, rows)
+	if err := running.terminal.Resize(columns, rows); err != nil {
+		return err
+	}
+	// Remember the geometry the replay buffer was produced at; see session.setGeometry.
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if manager.sessions[running.key] == running {
+		running.info.Columns, running.info.Rows = columns, rows
+	}
+	return nil
 }
 
 func (manager *RemoteManager) Stop(threadID, sessionID string) error {

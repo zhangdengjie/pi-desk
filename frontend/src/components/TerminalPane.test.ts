@@ -9,6 +9,7 @@ const terminalHarness = vi.hoisted(() => ({
   resizeHandler: undefined as ((size: { cols: number; rows: number }) => void) | undefined,
   eventHandler: undefined as ((event: { threadId: string; sessionId?: string; type: "output" | "error" | "exit"; sequence: number; dataB64?: string; exitCode?: number; error?: string }) => void) | undefined,
   write: vi.fn((_data: unknown, callback?: () => void) => { callback?.(); }),
+  resize: vi.fn(),
   reset: vi.fn(),
   clear: vi.fn(),
   focus: vi.fn(),
@@ -28,6 +29,11 @@ vi.mock("@xterm/xterm", () => ({
     }
     loadAddon() {}
     open() {}
+    resize = (cols: number, rows: number) => {
+      this.cols = cols;
+      this.rows = rows;
+      terminalHarness.resize(cols, rows);
+    };
     write = terminalHarness.write;
     reset = terminalHarness.reset;
     clear = terminalHarness.clear;
@@ -109,6 +115,49 @@ describe("TerminalPane", () => {
     expect(terminalHarness.options.fontSize).toBe(15);
     expect(terminalHarness.fit).toHaveBeenCalled();
     wrapper.unmount();
+  });
+
+  it("replays the buffer at the geometry it was produced at, and only then fits to the layout", async () => {
+    // Regression: switching tasks and back re-mounted the pane. It fitted itself to the layout first
+    // and replayed raw bytes captured at another width afterwards, so a running program's cursor
+    // addressing reflowed into mojibake - and the resize that fit had triggered was dropped because
+    // the pane did not know it was running yet, leaving the PTY and the terminal desynchronised for
+    // the rest of the session. That is why only a task with a foreground command showed it.
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-1", title: "Replay", workspace: "repo", workspacePath: "/repo", trust: "approve",
+        status: "idle", started: true, generation: 0,
+      }],
+      activeThreadId: "thread-1",
+    });
+    const order: string[] = [];
+    terminalHarness.resize.mockImplementation((cols: number, rows: number) => { order.push(`resize:${cols}x${rows}`); });
+    terminalHarness.write.mockImplementation((_data: unknown, callback?: () => void) => { order.push("write"); callback?.(); });
+    terminalHarness.fit.mockImplementation(() => {
+      order.push("fit");
+      terminalHarness.resizeHandler?.({ cols: 100, rows: 30 });
+    });
+    terminalMocks.snapshot.mockResolvedValue({
+      threadId: "thread-1", running: true, sequence: 3, columns: 132, rows: 43, outputB64: btoa("ready\r\n"),
+    });
+
+    const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    // The first `fit` is the one onMounted does before it knows anything about the session; the point
+    // of the test is that the replay happens after the geometry is restored and before the second fit.
+    expect(order).toEqual(["fit", "resize:132x43", "write", "fit"]);
+    // The layout is wider than the PTY, so the pane now tells the PTY the truth instead of swallowing it.
+    expect(terminalMocks.resize).toHaveBeenCalledWith("thread-1", undefined, 100, 30);
+    wrapper.unmount();
+
+    order.length = 0;
+    terminalHarness.resize.mockImplementation(() => undefined);
+    terminalHarness.write.mockImplementation((_data: unknown, callback?: () => void) => { callback?.(); });
+    terminalHarness.fit.mockImplementation(() => undefined);
   });
 
   it("starts a trusted task terminal and forwards input and sequenced output", async () => {

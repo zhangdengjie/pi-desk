@@ -348,6 +348,34 @@ func TestManagerCapsTerminalsPerTask(t *testing.T) {
 	}
 }
 
+// The replay buffer is raw bytes, so it only makes sense at the width it was produced at. A pane that
+// re-mounts (switching tasks and back) replays before it fits itself to the layout, and without this
+// number it has to guess - guessing wrong reflows a running program's cursor addressing into mojibake.
+func TestSnapshotReportsTheGeometryTheReplayWasProducedAt(t *testing.T) {
+	process := newFakeProcess()
+	manager := newManager(context.Background(), &fakeStarter{process: process}, func(Event) {})
+	t.Cleanup(manager.Shutdown)
+
+	if _, err := manager.Start(StartConfig{ThreadID: "thread-1", CWD: t.TempDir(), Columns: 80, Rows: 24}); err != nil {
+		t.Fatal(err)
+	}
+	if state := manager.Snapshot("thread-1", ""); state.Columns != 80 || state.Rows != 24 {
+		t.Fatalf("start did not record the geometry: %#v", state)
+	}
+
+	if err := manager.Resize("thread-1", "", 132, 43); err != nil {
+		t.Fatal(err)
+	}
+	if state := manager.Snapshot("thread-1", ""); state.Columns != 132 || state.Rows != 43 || process.columns != 132 || process.rows != 43 {
+		t.Fatalf("resize did not follow the geometry: snapshot=%dx%d pty=%dx%d", state.Columns, state.Rows, process.columns, process.rows)
+	}
+
+	// A session that is not running has no geometry to promise; the pane falls back to fitting blind.
+	if empty := manager.Snapshot("no-such-thread", ""); empty.Columns != 0 || empty.Rows != 0 {
+		t.Fatalf("unknown session reported a geometry: %#v", empty)
+	}
+}
+
 func waitForTerminalEvent(t *testing.T, events <-chan Event, eventType string) Event {
 	t.Helper()
 	deadline := time.After(2 * time.Second)

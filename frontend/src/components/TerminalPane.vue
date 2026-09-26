@@ -48,6 +48,11 @@ let pendingEvents: TerminalEvent[] = [];
 let inputChain = Promise.resolve();
 let recoveringGap = false;
 let pendingRemoteStartThreadID = "";
+// The size the pseudo-terminal answers to, and the size the layout wants. `ptyGeometry` is seeded
+// from the snapshot, because the replay buffer is raw bytes that only make sense at the width they
+// were produced at.
+let ptyGeometry = { columns: 0, rows: 0 };
+let wantedGeometry = { columns: 0, rows: 0 };
 
 function terminalTheme() {
   const shellElement = document.querySelector<HTMLElement>(".app-shell");
@@ -156,10 +161,13 @@ async function hydrate(load: () => ReturnType<typeof terminalService.snapshot>) 
     const state = await load();
     if (token !== loadToken) return;
     await drainOutput();
-    // Fit before replaying: the buffer was captured at the session's own geometry, and writing it
-    // into an unresized terminal makes xterm reflow cursor addressing into mojibake.
-    await nextTick();
-    fitAddon?.fit();
+    // 1. Hand the replayed bytes to a terminal of the width they were produced at. Fitting first - the
+    //    old order - shows a running program's cursor addressing in a different grid, and xterm's own
+    //    reflow turns it into mojibake that nothing ever repaints.
+    ptyGeometry = { columns: state.columns || 0, rows: state.rows || 0 };
+    if (ptyGeometry.columns && terminal && (terminal.cols !== ptyGeometry.columns || terminal.rows !== ptyGeometry.rows)) {
+      terminal.resize(ptyGeometry.columns, ptyGeometry.rows);
+    }
     terminal?.reset();
     lastSequence = state.sequence;
     terminalGeneration = state.generation || 0;
@@ -170,6 +178,13 @@ async function hydrate(load: () => ReturnType<typeof terminalService.snapshot>) 
     hydrated = true;
     for (const event of pendingEvents.sort((left, right) => left.sequence - right.sequence)) applyEvent(event);
     pendingEvents = [];
+    // 2. Only once every byte is on screen does the pane fit itself to the layout and let the PTY
+    //    follow. The program redraws on the SIGWINCH, which repairs the lines the new width reflows.
+    await drainOutput();
+    if (token !== loadToken) return;
+    await nextTick();
+    fitAddon?.fit();
+    sendResize();
     if (running.value) terminal?.focus();
   } catch (cause) {
     if (token === loadToken) {
@@ -194,6 +209,7 @@ async function loadActiveTerminal() {
   exitHint.value = "";
   lastSequence = 0;
   terminalGeneration = 0;
+  ptyGeometry = { columns: 0, rows: 0 };
   if (!thread) {
     loadToken++;
     return;
@@ -237,14 +253,25 @@ async function stopTerminal() {
 }
 
 function scheduleResize(columns: number, rows: number) {
+  wantedGeometry = { columns, rows };
   if (resizeTimer) clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    const threadID = activeThread.value?.id;
-    if (!threadID || !running.value) return;
-    void terminalService.resize(threadID, props.sessionId, columns, rows).catch((cause) => {
-      error.value = appStore.remoteFailureMessage(threadID, cause);
-    });
-  }, 80);
+  // Coalesce, but never drop: a resize that arrives while the pane does not know it is running yet
+  // used to disappear, and because the terminal's size then stopped changing, `onResize` never fired
+  // again. The pseudo-terminal kept the old width for the rest of the session and every later line -
+  // pasted text above all - wrapped in the wrong column.
+  resizeTimer = setTimeout(sendResize, 80);
+}
+
+function sendResize() {
+  const threadID = activeThread.value?.id;
+  const { columns, rows } = wantedGeometry;
+  if (!threadID || !running.value || !columns) return;
+  if (columns === ptyGeometry.columns && rows === ptyGeometry.rows) return;
+  void terminalService.resize(threadID, props.sessionId, columns, rows).then(() => {
+    ptyGeometry = { columns, rows };
+  }).catch((cause) => {
+    error.value = appStore.remoteFailureMessage(threadID, cause);
+  });
 }
 
 function terminalFontSize(size: number) {

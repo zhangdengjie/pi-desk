@@ -36,7 +36,11 @@ type TerminalState struct {
 	Running    bool   `json:"running"`
 	Generation uint64 `json:"generation,omitempty"`
 	Sequence   uint64 `json:"sequence"`
-	OutputB64  string `json:"outputB64,omitempty"`
+	// Columns and Rows are the geometry the pseudo-terminal answers to right now, i.e. the width the
+	// replayed bytes in OutputB64 were produced at. A pane that re-mounts has to replay at that size.
+	Columns   int    `json:"columns,omitempty"`
+	Rows      int    `json:"rows,omitempty"`
+	OutputB64 string `json:"outputB64,omitempty"`
 }
 
 type TerminalEvent struct {

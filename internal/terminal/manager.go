@@ -44,6 +44,8 @@ type Snapshot struct {
 	Running    bool
 	Generation uint64
 	Sequence   uint64
+	Columns    int
+	Rows       int
 	Output     []byte
 }
 
@@ -209,7 +211,7 @@ func (manager *Manager) Start(config StartConfig) (Snapshot, error) {
 		key: key,
 		info: Snapshot{
 			ThreadID: config.ThreadID, SessionID: strings.TrimSpace(config.SessionID), CWD: config.CWD,
-			Shell: shell, Running: true, Generation: generation,
+			Shell: shell, Running: true, Generation: generation, Columns: config.Columns, Rows: config.Rows,
 		},
 		process: process,
 	}
@@ -434,8 +436,24 @@ func (running *session) resize(columns, rows int) error {
 		return err
 	}
 	running.processMu.Lock()
-	defer running.processMu.Unlock()
-	return running.process.Resize(columns, rows)
+	err := running.process.Resize(columns, rows)
+	running.processMu.Unlock()
+	if err != nil {
+		return err
+	}
+	running.setGeometry(columns, rows)
+	return nil
+}
+
+// setGeometry records the size the pseudo-terminal answers to right now. The replay buffer holds raw
+// bytes, so it is only meaningful at the geometry it was produced at: a pane that re-mounts has to
+// hand those bytes to a terminal of that same size before it fits itself to the layout, or xterm
+// reflows a running program's cursor addressing into mojibake and every later line wraps in the wrong
+// column - which is what pasted text looked like after switching tasks and back.
+func (running *session) setGeometry(columns, rows int) {
+	running.bufferMu.Lock()
+	defer running.bufferMu.Unlock()
+	running.info.Columns, running.info.Rows = columns, rows
 }
 
 func (running *session) isStopping() bool {
