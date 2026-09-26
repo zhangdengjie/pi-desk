@@ -74,9 +74,49 @@
 .panel-file-tree .file-tree-children { position: relative; }
 .panel-tree-empty { padding: 16px 8px; font-size: 12px; color: var(--panel-muted); }
 .thread-context-button { anchor-name: --thread-context; display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 4px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-workspace); color: var(--text-secondary); font-size: 12px; cursor: pointer; }
-.thread-context-popover { position: fixed; inset: auto; position-anchor: --thread-context; top: anchor(bottom); left: anchor(left); position-try-fallbacks: flip-inline, flip-block; width: min(420px, calc(100vw - 24px)); max-height: calc(100vh - 72px); overflow: auto; margin: 8px 0 0; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel-surface, var(--bg-menu)); color: var(--text); box-shadow: 0 8px 24px rgb(0 0 0 / 12%); }
+.thread-context-popover {
+  /* 1. 移除 anchor 锚点定位，改为页面居中 */
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  position-anchor: none; /* 清除原有锚点绑定 */
+
+  /* 2. 尺寸与最大限制 */
+  width: min(420px, calc(100vw - 24px));
+  max-height: calc(100vh - 72px);
+  overflow: auto;
+
+  /* 3. 外观样式（保留你原有的变量和边框） */
+  padding: 16px; /* 稍加深内边距提升模态框感 */
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-surface, var(--bg-menu));
+  color: var(--text);
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 25%), 0 8px 10px -6px rgb(0 0 0 / 25%);
+
+  /* 禁止 Electron/Tauri 拖拽窗口 */
+  -webkit-app-region: no-drag;
+
+  /* 允许文本选中与鼠标交互 */
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* 4. 添加遮罩层（暗化背景，让注意力聚焦在中间） */
+.thread-context-popover::backdrop {
+  background-color: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(2px); /* 模糊背景（可选） */
+}
+
+/* 原有内部样式保持不变 */
 .thread-context-popover dl { margin: 0; }
-.thread-context-popover dd { overflow-wrap: anywhere; white-space: normal; }
+.thread-context-popover dd { 
+  overflow-wrap: anywhere; 
+  white-space: normal;
+  /* 确保 dd 内容支持文本选中 */
+  user-select: text;
+  -webkit-user-select: text;
+}
 .app-shell.is-inspector-expanded .panel-workbench { position: absolute; inset: var(--topbar-height) 0 0 var(--sidebar-width); width: auto; z-index: 30; }
 .app-shell.is-sidebar-collapsed.is-inspector-expanded .panel-workbench { left: var(--sidebar-collapsed-width); }
 @media (max-width: 760px) {

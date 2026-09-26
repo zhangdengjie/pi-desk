@@ -187,22 +187,22 @@ onBeforeUnmount(() => {
       </div>
 
     </div>
-    <section id="thread-context" ref="contextElement" popover class="thread-context-popover context-panel" :aria-label="tr('inspector.context')" @toggle="appStore.contextOpen = ($event as ToggleEvent).newState === 'open'">
-
-      <dl v-if="appStore.activeThread">
-        <div><dt>{{ tr("inspector.workspace") }}</dt><dd :title="workspaceLabel">{{ workspaceLabel }}</dd></div>
-        <div><dt>{{ tr("inspector.piProcess") }}</dt><dd>{{ appStore.activeThread.started ? tr("inspector.generation", { generation: appStore.activeThread.generation }) : tr("common.notStarted") }}</dd></div>
-        <div><dt>{{ tr("inspector.session") }}</dt><dd :title="appStore.activeThread.title">{{ appStore.activeThread.title }}</dd></div>
-        <div><dt>{{ tr("inspector.sessionId") }}</dt><dd :title="state?.sessionId || appStore.activeThread.sessionId">{{ state?.sessionId || appStore.activeThread.sessionId || tr("inspector.createdOnPrompt") }}</dd></div>
-        <div><dt>{{ tr("inspector.model") }}</dt><dd>{{ state?.model ? `${state.model.provider}/${state.model.id}` : tr("common.auto") }}</dd></div>
-        <div><dt>{{ tr("inspector.reasoning") }}</dt><dd>{{ state?.thinkingLevel || tr("common.auto") }}</dd></div>
-        <div><dt>{{ tr("inspector.messages") }}</dt><dd>{{ stats?.totalMessages ?? state?.messageCount ?? 0 }}</dd></div>
-        <div><dt>{{ tr("inspector.tokens") }}</dt><dd>{{ stats?.tokens?.total?.toLocaleString() ?? "-" }}</dd></div>
-        <div><dt>{{ tr("inspector.cost") }}</dt><dd>{{ stats?.cost ? `$${stats.cost.toFixed(4)}` : "-" }}</dd></div>
-        <div><dt>{{ tr("inspector.contextUsage") }}</dt><dd>{{ stats?.contextUsage?.percent != null ? `${stats.contextUsage.percent.toFixed(1)}%` : "-" }}</dd></div>
-      </dl>
-      <div v-else class="panel-empty" :class="ui.empty"><span>{{ tr("inspector.selectTask") }}</span></div>
-
-    </section>
+    <Teleport to="body">
+      <section id="thread-context" ref="contextElement" popover class="thread-context-popover context-panel" :aria-label="tr('inspector.context')" @toggle="appStore.contextOpen = ($event as ToggleEvent).newState === 'open'">
+        <dl v-if="appStore.activeThread">
+          <div><dt>{{ tr("inspector.workspace") }}</dt><dd :title="workspaceLabel">{{ workspaceLabel }}</dd></div>
+          <div><dt>{{ tr("inspector.piProcess") }}</dt><dd>{{ appStore.activeThread.started ? tr("inspector.generation", { generation: appStore.activeThread.generation }) : tr("common.notStarted") }}</dd></div>
+          <div><dt>{{ tr("inspector.session") }}</dt><dd :title="appStore.activeThread.title">{{ appStore.activeThread.title }}</dd></div>
+          <div><dt>{{ tr("inspector.sessionId") }}</dt><dd :title="state?.sessionId || appStore.activeThread.sessionId">{{ state?.sessionId || appStore.activeThread.sessionId || tr("inspector.createdOnPrompt") }}</dd></div>
+          <div><dt>{{ tr("inspector.model") }}</dt><dd>{{ state?.model ? `${state.model.provider}/${state.model.id}` : tr("common.auto") }}</dd></div>
+          <div><dt>{{ tr("inspector.reasoning") }}</dt><dd>{{ state?.thinkingLevel || tr("common.auto") }}</dd></div>
+          <div><dt>{{ tr("inspector.messages") }}</dt><dd>{{ stats?.totalMessages ?? state?.messageCount ?? 0 }}</dd></div>
+          <div><dt>{{ tr("inspector.tokens") }}</dt><dd>{{ stats?.tokens?.total?.toLocaleString() ?? "-" }}</dd></div>
+          <div><dt>{{ tr("inspector.cost") }}</dt><dd>{{ stats?.cost ? `$${stats.cost.toFixed(4)}` : "-" }}</dd></div>
+          <div><dt>{{ tr("inspector.contextUsage") }}</dt><dd>{{ stats?.contextUsage?.percent != null ? `${stats.contextUsage.percent.toFixed(1)}%` : "-" }}</dd></div>
+        </dl>
+        <div v-else class="panel-empty" :class="ui.empty"><span>{{ tr("inspector.selectTask") }}</span></div>
+      </section>
+    </Teleport>
   </header>
 </template>
