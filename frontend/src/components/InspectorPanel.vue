@@ -358,7 +358,7 @@ watch(() => currentTab.value?.id, async () => {
 </script>
 
 <template>
-  <aside ref="panelElement" class="inspector panel-workbench" :class="ui.root" :aria-label="tr('inspector.label')" @scroll.capture="saveScroll">
+  <aside ref="panelElement" class="inspector panel-workbench" :class="ui.root" :aria-label="tr('inspector.label')" :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--sidebar-width': `${appStore.sidebarWidth}px` }" @scroll.capture="saveScroll">
     <div class="panel-tabbar">
       <div class="panel-tabs" role="tablist" :aria-label="tr('inspector.workspaceTabs')">
         <div v-for="tab in appStore.activePanel?.tabs" :key="tab.id" :data-panel-tab="tab.id" class="panel-tab" :class="{ 'is-active': currentTab?.id === tab.id, 'is-preview': tab.kind === 'file' && !tab.pinned }">

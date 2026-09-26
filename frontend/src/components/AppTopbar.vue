@@ -97,6 +97,7 @@ onBeforeUnmount(() => {
   <header
     class="topbar relative z-40 col-span-full row-start-1 grid h-[var(--topbar-height)] min-w-0 border-b border-[var(--border)] bg-[var(--bg-workspace)] max-[760px]:[grid-template-columns:var(--sidebar-collapsed-width)_minmax(0,1fr)]"
     :class="[ui.root, appStore.sidebarCollapsed ? '[grid-template-columns:var(--sidebar-collapsed-width)_minmax(0,1fr)]' : '[grid-template-columns:var(--sidebar-width)_minmax(0,1fr)]']"
+    :style="{ '--sidebar-width': `${appStore.sidebarWidth}px` }"
   >
     <div class="topbar-brand flex min-w-0 items-center gap-2 border-r-0 bg-[var(--bg-workspace)]" aria-label="Pi Desk">
       <!-- No Tailwind layout utilities here: `tailwind.css` imports the framework `important`,

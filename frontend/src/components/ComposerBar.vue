@@ -652,7 +652,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="composer-wrap" :class="ui.root">
+  <div class="composer-wrap" :class="ui.root" :style="{ '--inspector-width': `${appStore.inspectorWidth}px` }">
     <div v-for="widget in widgetsAbove" :key="widget.key" class="extension-widget items-start" :class="ui.status" :data-placement="widget.placement"><pre>{{ widget.lines.join("\n") }}</pre></div>
     <div v-if="appStore.activeRetry" class="retry-banner" :class="ui.status" role="status">
       <span>Retry {{ appStore.activeRetry.attempt }} of {{ appStore.activeRetry.maxAttempts }}</span>

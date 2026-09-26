@@ -1,3 +1,20 @@
+/* Dragging a pane divider rewrites these every frame. Declared non-inherited so a change
+   invalidates only the handful of elements that read them - each of which sets its own value
+   inline (.app-shell, .topbar, .pane-resizer, .inspector, .timeline, .composer-wrap) - instead
+   of every descendant of .app-shell. That inheritance was 76.8% of a 9s drag's main thread
+   (Safari profile) and capped the drag at ~7fps. */
+@property --sidebar-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 264px;
+}
+
+@property --inspector-width {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 360px;
+}
+
 :root {
   color-scheme: dark;
   --font-interface-body: "PingFang SC", "Segoe UI Variable", "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;

@@ -136,6 +136,11 @@ const observedRows = new Set<Element>();
 
 function observeRowOutput(element: Element) {
   rowObserver ??= new ResizeObserver(() => {
+    // A pane drag changes this row's box on every frame, and this callback answers by writing
+    // scrollTop - a forced synchronous layout each time, which then invalidates style for the
+    // whole tree. Nothing it computes is needed until the drag ends, so it stands down for the
+    // duration and the watcher below catches up on release (see appStore.setPaneResizing).
+    if (appStore.paneResizing) return;
     // No `measureElement` here. The virtualizer's offsets are what place a row on screen, so
     // feeding live measurements back from the observer that a position change itself wakes
     // up made the estimates and the measurements trade turns every frame - the viewport then
@@ -187,6 +192,11 @@ let applyingTail = false;
 const settleSnap = createSettleSnap(1200);
 watch(streamLive, (live, wasLive) => {
   if (wasLive === true && !live) settleSnap.arm();
+});
+// The row observer stands down during a pane drag; this is where the tail catches up once the
+// width has settled.
+watch(() => appStore.paneResizing, (resizing) => {
+  if (!resizing && stickToBottom.value) followTail();
 });
 
 
@@ -425,8 +435,14 @@ watch(() => composerBar.value?.$el, (element, _previous, onCleanup) => {
   };
   let resizeFrame = 0;
   const observer = new ResizeObserver(() => {
+    // Same reason as the row observer: a pane drag resizes the composer every frame and
+    // measuring it forces a synchronous layout. Stand down for the drag, catch up on release.
+    if (appStore.paneResizing) return;
     cancelAnimationFrame(resizeFrame);
     resizeFrame = requestAnimationFrame(measureComposer);
+  });
+  watch(() => appStore.paneResizing, (resizing) => {
+    if (!resizing) measureComposer();
   });
   observer.observe(element);
   measureComposer();
@@ -545,7 +561,7 @@ onBeforeUnmount(() => {
           <span><em>{{ tr("conversation.navigationAnswer") }}</em>{{ hoveredNavigationItem.answer }}</span>
         </aside>
       </nav>
-      <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" @scroll="onTimelineScroll" @wheel="onTimelineWheel" @pointerdown="markReaderInput" @keydown="markReaderInput">
+      <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" :style="{ '--inspector-width': `${appStore.inspectorWidth}px` }" @scroll="onTimelineScroll" @wheel="onTimelineWheel" @pointerdown="markReaderInput" @keydown="markReaderInput">
       <div v-if="appStore.activeSessionOperation === 'Compacting'" class="conversation-operation-banner mb-4 inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-xs text-[var(--text-secondary)] shadow-sm" role="status" aria-live="polite">
         <LoaderCircle :size="14" class="is-spinning" aria-hidden="true" />
         <span>{{ tr("topbar.compacting") }}</span>
