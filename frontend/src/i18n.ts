@@ -361,6 +361,7 @@ const messages = {
       files: "Files",
       context: "Context",
       terminal: "Terminal",
+      terminalNamed: "Terminal {index}",
       browser: "Browser",
       workspace: "Workspace",
       piProcess: "Pi process",
@@ -436,6 +437,8 @@ const messages = {
       streamFailed: "Terminal stream failed",
       exited: "Terminal exited",
       exitedWithCode: "Terminal exited with code {code}",
+      newTerminal: "New terminal",
+      newTerminalUnsupported: "Remote tasks support one terminal for now",
     },
     settings: {
       title: "Settings",
@@ -1379,6 +1382,7 @@ const messages = {
       files: "文件",
       context: "上下文",
       terminal: "终端",
+      terminalNamed: "终端 {index}",
       browser: "浏览器",
       workspace: "工作区",
       piProcess: "Pi 进程",
@@ -1454,6 +1458,8 @@ const messages = {
       streamFailed: "终端数据流中断",
       exited: "终端已退出",
       exitedWithCode: "终端已退出（退出码 {code}）",
+      newTerminal: "新建终端",
+      newTerminalUnsupported: "远程任务暂只支持一个终端",
     },
     settings: {
       title: "设置",

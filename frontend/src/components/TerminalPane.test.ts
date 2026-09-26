@@ -124,17 +124,17 @@ describe("TerminalPane", () => {
     });
     const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
     await flushPromises();
-    expect(terminalMocks.snapshot).toHaveBeenCalledWith("thread-1", undefined);
+    expect(terminalMocks.snapshot).toHaveBeenCalledWith("thread-1", undefined, undefined);
 
     await wrapper.get('button[title="Start terminal"]').trigger("click");
     await flushPromises();
-    expect(terminalMocks.start).toHaveBeenCalledWith("thread-1", "D:\\repo", 80, 24);
+    expect(terminalMocks.start).toHaveBeenCalledWith("thread-1", undefined, "D:\\repo", 80, 24);
     expect(terminalHarness.write).toHaveBeenCalledWith(expect.any(Uint8Array), expect.any(Function));
     expect(wrapper.text()).toContain("pwsh.exe");
 
     terminalHarness.dataHandler?.("dir\r");
     await flushPromises();
-    expect(terminalMocks.write).toHaveBeenCalledWith("thread-1", "dir\r");
+    expect(terminalMocks.write).toHaveBeenCalledWith("thread-1", undefined, "dir\r");
     expect(store.activeRepositoryStale).toBe(false);
 
     terminalHarness.eventHandler?.({ threadId: "thread-1", type: "output", sequence: 2, dataB64: btoa("next") });
@@ -149,7 +149,48 @@ describe("TerminalPane", () => {
 
     await wrapper.get('button[title="Stop terminal"]').trigger("click");
     await flushPromises();
-    expect(terminalMocks.stop).toHaveBeenCalledWith("thread-1");
+    expect(terminalMocks.stop).toHaveBeenCalledWith("thread-1", undefined);
+  });
+
+  it("keeps each terminal of one task on its own session", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-1", title: "Terminal", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-1",
+    });
+    const wrapper = mount(TerminalPane, { global: { plugins: [pinia] }, props: { sessionId: "session-b" } });
+    await flushPromises();
+    expect(terminalMocks.snapshot).toHaveBeenCalledWith("thread-1", "session-b", undefined);
+
+    await wrapper.get('button[title="Start terminal"]').trigger("click");
+    await flushPromises();
+    expect(terminalMocks.start).toHaveBeenCalledWith("thread-1", "session-b", "D:\\repo", 80, 24);
+
+    terminalHarness.dataHandler?.("ls\r");
+    await flushPromises();
+    expect(terminalMocks.write).toHaveBeenCalledWith("thread-1", "session-b", "ls\r");
+
+    terminalHarness.write.mockClear();
+    terminalHarness.eventHandler?.({ threadId: "thread-1", sessionId: "session-a", type: "output", sequence: 2, dataB64: btoa("sibling") });
+    await flushPromises();
+    expect(terminalHarness.write).not.toHaveBeenCalled();
+
+    terminalHarness.eventHandler?.({ threadId: "thread-1", sessionId: "session-b", type: "output", sequence: 2, dataB64: btoa("mine") });
+    await flushPromises();
+    expect(terminalHarness.write).toHaveBeenCalledTimes(1);
+
+    await wrapper.get('button[title="New terminal"]').trigger("click");
+    await wrapper.get('button[title="New terminal"]').trigger("click");
+    const terminals = store.activePanel?.tabs.filter((tab) => tab.kind === "terminal") ?? [];
+    expect(terminals.map((tab) => tab.title)).toEqual(["Terminal", "Terminal 2"]);
+    expect(terminals[0].terminalId).toBeTruthy();
+    expect(terminals[0].terminalId).not.toBe(terminals[1].terminalId);
+    wrapper.unmount();
   });
 
   it("reports a nonzero shell exit as a stopped terminal instead of a stream failure", async () => {
@@ -204,10 +245,10 @@ describe("TerminalPane", () => {
     terminalMocks.start.mockResolvedValueOnce({ threadId: "thread-2", running: true, sequence: 0 });
     const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
     await flushPromises();
-    expect(terminalMocks.snapshot).toHaveBeenCalledWith("thread-2", "workspace-0123456789abcdef0123456789abcdef");
+    expect(terminalMocks.snapshot).toHaveBeenCalledWith("thread-2", undefined, "workspace-0123456789abcdef0123456789abcdef");
     await wrapper.get('button[title="Start terminal"]').trigger("click");
     await flushPromises();
-    expect(terminalMocks.start).toHaveBeenCalledWith("thread-2", { workspaceId: "workspace-0123456789abcdef0123456789abcdef" }, 80, 24);
+    expect(terminalMocks.start).toHaveBeenCalledWith("thread-2", undefined, { workspaceId: "workspace-0123456789abcdef0123456789abcdef" }, 80, 24);
     terminalMocks.write.mockRejectedValueOnce(new Error("REMOTE_OUTCOME_UNKNOWN: terminal input delivery is unknown"));
     terminalHarness.dataHandler?.("touch changed.txt\r");
     await flushPromises();
@@ -242,7 +283,7 @@ describe("TerminalPane", () => {
     store.remoteReadyByWorkspace["workspace-remote"] = true;
     store.threads[0].started = true;
     await flushPromises();
-    expect(terminalMocks.start).toHaveBeenCalledWith("thread-cold", { workspaceId: "workspace-remote" }, 80, 24);
+    expect(terminalMocks.start).toHaveBeenCalledWith("thread-cold", undefined, { workspaceId: "workspace-remote" }, 80, 24);
   });
 
   it("cancels a cold remote Terminal intent when the user switches tasks", async () => {

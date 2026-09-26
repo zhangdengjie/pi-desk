@@ -490,7 +490,7 @@ watch(() => currentTab.value?.id, async () => {
       </div>
     </div>
 
-    <TerminalPane v-else-if="currentTab?.kind === 'terminal'" />
+    <TerminalPane v-else-if="currentTab?.kind === 'terminal'" :key="currentTab.id" :session-id="currentTab.terminalId" />
     <BrowserPane v-else-if="currentTab?.kind === 'browser'" :key="currentTab.id" :tab="currentTab" />
     <div v-if="currentTab?.kind === 'files' || ((currentTab?.kind === 'file' || currentTab?.kind === 'diff') && currentTab.treeOpen)" key="directory" class="panel-directory">
       <label class="panel-file-filter"><Search :size="16" /><input v-model="filter" type="search" :placeholder="tr('inspector.filterFiles')" :aria-label="tr('inspector.filterFiles')" /></label>

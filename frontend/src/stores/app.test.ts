@@ -3139,9 +3139,11 @@ describe("app store", () => {
     store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
     store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 2 }];
     store.remoteReadyByWorkspace["workspace-remote"] = true;
-    store.setTerminalGeneration("thread-remote", 2);
+    store.setTerminalGeneration("thread-remote", undefined, 2);
     store.markRemoteRepositoryStale("thread-remote");
     expect(store.terminalGenerationByThread["thread-remote"]).toBe(2);
+    store.setTerminalGeneration("thread-remote", "session-b", 7);
+    expect(store.terminalGenerationByThread["thread-remote\u001fsession-b"]).toBe(7);
     store.repositoryStaleByWorkspace["workspace-remote"] = false;
 
     store.handleTerminalEvent({ threadId: "thread-remote", type: "exit", generation: 1, sequence: 5, error: "REMOTE_DISCONNECTED: old terminal" });
@@ -3150,6 +3152,10 @@ describe("app store", () => {
 
     store.handleTerminalEvent({ threadId: "thread-remote", type: "exit", generation: 2, sequence: 1, error: "REMOTE_DISCONNECTED: current terminal" });
     expect(store.remoteReadyByWorkspace["workspace-remote"]).toBe(false);
+
+    // A task teardown forgets every terminal it owned, not just the first one.
+    store.forgetTerminalGenerations("thread-remote");
+    expect(Object.keys(store.terminalGenerationByThread)).toEqual([]);
   });
 
   it("drops an in-flight Repository refresh after trust is revoked", async () => {

@@ -36,6 +36,9 @@ export interface PanelTab {
   sessionDiff?: string;
   url?: string;
   agent?: boolean;
+  /** Session id of the terminal behind a `terminal` tab. Absent means the task's first terminal,
+   *  which the runtime addresses by task id alone. */
+  terminalId?: string;
   browserTemporary?: boolean;
   pinned?: boolean;
   /** Set once the user renames a tab through the tab bar. Titles that keep being re-derived -
@@ -515,6 +518,17 @@ function nowISO(): string {
 function appIsInBackground(): boolean {
   if (typeof document === "undefined") return false;
   return document.visibilityState === "hidden" || !document.hasFocus();
+}
+
+/** The runtime addresses a terminal by (task, session), and the store keeps one generation per
+ *  pair. A key without the separator is a task's only terminal - the shape from before a task could
+ *  own several, so state written by older builds still resolves. */
+function terminalGenerationKey(threadID: string, sessionID?: string) {
+  return sessionID ? `${threadID}\u001f${sessionID}` : threadID;
+}
+
+function terminalGenerationThread(key: string) {
+  return key.split("\u001f")[0];
 }
 
 function taskNotificationSummary(title: string): string {
@@ -1351,9 +1365,9 @@ export const useAppStore = defineStore("app", {
       try {
         if (tab.kind === "terminal") {
           const thread = this.threads.find((item) => item.id === threadId);
-          const snapshot = await terminalService.snapshot(threadId, thread && this.remoteWorkspaceForThread(thread)?.id);
+          const snapshot = await terminalService.snapshot(threadId, tab.terminalId, thread && this.remoteWorkspaceForThread(thread)?.id);
           if (snapshot.running && !window.confirm("终端仍在运行。关闭标签会结束终端及其中的进程，是否继续？")) { tab.closing = false; return; }
-          if (snapshot.running) await terminalService.stop(threadId);
+          if (snapshot.running) await terminalService.stop(threadId, tab.terminalId);
         }
         if (tab.kind === "browser") await browserService.closeTab(tab.id);
       } catch (error) { tab.closing = false; tab.error = errorMessage(error); return; }
@@ -1386,8 +1400,29 @@ export const useAppStore = defineStore("app", {
       if (!this.activeThread) return;
       if (tab === "context") { this.contextOpen = !this.contextOpen; return; }
       if (tab === "browser") { this.openBrowserTab(); return; }
-      this.openPanelTab({ id: `${this.activeThreadId}:${tab}`, kind: tab === "terminal" ? "terminal" : "files", title: tr(tab === "terminal" ? "inspector.terminal" : "inspector.files") });
+      if (tab === "terminal") {
+        // The shortcut and the menu both mean "show me a terminal": reuse the one that is already
+        // open, and only create one when the task has none.
+        const existing = [...(this.activePanel?.tabs ?? [])].reverse().find((item) => item.kind === "terminal");
+        if (existing) this.openPanelTab(existing);
+        else this.openTerminalTab();
+        return;
+      }
+      this.openPanelTab({ id: `${this.activeThreadId}:${tab}`, kind: "files", title: tr("inspector.files") });
       if (tab === "changes") void this.refreshActiveRepository();
+    },
+    openTerminalTab(threadId?: string): PanelTab | undefined {
+      threadId ??= this.activeThreadId;
+      if (!threadId) return undefined;
+      const panel = this.ensurePanel(threadId);
+      const index = panel.tabs.filter((tab) => tab.kind === "terminal").length + 1;
+      const terminalId = crypto.randomUUID();
+      return this.openPanelTab({
+        id: `${threadId}:terminal:${terminalId}`,
+        kind: "terminal",
+        title: index > 1 ? tr("inspector.terminalNamed", { index }) : tr("inspector.terminal"),
+        terminalId,
+      }, threadId);
     },
     openBrowserTab(url = "", agent = false, threadId?: string) {
       threadId ??= this.activeThreadId;
@@ -2515,8 +2550,8 @@ export const useAppStore = defineStore("app", {
         this.modelSelectionGenerationByThread,
         this.sessionStateRefreshGenerationByThread,
         this.inspectorByThread,
-        this.terminalGenerationByThread,
       ]) delete collection[threadId];
+      this.forgetTerminalGenerations(threadId);
       piExitedGenerationByThread.delete(threadId);
       if (this.activeThreadId === threadId) {
         this.activateThread(this.threads[0]?.id ?? "");
@@ -3446,7 +3481,12 @@ export const useAppStore = defineStore("app", {
     },
     clearTerminalGenerations(workspaceID: string) {
       for (const thread of this.threads) {
-        if (thread.workspaceId === workspaceID) delete this.terminalGenerationByThread[thread.id];
+        if (thread.workspaceId === workspaceID) this.forgetTerminalGenerations(thread.id);
+      }
+    },
+    forgetTerminalGenerations(threadID: string) {
+      for (const key of Object.keys(this.terminalGenerationByThread)) {
+        if (terminalGenerationThread(key) === threadID) delete this.terminalGenerationByThread[key];
       }
     },
     markRemoteRepositoryStale(threadID: string) {
@@ -3454,13 +3494,14 @@ export const useAppStore = defineStore("app", {
       const workspace = thread ? this.remoteWorkspaceForThread(thread) : undefined;
       if (workspace) this.markRemoteWorkspaceStale(workspace.id);
     },
-    setTerminalGeneration(threadID: string, generation?: number) {
-      if (generation) this.terminalGenerationByThread[threadID] = generation;
-      else delete this.terminalGenerationByThread[threadID];
+    setTerminalGeneration(threadID: string, sessionID: string | undefined, generation?: number) {
+      const key = terminalGenerationKey(threadID, sessionID);
+      if (generation) this.terminalGenerationByThread[key] = generation;
+      else delete this.terminalGenerationByThread[key];
     },
     handleTerminalEvent(event: TerminalEvent) {
       if (event.type !== "exit" && event.type !== "error") return;
-      if (event.generation && this.terminalGenerationByThread[event.threadId] !== event.generation) return;
+      if (event.generation && this.terminalGenerationByThread[terminalGenerationKey(event.threadId, event.sessionId)] !== event.generation) return;
       this.markRemoteRepositoryStale(event.threadId);
       if (event.error) this.remoteFailureMessage(event.threadId, event.error);
     },

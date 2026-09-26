@@ -4,6 +4,9 @@ import type { TerminalState } from "../../bindings/pi-desk/internal/domain";
 
 export interface TerminalEvent {
   threadId: string;
+  /** Which terminal of the task produced this. Empty means the task's one and only terminal, the
+   *  shape the runtime used before a task could own several. */
+  sessionId?: string;
   type: "output" | "error" | "exit";
   generation?: number;
   sequence: number;
@@ -15,21 +18,21 @@ export interface TerminalEvent {
 export type TerminalWorkspaceReference = string | { workspaceId: string };
 
 export const terminalService = {
-  start(threadId: string, workspace: TerminalWorkspaceReference, columns: number, rows: number): Promise<TerminalState> {
+  start(threadId: string, sessionId: string | undefined, workspace: TerminalWorkspaceReference, columns: number, rows: number): Promise<TerminalState> {
     const reference = typeof workspace === "string" ? { workspacePath: workspace } : workspace;
-    return TerminalService.Start({ threadId, ...reference, columns, rows });
+    return TerminalService.Start({ threadId, sessionId, ...reference, columns, rows });
   },
-  snapshot(threadId: string, workspaceId?: string): Promise<TerminalState> {
-    return TerminalService.Snapshot({ threadId, workspaceId });
+  snapshot(threadId: string, sessionId?: string, workspaceId?: string): Promise<TerminalState> {
+    return TerminalService.Snapshot({ threadId, sessionId, workspaceId });
   },
-  write(threadId: string, data: string): Promise<void> {
-    return TerminalService.Write({ threadId, data });
+  write(threadId: string, sessionId: string | undefined, data: string): Promise<void> {
+    return TerminalService.Write({ threadId, sessionId, data });
   },
-  resize(threadId: string, columns: number, rows: number): Promise<void> {
-    return TerminalService.Resize({ threadId, columns, rows });
+  resize(threadId: string, sessionId: string | undefined, columns: number, rows: number): Promise<void> {
+    return TerminalService.Resize({ threadId, sessionId, columns, rows });
   },
-  stop(threadId: string): Promise<void> {
-    return TerminalService.Stop({ threadId });
+  stop(threadId: string, sessionId?: string): Promise<void> {
+    return TerminalService.Stop({ threadId, sessionId });
   },
 };
 

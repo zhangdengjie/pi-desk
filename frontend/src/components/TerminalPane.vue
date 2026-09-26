@@ -4,12 +4,13 @@ import { tr } from "../i18n";
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
-import { LoaderCircle, Play, Square, Trash2 } from "lucide-vue-next";
+import { LoaderCircle, Play, Plus, Square, Trash2 } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { onTerminalEvent, terminalService, type TerminalEvent } from "../services/terminal";
 import { useAppStore } from "../stores/app";
 
 const appStore = useAppStore();
+const props = defineProps<{ sessionId?: string }>();
 const host = ref<HTMLElement>();
 const loading = ref(false);
 const running = ref(false);
@@ -23,6 +24,13 @@ const workspaceLabel = computed(() => {
   return thread ? appStore.remoteWorkspaceForThread(thread)?.remoteRoot || thread.workspacePath : "";
 });
 const shellName = computed(() => shell.value.split(/[\\/]/).pop() || tr("inspector.terminal"));
+const isRemoteThread = computed(() => Boolean(activeThread.value && appStore.remoteWorkspaceForThread(activeThread.value)));
+
+// A task's first terminal is addressed by the task id alone, so an absent session id and an empty
+// one mean the same thing - to the runtime calls and to the shared event stream.
+function sameSession(value?: string) {
+  return (value ?? "") === (props.sessionId ?? "");
+}
 
 let terminal: Terminal | undefined;
 let fitAddon: FitAddon | undefined;
@@ -109,7 +117,7 @@ function applyEvent(event: TerminalEvent) {
       const threadId = activeThread.value?.id;
       if (threadId) {
         const workspaceId = activeThread.value && appStore.remoteWorkspaceForThread(activeThread.value)?.id;
-        void hydrate(() => terminalService.snapshot(threadId, workspaceId)).finally(() => { recoveringGap = false; });
+        void hydrate(() => terminalService.snapshot(threadId, props.sessionId, workspaceId)).finally(() => { recoveringGap = false; });
       }
     }
     return;
@@ -129,7 +137,7 @@ function applyEvent(event: TerminalEvent) {
 }
 
 function handleEvent(event: TerminalEvent) {
-  if (event.threadId !== activeThread.value?.id) return;
+  if (event.threadId !== activeThread.value?.id || !sameSession(event.sessionId)) return;
   if (!hydrated) {
     pendingEvents.push(event);
     return;
@@ -155,7 +163,7 @@ async function hydrate(load: () => ReturnType<typeof terminalService.snapshot>) 
     terminal?.reset();
     lastSequence = state.sequence;
     terminalGeneration = state.generation || 0;
-    appStore.setTerminalGeneration(state.threadId, state.generation);
+    appStore.setTerminalGeneration(state.threadId, props.sessionId, state.generation);
     running.value = state.running;
     shell.value = state.shell || "";
     writeOutput(state.outputB64);
@@ -198,7 +206,7 @@ async function loadActiveTerminal() {
     pendingEvents = [];
     return;
   }
-  await hydrate(() => terminalService.snapshot(thread.id, workspaceId));
+  await hydrate(() => terminalService.snapshot(thread.id, props.sessionId, workspaceId));
 }
 
 async function startTerminal() {
@@ -211,7 +219,7 @@ async function startTerminal() {
     return;
   }
   const workspace = remoteWorkspace ? { workspaceId: remoteWorkspace.id } : workspacePath.value;
-  await hydrate(() => terminalService.start(thread.id, workspace, terminal?.cols || 80, terminal?.rows || 24));
+  await hydrate(() => terminalService.start(thread.id, props.sessionId, workspace, terminal?.cols || 80, terminal?.rows || 24));
 }
 
 async function stopTerminal() {
@@ -220,7 +228,7 @@ async function stopTerminal() {
   loading.value = true;
   error.value = "";
   try {
-    await terminalService.stop(threadID);
+    await terminalService.stop(threadID, props.sessionId);
   } catch (cause) {
     error.value = appStore.remoteFailureMessage(threadID, cause);
   } finally {
@@ -233,7 +241,7 @@ function scheduleResize(columns: number, rows: number) {
   resizeTimer = setTimeout(() => {
     const threadID = activeThread.value?.id;
     if (!threadID || !running.value) return;
-    void terminalService.resize(threadID, columns, rows).catch((cause) => {
+    void terminalService.resize(threadID, props.sessionId, columns, rows).catch((cause) => {
       error.value = appStore.remoteFailureMessage(threadID, cause);
     });
   }, 80);
@@ -273,7 +281,7 @@ onMounted(() => {
     if (!threadID || !running.value) return;
     inputChain = inputChain.then(async () => {
       appStore.markRemoteRepositoryStale(threadID);
-      await terminalService.write(threadID, data);
+      await terminalService.write(threadID, props.sessionId, data);
     }).catch((cause) => {
       error.value = appStore.remoteFailureMessage(threadID, cause);
     });
@@ -345,6 +353,7 @@ onBeforeUnmount(() => {
         <LoaderCircle v-if="loading" :size="14" class="is-spinning" />
         <button v-else-if="!running && activeThread" class="icon-button" :class="ui.iconButton" type="button" :title="tr('terminal.start')" @click="void startTerminal()"><Play :size="14" /></button>
         <button v-else-if="running" class="icon-button" :class="ui.iconButton" type="button" :title="tr('terminal.stop')" @click="void stopTerminal()"><Square :size="13" /></button>
+        <button class="icon-button" :class="ui.iconButton" type="button" :title="isRemoteThread ? tr('terminal.newTerminalUnsupported') : tr('terminal.newTerminal')" :disabled="!activeThread || isRemoteThread" @click="void appStore.openTerminalTab(activeThread?.id)"><Plus :size="14" /></button>
         <button class="icon-button" :class="ui.iconButton" type="button" :title="tr('terminal.clear')" :disabled="!activeThread" @click="terminal?.clear()"><Trash2 :size="14" /></button>
       </div>
     </div>
