@@ -166,6 +166,15 @@
   contain-intrinsic-size: auto 30px;
 }
 
+/* `content-visibility: auto` stops ticking animations inside a subtree it decides to skip, so a
+ * row sitting near the scrollport edge restarted or froze its spinner every time the list
+ * re-laid-out - and switching tasks, which re-renders the group, made the ring stop for good.
+ * Opt the running rows back in; there are only ever a couple, and the drag win was for the idle
+ * hundreds. */
+.thread-row:has(.thread-status) {
+  content-visibility: visible;
+}
+
 .primary-nav button:hover,
 .workspace-row:hover,
 .thread-row:hover {
