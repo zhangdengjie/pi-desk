@@ -15,6 +15,26 @@
   initial-value: 360px;
 }
 
+/* Two more properties rewrite themselves on every drag frame, and both sit above the message
+   list, so leaving them inherited kept the transcript subtree invalidating per frame even after
+   the width properties went non-inherited:
+   - --composer-overlay-reserve: the composer re-wraps as the pane narrows, so its measured
+     height changes every frame. Only .timeline and .timeline-jump-latest read it, and both now
+     set it on themselves.
+   - --conversation-inline-space: a calc() of 100% and --inspector-width, therefore per-frame.
+     It is only ever read by the element that declares it, so non-inheriting is free. */
+@property --composer-overlay-reserve {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --conversation-inline-space {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 32px;
+}
+
 :root {
   color-scheme: dark;
   --font-interface-body: "PingFang SC", "Segoe UI Variable", "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;

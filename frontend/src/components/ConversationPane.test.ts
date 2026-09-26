@@ -96,7 +96,7 @@ describe("ConversationPane", () => {
     frames.at(-1)?.(0);
     await flushPromises();
 
-    expect((wrapper.element as HTMLElement).style.getPropertyValue("--composer-overlay-reserve")).toBe("320px");
+    expect((wrapper.get(".timeline").element as HTMLElement).style.getPropertyValue("--composer-overlay-reserve")).toBe("320px");
     expect(timeline.scrollTop).toBe(1200);
 
     timeline.scrollTop = 100;
@@ -106,7 +106,7 @@ describe("ConversationPane", () => {
     frames.at(-1)?.(0);
     await flushPromises();
 
-    expect((wrapper.element as HTMLElement).style.getPropertyValue("--composer-overlay-reserve")).toBe("400px");
+    expect((wrapper.get(".timeline").element as HTMLElement).style.getPropertyValue("--composer-overlay-reserve")).toBe("400px");
     expect(timeline.scrollTop).toBe(100);
     wrapper.unmount();
     expect(observer.disconnect).toHaveBeenCalled();

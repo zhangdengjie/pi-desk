@@ -501,7 +501,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="conversation-pane relative grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden bg-[var(--bg-workspace)]" :class="ui.root" :style="{ '--composer-overlay-reserve': `${composerHeight}px` }" :aria-label="tr('conversation.label')">
+  <section class="conversation-pane relative grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden bg-[var(--bg-workspace)]" :class="ui.root" :aria-label="tr('conversation.label')">
     <div v-if="searchOpen" class="conversation-search absolute right-4 top-3 z-20 w-[min(360px,calc(100%_-_32px))] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-raised)] shadow-lg" role="search" :aria-label="tr('conversation.search')">
       <div class="conversation-search-main flex min-h-10 items-center gap-2 px-2 text-[var(--text-muted)]">
         <Search :size="17" aria-hidden="true" />
@@ -561,7 +561,7 @@ onBeforeUnmount(() => {
           <span><em>{{ tr("conversation.navigationAnswer") }}</em>{{ hoveredNavigationItem.answer }}</span>
         </aside>
       </nav>
-      <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" :style="{ '--inspector-width': `${appStore.inspectorWidth}px` }" @scroll="onTimelineScroll" @wheel="onTimelineWheel" @pointerdown="markReaderInput" @keydown="markReaderInput">
+      <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--composer-overlay-reserve': `${composerHeight}px` }" @scroll="onTimelineScroll" @wheel="onTimelineWheel" @pointerdown="markReaderInput" @keydown="markReaderInput">
       <div v-if="appStore.activeSessionOperation === 'Compacting'" class="conversation-operation-banner mb-4 inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-xs text-[var(--text-secondary)] shadow-sm" role="status" aria-live="polite">
         <LoaderCircle :size="14" class="is-spinning" aria-hidden="true" />
         <span>{{ tr("topbar.compacting") }}</span>
@@ -616,6 +616,7 @@ onBeforeUnmount(() => {
       <button
         v-if="!stickToBottom && messages.length"
         class="timeline-jump-latest"
+        :style="{ '--composer-overlay-reserve': `${composerHeight}px` }"
         type="button"
         :title="tr('conversation.jumpToLatest')"
         :aria-label="tr('conversation.jumpToLatest')"
