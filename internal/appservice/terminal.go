@@ -24,10 +24,11 @@ var ErrRemoteTerminalInactive = errors.New("remote terminal requires an active P
 
 type terminalRuntime interface {
 	Start(terminalruntime.StartConfig) (terminalruntime.Snapshot, error)
-	Snapshot(string) terminalruntime.Snapshot
-	Write(string, []byte) error
-	Resize(string, int, int) error
-	Stop(string) error
+	Snapshot(string, string) terminalruntime.Snapshot
+	Write(string, string, []byte) error
+	Resize(string, string, int, int) error
+	Stop(string, string) error
+	StopThread(string) error
 	Shutdown()
 }
 
@@ -56,8 +57,8 @@ func (service *TerminalService) ServiceStartup(ctx context.Context, _ applicatio
 	app := application.Get()
 	emit := func(event terminalruntime.Event) {
 		app.Event.Emit(terminalEventName, domain.TerminalEvent{
-			ThreadID: event.ThreadID,
-			Type:     event.Type, Generation: event.Generation, Sequence: event.Sequence,
+			ThreadID: event.ThreadID, SessionID: event.SessionID,
+			Type: event.Type, Generation: event.Generation, Sequence: event.Sequence,
 			DataB64:  base64.StdEncoding.EncodeToString(event.Data),
 			ExitCode: event.ExitCode, Error: event.Error,
 		})
@@ -101,7 +102,8 @@ func (service *TerminalService) Start(request domain.StartTerminalRequest) (doma
 		cwd = record.Location.SSH.CanonicalRoot
 	}
 	snapshot, err := runtime.Start(terminalruntime.StartConfig{
-		ThreadID: threadID, CWD: cwd, Columns: request.Columns, Rows: request.Rows,
+		ThreadID: threadID, SessionID: strings.TrimSpace(request.SessionID), CWD: cwd,
+		Columns: request.Columns, Rows: request.Rows,
 	})
 	if err != nil {
 		return domain.TerminalState{}, err
@@ -128,7 +130,7 @@ func (service *TerminalService) Snapshot(request domain.TerminalRequest) (domain
 	if err != nil {
 		return domain.TerminalState{}, err
 	}
-	return mapTerminalSnapshot(runtime.Snapshot(threadID)), nil
+	return mapTerminalSnapshot(runtime.Snapshot(threadID, strings.TrimSpace(request.SessionID))), nil
 }
 
 func (service *TerminalService) Write(request domain.TerminalWriteRequest) error {
@@ -142,7 +144,7 @@ func (service *TerminalService) Write(request domain.TerminalWriteRequest) error
 	if len(request.Data) > maxTerminalInput {
 		return errors.New("terminal input exceeds the 64 KiB limit")
 	}
-	return runtime.Write(strings.TrimSpace(request.ThreadID), []byte(request.Data))
+	return runtime.Write(strings.TrimSpace(request.ThreadID), strings.TrimSpace(request.SessionID), []byte(request.Data))
 }
 
 func (service *TerminalService) Resize(request domain.TerminalResizeRequest) error {
@@ -150,7 +152,7 @@ func (service *TerminalService) Resize(request domain.TerminalResizeRequest) err
 	if err != nil {
 		return err
 	}
-	return runtime.Resize(strings.TrimSpace(request.ThreadID), request.Columns, request.Rows)
+	return runtime.Resize(strings.TrimSpace(request.ThreadID), strings.TrimSpace(request.SessionID), request.Columns, request.Rows)
 }
 
 func (service *TerminalService) Stop(request domain.TerminalRequest) error {
@@ -158,15 +160,16 @@ func (service *TerminalService) Stop(request domain.TerminalRequest) error {
 	if err != nil {
 		return err
 	}
-	return runtime.Stop(strings.TrimSpace(request.ThreadID))
+	return runtime.Stop(strings.TrimSpace(request.ThreadID), strings.TrimSpace(request.SessionID))
 }
 
+// stopThreadIfRunning is the task-level teardown: it closes every terminal the task owns.
 func (service *TerminalService) stopThreadIfRunning(threadID string) error {
 	runtime, err := service.runtimeForThread(strings.TrimSpace(threadID))
 	if err != nil {
 		return err
 	}
-	err = runtime.Stop(strings.TrimSpace(threadID))
+	err = runtime.StopThread(strings.TrimSpace(threadID))
 	if errors.Is(err, terminalruntime.ErrNotRunning) {
 		return nil
 	}
@@ -299,6 +302,7 @@ func remoteWorkspaceID(record workspace.Record) string {
 func mapTerminalSnapshot(snapshot terminalruntime.Snapshot) domain.TerminalState {
 	return domain.TerminalState{
 		ThreadID:   snapshot.ThreadID,
+		SessionID:  snapshot.SessionID,
 		CWD:        snapshot.CWD,
 		Shell:      snapshot.Shell,
 		Running:    snapshot.Running,

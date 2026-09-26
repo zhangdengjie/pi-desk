@@ -2,6 +2,7 @@ package domain
 
 type StartTerminalRequest struct {
 	ThreadID      string `json:"threadId"`
+	SessionID     string `json:"sessionId,omitempty"`
 	WorkspaceID   string `json:"workspaceId,omitempty"`
 	WorkspacePath string `json:"workspacePath,omitempty"`
 	Columns       int    `json:"columns"`
@@ -10,22 +11,26 @@ type StartTerminalRequest struct {
 
 type TerminalRequest struct {
 	ThreadID    string `json:"threadId"`
+	SessionID   string `json:"sessionId,omitempty"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
 }
 
 type TerminalWriteRequest struct {
-	ThreadID string `json:"threadId"`
-	Data     string `json:"data"`
+	ThreadID  string `json:"threadId"`
+	SessionID string `json:"sessionId,omitempty"`
+	Data      string `json:"data"`
 }
 
 type TerminalResizeRequest struct {
-	ThreadID string `json:"threadId"`
-	Columns  int    `json:"columns"`
-	Rows     int    `json:"rows"`
+	ThreadID  string `json:"threadId"`
+	SessionID string `json:"sessionId,omitempty"`
+	Columns   int    `json:"columns"`
+	Rows      int    `json:"rows"`
 }
 
 type TerminalState struct {
 	ThreadID   string `json:"threadId"`
+	SessionID  string `json:"sessionId,omitempty"`
 	CWD        string `json:"cwd,omitempty"`
 	Shell      string `json:"shell,omitempty"`
 	Running    bool   `json:"running"`
@@ -36,6 +41,7 @@ type TerminalState struct {
 
 type TerminalEvent struct {
 	ThreadID   string `json:"threadId"`
+	SessionID  string `json:"sessionId,omitempty"`
 	Type       string `json:"type"`
 	Generation uint64 `json:"generation,omitempty"`
 	Sequence   uint64 `json:"sequence"`

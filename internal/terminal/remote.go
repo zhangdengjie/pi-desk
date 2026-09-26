@@ -39,6 +39,7 @@ type remoteBinding struct {
 }
 
 type remoteSession struct {
+	key       string
 	binding   remoteBinding
 	terminal  remoteTerminalSession
 	info      Snapshot
@@ -91,46 +92,67 @@ func (manager *RemoteManager) bind(threadID string, starter remoteTerminalStarte
 	return nil
 }
 
+// threadKeysLocked lists the sessions of one task. The caller holds manager.mu.
+func (manager *RemoteManager) threadKeysLocked(threadID string) []string {
+	keys := make([]string, 0, 1)
+	for key, running := range manager.sessions {
+		if running.info.ThreadID == threadID {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
 func (manager *RemoteManager) Unbind(threadID string) error {
 	threadID = strings.TrimSpace(threadID)
 	manager.mu.Lock()
 	delete(manager.bindings, threadID)
-	running := manager.sessions[threadID]
-	if running != nil {
-		running.stopping = true
-		delete(manager.sessions, threadID)
+	running := make([]*remoteSession, 0, 1)
+	for _, key := range manager.threadKeysLocked(threadID) {
+		session := manager.sessions[key]
+		session.stopping = true
+		running = append(running, session)
+		delete(manager.sessions, key)
 	}
 	manager.mu.Unlock()
-	if running == nil {
-		return nil
+	var errs []error
+	for _, session := range running {
+		if err := session.terminal.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
-	return running.terminal.Close()
+	return errors.Join(errs...)
 }
 
 func (manager *RemoteManager) Start(config StartConfig) (Snapshot, error) {
 	if err := validateStartConfig(config); err != nil {
 		return Snapshot{}, err
 	}
+	key := sessionKey(config.ThreadID, config.SessionID)
 	manager.mu.Lock()
 	if manager.closed {
 		manager.mu.Unlock()
 		return Snapshot{}, ErrAlreadyClosed
 	}
-	binding, ok := manager.bindings[config.ThreadID]
+	binding, ok := manager.bindings[strings.TrimSpace(config.ThreadID)]
 	if !ok || binding.cwd != config.CWD {
 		manager.mu.Unlock()
 		return Snapshot{}, errors.New("remote terminal is not bound to this task workspace")
 	}
-	if running := manager.sessions[config.ThreadID]; running != nil {
+	if running := manager.sessions[key]; running != nil {
 		manager.mu.Unlock()
 		if err := running.terminal.Resize(config.Columns, config.Rows); err != nil {
 			return Snapshot{}, err
 		}
-		return manager.Snapshot(config.ThreadID), nil
+		return manager.Snapshot(config.ThreadID, config.SessionID), nil
 	}
 	if len(manager.sessions) >= maxActiveSessions {
 		manager.mu.Unlock()
 		return Snapshot{}, ErrLimitReached
+	}
+	if len(manager.threadKeysLocked(strings.TrimSpace(config.ThreadID))) >= maxTerminalsPerThread {
+		manager.mu.Unlock()
+		return Snapshot{}, ErrThreadLimit
 	}
 	manager.mu.Unlock()
 
@@ -142,56 +164,57 @@ func (manager *RemoteManager) Start(config StartConfig) (Snapshot, error) {
 	manager.mu.Lock()
 	manager.nextGeneration++
 	generation := manager.nextGeneration
-	current, stillBound := manager.bindings[config.ThreadID]
-	if manager.closed || !stillBound || current.lease != binding.lease || current.cwd != binding.cwd || manager.sessions[config.ThreadID] != nil {
+	current, stillBound := manager.bindings[strings.TrimSpace(config.ThreadID)]
+	if manager.closed || !stillBound || current.lease != binding.lease || current.cwd != binding.cwd || manager.sessions[key] != nil {
 		manager.mu.Unlock()
 		_ = terminal.Close()
 		return Snapshot{}, ErrStopping
 	}
 	running := &remoteSession{
-		binding: binding, terminal: terminal, remoteSeq: remoteSequence,
-		info: Snapshot{ThreadID: config.ThreadID, CWD: binding.cwd, Shell: "remote shell", Running: true, Generation: generation, Sequence: remoteSequence, Output: boundedReplay(replay)},
+		key: key, binding: binding, terminal: terminal, remoteSeq: remoteSequence,
+		info: Snapshot{
+			ThreadID: config.ThreadID, SessionID: strings.TrimSpace(config.SessionID), CWD: binding.cwd,
+			Shell: "remote shell", Running: true, Generation: generation, Sequence: remoteSequence, Output: boundedReplay(replay),
+		},
 	}
-	manager.sessions[config.ThreadID] = running
+	manager.sessions[key] = running
 	snapshot := cloneSnapshot(running.info)
 	manager.mu.Unlock()
 	go manager.consume(running)
 	return snapshot, nil
 }
 
-func (manager *RemoteManager) Snapshot(threadID string) Snapshot {
-	threadID = strings.TrimSpace(threadID)
+func (manager *RemoteManager) Snapshot(threadID, sessionID string) Snapshot {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	if running := manager.sessions[threadID]; running != nil {
+	if running := manager.sessions[sessionKey(threadID, sessionID)]; running != nil {
 		return cloneSnapshot(running.info)
 	}
-	return Snapshot{ThreadID: threadID}
+	return Snapshot{ThreadID: strings.TrimSpace(threadID), SessionID: strings.TrimSpace(sessionID)}
 }
 
-func (manager *RemoteManager) Write(threadID string, data []byte) error {
-	terminal := manager.runningTerminal(threadID)
+func (manager *RemoteManager) Write(threadID, sessionID string, data []byte) error {
+	terminal := manager.runningTerminal(threadID, sessionID)
 	if terminal == nil {
 		return ErrNotRunning
 	}
 	return terminal.Input(append([]byte(nil), data...))
 }
 
-func (manager *RemoteManager) Resize(threadID string, columns, rows int) error {
+func (manager *RemoteManager) Resize(threadID, sessionID string, columns, rows int) error {
 	if err := validateDimensions(columns, rows); err != nil {
 		return err
 	}
-	terminal := manager.runningTerminal(threadID)
+	terminal := manager.runningTerminal(threadID, sessionID)
 	if terminal == nil {
 		return ErrNotRunning
 	}
 	return terminal.Resize(columns, rows)
 }
 
-func (manager *RemoteManager) Stop(threadID string) error {
-	threadID = strings.TrimSpace(threadID)
+func (manager *RemoteManager) Stop(threadID, sessionID string) error {
 	manager.mu.Lock()
-	running := manager.sessions[threadID]
+	running := manager.sessions[sessionKey(threadID, sessionID)]
 	if running != nil {
 		running.stopping = true
 	}
@@ -200,6 +223,29 @@ func (manager *RemoteManager) Stop(threadID string) error {
 		return ErrNotRunning
 	}
 	return running.terminal.Close()
+}
+
+// StopThread closes every remote terminal of a task; the binding itself stays until Unbind.
+func (manager *RemoteManager) StopThread(threadID string) error {
+	threadID = strings.TrimSpace(threadID)
+	manager.mu.Lock()
+	running := make([]*remoteSession, 0, 1)
+	for _, key := range manager.threadKeysLocked(threadID) {
+		session := manager.sessions[key]
+		session.stopping = true
+		running = append(running, session)
+	}
+	manager.mu.Unlock()
+	if len(running) == 0 {
+		return ErrNotRunning
+	}
+	var errs []error
+	for _, session := range running {
+		if err := session.terminal.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (manager *RemoteManager) Shutdown() {
@@ -221,10 +267,10 @@ func (manager *RemoteManager) Shutdown() {
 	}
 }
 
-func (manager *RemoteManager) runningTerminal(threadID string) remoteTerminalSession {
+func (manager *RemoteManager) runningTerminal(threadID, sessionID string) remoteTerminalSession {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	if running := manager.sessions[strings.TrimSpace(threadID)]; running != nil {
+	if running := manager.sessions[sessionKey(threadID, sessionID)]; running != nil {
 		return running.terminal
 	}
 	return nil
@@ -234,11 +280,11 @@ func (manager *RemoteManager) consume(running *remoteSession) {
 	terminalSeen := false
 	for event := range running.terminal.Events() {
 		manager.mu.Lock()
-		if manager.sessions[running.info.ThreadID] != running {
+		if manager.sessions[running.key] != running {
 			manager.mu.Unlock()
 			return
 		}
-		projected := Event{ThreadID: running.info.ThreadID, Generation: running.info.Generation, ExitCode: event.ExitCode}
+		projected := Event{ThreadID: running.info.ThreadID, SessionID: running.info.SessionID, Generation: running.info.Generation, ExitCode: event.ExitCode}
 		switch event.Type {
 		case "output":
 			if event.Sequence <= running.remoteSeq {
@@ -260,13 +306,13 @@ func (manager *RemoteManager) consume(running *remoteSession) {
 			terminalSeen = true
 			running.info.Running = false
 			running.info.Sequence++
-			delete(manager.sessions, running.info.ThreadID)
+			delete(manager.sessions, running.key)
 			projected.Type, projected.Error = "exit", boundedTerminalError(event.Error)
 		case "disconnected":
 			terminalSeen = true
 			running.info.Running = false
 			running.info.Sequence++
-			delete(manager.sessions, running.info.ThreadID)
+			delete(manager.sessions, running.key)
 			projected.Type, projected.ExitCode, projected.Error = "exit", -1, boundedTerminalError(event.Error)
 		default:
 			manager.mu.Unlock()
@@ -277,15 +323,15 @@ func (manager *RemoteManager) consume(running *remoteSession) {
 		manager.emit(projected)
 	}
 	manager.mu.Lock()
-	if manager.sessions[running.info.ThreadID] == running {
-		delete(manager.sessions, running.info.ThreadID)
+	if manager.sessions[running.key] == running {
+		delete(manager.sessions, running.key)
 	}
 	if !terminalSeen {
 		running.info.Running = false
 		running.info.Sequence++
 		sequence := running.info.Sequence
 		manager.mu.Unlock()
-		manager.emit(Event{ThreadID: running.info.ThreadID, Type: "exit", Generation: running.info.Generation, Sequence: sequence, ExitCode: -1, Error: "REMOTE_DISCONNECTED: remote terminal disconnected"})
+		manager.emit(Event{ThreadID: running.info.ThreadID, SessionID: running.info.SessionID, Type: "exit", Generation: running.info.Generation, Sequence: sequence, ExitCode: -1, Error: "REMOTE_DISCONNECTED: remote terminal disconnected"})
 		return
 	}
 	manager.mu.Unlock()

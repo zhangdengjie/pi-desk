@@ -74,10 +74,10 @@ func TestRemoteManagerProjectsIOReplayGapAndExit(t *testing.T) {
 	if err != nil || !started.Running || started.Shell != "remote shell" {
 		t.Fatalf("start=%#v err=%v", started, err)
 	}
-	if err := manager.Write("thread-1", []byte("echo test\n")); err != nil {
+	if err := manager.Write("thread-1", "", []byte("echo test\n")); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.Resize("thread-1", 100, 30); err != nil {
+	if err := manager.Resize("thread-1", "", 100, 30); err != nil {
 		t.Fatal(err)
 	}
 	remote.events <- remotessh.RuntimeTerminalEvent{Type: "output", Sequence: 1, Data: []byte("one")}
@@ -91,7 +91,7 @@ func TestRemoteManagerProjectsIOReplayGapAndExit(t *testing.T) {
 	if gap.Sequence != 3 || len(gap.Data) != 0 {
 		t.Fatalf("gap event=%#v", gap)
 	}
-	snapshot := manager.Snapshot("thread-1")
+	snapshot := manager.Snapshot("thread-1", "")
 	if snapshot.Sequence != 3 || string(snapshot.Output) != "one-two-three" {
 		t.Fatalf("snapshot=%#v", snapshot)
 	}
@@ -147,7 +147,7 @@ func TestRemoteManagerUnbindStopsAndRejectsSession(t *testing.T) {
 	if _, err := manager.Start(StartConfig{ThreadID: "thread-1", CWD: "/srv/repository", Columns: 80, Rows: 24}); err == nil {
 		t.Fatal("unbound terminal restarted")
 	}
-	if err := manager.Write("missing", []byte("x")); !errors.Is(err, ErrNotRunning) {
+	if err := manager.Write("missing", "", []byte("x")); !errors.Is(err, ErrNotRunning) {
 		t.Fatalf("missing write error=%v", err)
 	}
 }

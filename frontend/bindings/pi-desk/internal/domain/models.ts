@@ -1028,6 +1028,7 @@ export interface StartSessionRequest {
 
 export interface StartTerminalRequest {
     "threadId": string;
+    "sessionId"?: string;
     "workspaceId"?: string;
     "workspacePath"?: string;
     "columns": number;
@@ -1036,17 +1037,20 @@ export interface StartTerminalRequest {
 
 export interface TerminalRequest {
     "threadId": string;
+    "sessionId"?: string;
     "workspaceId"?: string;
 }
 
 export interface TerminalResizeRequest {
     "threadId": string;
+    "sessionId"?: string;
     "columns": number;
     "rows": number;
 }
 
 export interface TerminalState {
     "threadId": string;
+    "sessionId"?: string;
     "cwd"?: string;
     "shell"?: string;
     "running": boolean;
@@ -1057,6 +1061,7 @@ export interface TerminalState {
 
 export interface TerminalWriteRequest {
     "threadId": string;
+    "sessionId"?: string;
     "data": string;
 }
 

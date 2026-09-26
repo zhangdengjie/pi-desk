@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	maxReplayBytes    = 1 << 20
-	maxActiveSessions = 32
+	maxReplayBytes        = 1 << 20
+	maxActiveSessions     = 32
+	maxTerminalsPerThread = 8
 )
 
 var (
@@ -24,17 +25,20 @@ var (
 	ErrAlreadyClosed = errors.New("terminal manager is closed")
 	ErrStopping      = errors.New("terminal is stopping")
 	ErrLimitReached  = errors.New("terminal session limit reached")
+	ErrThreadLimit   = errors.New("this task already has the maximum number of terminals")
 )
 
 type StartConfig struct {
-	ThreadID string
-	CWD      string
-	Columns  int
-	Rows     int
+	ThreadID  string
+	SessionID string
+	CWD       string
+	Columns   int
+	Rows      int
 }
 
 type Snapshot struct {
 	ThreadID   string
+	SessionID  string
 	CWD        string
 	Shell      string
 	Running    bool
@@ -45,6 +49,7 @@ type Snapshot struct {
 
 type Event struct {
 	ThreadID   string
+	SessionID  string
 	Type       string
 	Generation uint64
 	Sequence   uint64
@@ -127,12 +132,25 @@ func (process *osProcess) ExitCode() int {
 }
 
 type session struct {
+	key       string
 	info      Snapshot
 	process   process
 	stopping  bool
 	finished  bool
 	bufferMu  sync.Mutex
 	processMu sync.Mutex
+}
+
+// sessionKey separates the several terminals one task can own. An empty session id keeps the
+// legacy shape - one terminal per task, addressed by the task id alone - so a caller written
+// before multi-terminal keeps working unchanged. The separator is a byte no thread id or UUID
+// can contain, so no two pairs can collide.
+func sessionKey(threadID, sessionID string) string {
+	threadID, sessionID = strings.TrimSpace(threadID), strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return threadID
+	}
+	return threadID + "\x1f" + sessionID
 }
 
 type Manager struct {
@@ -160,12 +178,13 @@ func (manager *Manager) Start(config StartConfig) (Snapshot, error) {
 	if err := validateStartConfig(config); err != nil {
 		return Snapshot{}, err
 	}
+	key := sessionKey(config.ThreadID, config.SessionID)
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if manager.closed {
 		return Snapshot{}, ErrAlreadyClosed
 	}
-	if existing := manager.sessions[config.ThreadID]; existing != nil {
+	if existing := manager.sessions[key]; existing != nil {
 		if existing.isStopping() {
 			return Snapshot{}, ErrStopping
 		}
@@ -177,6 +196,9 @@ func (manager *Manager) Start(config StartConfig) (Snapshot, error) {
 	if len(manager.sessions) >= maxActiveSessions {
 		return Snapshot{}, ErrLimitReached
 	}
+	if manager.threadSessionCountLocked(config.ThreadID) >= maxTerminalsPerThread {
+		return Snapshot{}, ErrThreadLimit
+	}
 	process, shell, err := manager.starter.Start(manager.ctx, config)
 	if err != nil {
 		return Snapshot{}, err
@@ -184,27 +206,43 @@ func (manager *Manager) Start(config StartConfig) (Snapshot, error) {
 	manager.nextGeneration++
 	generation := manager.nextGeneration
 	running := &session{
-		info:    Snapshot{ThreadID: config.ThreadID, CWD: config.CWD, Shell: shell, Running: true, Generation: generation},
+		key: key,
+		info: Snapshot{
+			ThreadID: config.ThreadID, SessionID: strings.TrimSpace(config.SessionID), CWD: config.CWD,
+			Shell: shell, Running: true, Generation: generation,
+		},
 		process: process,
 	}
-	manager.sessions[config.ThreadID] = running
+	manager.sessions[key] = running
 	go manager.read(running)
 	go manager.wait(running)
 	return running.snapshot(), nil
 }
 
-func (manager *Manager) Snapshot(threadID string) Snapshot {
+func (manager *Manager) threadSessionCountLocked(threadID string) int {
+	threadID = strings.TrimSpace(threadID)
+	count := 0
+	for _, running := range manager.sessions {
+		if running.info.ThreadID == threadID {
+			count++
+		}
+	}
+	return count
+}
+
+func (manager *Manager) Snapshot(threadID, sessionID string) Snapshot {
+	key := sessionKey(threadID, sessionID)
 	manager.mu.Lock()
-	running := manager.sessions[strings.TrimSpace(threadID)]
+	running := manager.sessions[key]
 	manager.mu.Unlock()
 	if running == nil {
-		return Snapshot{ThreadID: strings.TrimSpace(threadID)}
+		return Snapshot{ThreadID: strings.TrimSpace(threadID), SessionID: strings.TrimSpace(sessionID)}
 	}
 	return running.snapshot()
 }
 
-func (manager *Manager) Write(threadID string, data []byte) error {
-	running := manager.running(threadID)
+func (manager *Manager) Write(threadID, sessionID string, data []byte) error {
+	running := manager.running(threadID, sessionID)
 	if running == nil {
 		return ErrNotRunning
 	}
@@ -214,19 +252,19 @@ func (manager *Manager) Write(threadID string, data []byte) error {
 	return err
 }
 
-func (manager *Manager) Resize(threadID string, columns, rows int) error {
+func (manager *Manager) Resize(threadID, sessionID string, columns, rows int) error {
 	if err := validateDimensions(columns, rows); err != nil {
 		return err
 	}
-	running := manager.running(threadID)
+	running := manager.running(threadID, sessionID)
 	if running == nil {
 		return ErrNotRunning
 	}
 	return running.resize(columns, rows)
 }
 
-func (manager *Manager) Stop(threadID string) error {
-	running := manager.running(threadID)
+func (manager *Manager) Stop(threadID, sessionID string) error {
+	running := manager.running(threadID, sessionID)
 	if running == nil {
 		return ErrNotRunning
 	}
@@ -235,6 +273,44 @@ func (manager *Manager) Stop(threadID string) error {
 	err := running.process.Stop()
 	running.processMu.Unlock()
 	return err
+}
+
+// StopThread closes every terminal belonging to a task, whichever session ids they carry.
+func (manager *Manager) StopThread(threadID string) error {
+	keys := manager.threadKeys(threadID)
+	if len(keys) == 0 {
+		return ErrNotRunning
+	}
+	var errs []error
+	for _, key := range keys {
+		manager.mu.Lock()
+		running := manager.sessions[key]
+		manager.mu.Unlock()
+		if running == nil {
+			continue
+		}
+		running.processMu.Lock()
+		running.stopping = true
+		err := running.process.Stop()
+		running.processMu.Unlock()
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (manager *Manager) threadKeys(threadID string) []string {
+	threadID = strings.TrimSpace(threadID)
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	keys := make([]string, 0, 1)
+	for key, running := range manager.sessions {
+		if running.info.ThreadID == threadID {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 
 func (manager *Manager) Shutdown() {
@@ -257,10 +333,10 @@ func (manager *Manager) Shutdown() {
 	}
 }
 
-func (manager *Manager) running(threadID string) *session {
+func (manager *Manager) running(threadID, sessionID string) *session {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	return manager.sessions[strings.TrimSpace(threadID)]
+	return manager.sessions[sessionKey(threadID, sessionID)]
 }
 
 func (manager *Manager) read(running *session) {
@@ -270,12 +346,12 @@ func (manager *Manager) read(running *session) {
 		if count > 0 {
 			data := append([]byte(nil), buffer[:count]...)
 			sequence := running.appendOutput(data)
-			manager.emit(Event{ThreadID: running.info.ThreadID, Type: "output", Generation: running.info.Generation, Sequence: sequence, Data: data})
+			manager.emit(Event{ThreadID: running.info.ThreadID, SessionID: running.info.SessionID, Type: "output", Generation: running.info.Generation, Sequence: sequence, Data: data})
 		}
 		if err != nil {
 			if !isTerminalTeardown(err) && !running.suppressReadError() {
 				sequence := running.nextSequence()
-				manager.emit(Event{ThreadID: running.info.ThreadID, Type: "error", Generation: running.info.Generation, Sequence: sequence, Error: err.Error()})
+				manager.emit(Event{ThreadID: running.info.ThreadID, SessionID: running.info.SessionID, Type: "error", Generation: running.info.Generation, Sequence: sequence, Error: err.Error()})
 			}
 			return
 		}
@@ -290,11 +366,11 @@ func (manager *Manager) wait(running *session) {
 	running.processMu.Unlock()
 	_ = running.process.Close()
 	manager.mu.Lock()
-	if manager.sessions[running.info.ThreadID] == running {
-		delete(manager.sessions, running.info.ThreadID)
+	if manager.sessions[running.key] == running {
+		delete(manager.sessions, running.key)
 	}
 	manager.mu.Unlock()
-	event := Event{ThreadID: running.info.ThreadID, Type: "exit", Generation: running.info.Generation, Sequence: running.nextSequence(), ExitCode: running.process.ExitCode()}
+	event := Event{ThreadID: running.info.ThreadID, SessionID: running.info.SessionID, Type: "exit", Generation: running.info.Generation, Sequence: running.nextSequence(), ExitCode: running.process.ExitCode()}
 	// A shell inherits the status of its last command, so `exit` after a failed command reaches us
 	// as *exec.ExitError. That is a normal exit, not a stream failure; reporting it as an error
 	// used to paint a red bar over the stopped terminal and suppress its start affordance.

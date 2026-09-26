@@ -168,25 +168,25 @@ func TestManagerRunsOneTerminalPerThreadAndReplaysOutput(t *testing.T) {
 	if string(output.Data) != "hello\r\n" || output.Generation != state.Generation || output.Sequence != 1 {
 		t.Fatalf("unexpected output event: %#v", output)
 	}
-	state = manager.Snapshot("thread-1")
+	state = manager.Snapshot("thread-1", "")
 	if string(state.Output) != "hello\r\n" || state.Sequence != 1 {
 		t.Fatalf("unexpected replay state: %#v", state)
 	}
 
-	if err := manager.Write("thread-1", []byte("pwd\r")); err != nil {
+	if err := manager.Write("thread-1", "", []byte("pwd\r")); err != nil {
 		t.Fatal(err)
 	}
 	if process.inputString() != "pwd\r" {
 		t.Fatalf("unexpected terminal input %q", process.inputString())
 	}
-	if err := manager.Stop("thread-1"); err != nil {
+	if err := manager.Stop("thread-1", ""); err != nil {
 		t.Fatal(err)
 	}
 	exit := waitForTerminalEvent(t, events, "exit")
 	if exit.ExitCode != 0 || exit.Error != "" {
 		t.Fatalf("unexpected exit event: %#v", exit)
 	}
-	if state := manager.Snapshot("thread-1"); state.Running {
+	if state := manager.Snapshot("thread-1", ""); state.Running {
 		t.Fatal("stopped terminal remained registered")
 	}
 }
@@ -203,7 +203,7 @@ func TestManagerRejectsLateExitFromPreviousGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.Stop("thread-1"); err != nil {
+	if err := manager.Stop("thread-1", ""); err != nil {
 		t.Fatal(err)
 	}
 	oldExit := waitForTerminalEvent(t, events, "exit")
@@ -221,7 +221,7 @@ func TestManagerRejectsLateExitFromPreviousGeneration(t *testing.T) {
 	if oldExit.Generation == current.Generation {
 		t.Fatal("previous terminal exit was indistinguishable from current terminal")
 	}
-	_ = manager.Stop("thread-1")
+	_ = manager.Stop("thread-1", "")
 	_ = waitForTerminalEvent(t, events, "exit")
 }
 
@@ -254,7 +254,7 @@ func TestManagerBoundsReplayAndValidatesRequests(t *testing.T) {
 	if _, err := manager.Start(StartConfig{ThreadID: "thread-1", CWD: t.TempDir(), Columns: 2, Rows: 2}); err == nil {
 		t.Fatal("expected invalid dimensions to fail")
 	}
-	if err := manager.Write("missing", []byte("x")); err != ErrNotRunning {
+	if err := manager.Write("missing", "", []byte("x")); err != ErrNotRunning {
 		t.Fatalf("expected ErrNotRunning, got %v", err)
 	}
 	manager.mu.Lock()
@@ -272,6 +272,79 @@ func TestManagerBoundsReplayAndValidatesRequests(t *testing.T) {
 	manager.Shutdown()
 	if _, err := manager.Start(StartConfig{ThreadID: "thread-2", CWD: t.TempDir(), Columns: 80, Rows: 24}); err != ErrAlreadyClosed {
 		t.Fatalf("expected ErrAlreadyClosed, got %v", err)
+	}
+}
+
+func TestManagerKeepsTerminalsOfOneTaskApart(t *testing.T) {
+	left, right := newFakeProcess(), newFakeProcess()
+	starter := &sequenceStarter{processes: []*fakeProcess{left, right}}
+	events := make(chan Event, 8)
+	manager := newManager(context.Background(), starter, func(event Event) { events <- event })
+	t.Cleanup(manager.Shutdown)
+
+	dir := t.TempDir()
+	first, err := manager.Start(StartConfig{ThreadID: "thread-1", SessionID: "session-a", CWD: dir, Columns: 80, Rows: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := manager.Start(StartConfig{ThreadID: "thread-1", SessionID: "session-b", CWD: dir, Columns: 80, Rows: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Generation == second.Generation {
+		t.Fatalf("two terminals of one task shared generation %d", first.Generation)
+	}
+
+	if err := manager.Write("thread-1", "session-b", []byte("ls\r")); err != nil {
+		t.Fatal(err)
+	}
+	if left.inputString() != "" || right.inputString() != "ls\r" {
+		t.Fatalf("input reached the wrong terminal: a=%q b=%q", left.inputString(), right.inputString())
+	}
+	if _, err := right.output.Write([]byte("b\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	event := waitForTerminalEvent(t, events, "output")
+	if event.ThreadID != "thread-1" || event.SessionID != "session-b" {
+		t.Fatalf("output event lost its session id: %#v", event)
+	}
+
+	if err := manager.Stop("thread-1", "session-a"); err != nil {
+		t.Fatal(err)
+	}
+	waitForTerminalEvent(t, events, "exit")
+	if state := manager.Snapshot("thread-1", "session-b"); !state.Running || state.SessionID != "session-b" {
+		t.Fatalf("stopping a sibling stopped this terminal: %#v", state)
+	}
+
+	if err := manager.StopThread("thread-1"); err != nil {
+		t.Fatal(err)
+	}
+	waitForTerminalEvent(t, events, "exit")
+	if state := manager.Snapshot("thread-1", "session-b"); state.Running {
+		t.Fatal("StopThread left a terminal of the task running")
+	}
+}
+
+func TestManagerCapsTerminalsPerTask(t *testing.T) {
+	processes := make([]*fakeProcess, maxTerminalsPerThread+1)
+	for index := range processes {
+		processes[index] = newFakeProcess()
+	}
+	manager := newManager(context.Background(), &sequenceStarter{processes: processes}, nil)
+	t.Cleanup(manager.Shutdown)
+
+	dir := t.TempDir()
+	for index := 0; index < maxTerminalsPerThread; index++ {
+		if _, err := manager.Start(StartConfig{ThreadID: "thread-1", SessionID: fmt.Sprintf("session-%d", index), CWD: dir, Columns: 80, Rows: 24}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := manager.Start(StartConfig{ThreadID: "thread-1", SessionID: "one-too-many", CWD: dir, Columns: 80, Rows: 24}); err != ErrThreadLimit {
+		t.Fatalf("expected ErrThreadLimit, got %v", err)
+	}
+	if _, err := manager.Start(StartConfig{ThreadID: "thread-2", CWD: dir, Columns: 80, Rows: 24}); err != nil {
+		t.Fatalf("a second task was blocked by the first: %v", err)
 	}
 }
 

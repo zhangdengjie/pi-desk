@@ -122,14 +122,16 @@ func TestLiveRemoteRepositoryAndTerminalBackends(t *testing.T) {
 	if err := terminalManager.Bind("live-remote-terminal", runtime, task, rootPath); err != nil {
 		t.Fatal(err)
 	}
-	started, err := terminalManager.Start(terminalruntime.StartConfig{ThreadID: "live-remote-terminal", CWD: rootPath, Columns: 80, Rows: 24})
-	if err != nil || !started.Running {
+	// A named session, so the live run also proves the multi-terminal key reaches the backend.
+	const terminalSession = "live-session-a"
+	started, err := terminalManager.Start(terminalruntime.StartConfig{ThreadID: "live-remote-terminal", SessionID: terminalSession, CWD: rootPath, Columns: 80, Rows: 24})
+	if err != nil || !started.Running || started.SessionID != terminalSession {
 		t.Fatalf("terminal start=%#v err=%v", started, err)
 	}
-	if err := terminalManager.Resize("live-remote-terminal", 100, 30); err != nil {
+	if err := terminalManager.Resize("live-remote-terminal", terminalSession, 100, 30); err != nil {
 		t.Fatal(err)
 	}
-	if err := terminalManager.Write("live-remote-terminal", []byte("printf 'repository-terminal'; exit 6\n")); err != nil {
+	if err := terminalManager.Write("live-remote-terminal", terminalSession, []byte("printf 'repository-terminal'; exit 6\n")); err != nil {
 		t.Fatal(err)
 	}
 	var terminalOutput []byte
@@ -137,6 +139,9 @@ func TestLiveRemoteRepositoryAndTerminalBackends(t *testing.T) {
 	for terminalExit < 0 {
 		select {
 		case event := <-terminalEvents:
+			if event.SessionID != terminalSession {
+				t.Fatalf("terminal event lost its session id: %#v", event)
+			}
 			terminalOutput = append(terminalOutput, event.Data...)
 			if event.Type == "exit" {
 				terminalExit = event.ExitCode

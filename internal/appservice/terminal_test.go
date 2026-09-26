@@ -11,15 +11,21 @@ import (
 )
 
 type fakeTerminalRuntime struct {
-	startConfig terminalruntime.StartConfig
-	state       terminalruntime.Snapshot
-	writeID     string
-	writeData   []byte
-	resizeID    string
-	columns     int
-	rows        int
-	stopID      string
-	stopErr     error
+	startConfig   terminalruntime.StartConfig
+	state         terminalruntime.Snapshot
+	snapshotID    string
+	snapshotRun   int
+	writeID       string
+	writeSession  string
+	writeData     []byte
+	resizeID      string
+	resizeSession string
+	columns       int
+	rows          int
+	stopID        string
+	stopSession   string
+	threadStops   int
+	stopErr       error
 }
 
 func (runtime *fakeTerminalRuntime) Start(config terminalruntime.StartConfig) (terminalruntime.Snapshot, error) {
@@ -27,20 +33,29 @@ func (runtime *fakeTerminalRuntime) Start(config terminalruntime.StartConfig) (t
 	return runtime.state, nil
 }
 
-func (runtime *fakeTerminalRuntime) Snapshot(string) terminalruntime.Snapshot { return runtime.state }
+func (runtime *fakeTerminalRuntime) Snapshot(threadID, sessionID string) terminalruntime.Snapshot {
+	runtime.snapshotID, runtime.snapshotRun = threadID+"\x1f"+sessionID, runtime.snapshotRun+1
+	return runtime.state
+}
 
-func (runtime *fakeTerminalRuntime) Write(threadID string, data []byte) error {
-	runtime.writeID = threadID
+func (runtime *fakeTerminalRuntime) Write(threadID, sessionID string, data []byte) error {
+	runtime.writeID, runtime.writeSession = threadID, sessionID
 	runtime.writeData = append([]byte(nil), data...)
 	return nil
 }
 
-func (runtime *fakeTerminalRuntime) Resize(threadID string, columns, rows int) error {
-	runtime.resizeID, runtime.columns, runtime.rows = threadID, columns, rows
+func (runtime *fakeTerminalRuntime) Resize(threadID, sessionID string, columns, rows int) error {
+	runtime.resizeID, runtime.resizeSession, runtime.columns, runtime.rows = threadID, sessionID, columns, rows
 	return nil
 }
 
-func (runtime *fakeTerminalRuntime) Stop(threadID string) error {
+func (runtime *fakeTerminalRuntime) Stop(threadID, sessionID string) error {
+	runtime.stopID, runtime.stopSession = threadID, sessionID
+	return runtime.stopErr
+}
+
+func (runtime *fakeTerminalRuntime) StopThread(threadID string) error {
+	runtime.threadStops++
 	runtime.stopID = threadID
 	return runtime.stopErr
 }
@@ -76,6 +91,37 @@ func TestTerminalServiceRequiresTrustAndMapsRuntimeState(t *testing.T) {
 	denied := newTerminalService(terminalWorkspaceResolver{record: workspace.Record{Path: "D:\\repo", Trust: "deny"}}, runtime)
 	if _, err := denied.Start(domain.StartTerminalRequest{ThreadID: "thread-1", WorkspacePath: "D:\\repo", Columns: 80, Rows: 24}); err == nil {
 		t.Fatal("expected untrusted workspace to be rejected")
+	}
+}
+
+func TestTerminalServiceRoutesEveryCallToItsTerminalSession(t *testing.T) {
+	runtime := &fakeTerminalRuntime{state: terminalruntime.Snapshot{ThreadID: "thread-1", SessionID: "session-b", Running: true}}
+	service := newTerminalService(terminalWorkspaceResolver{record: workspace.Record{Path: "D:\\repo", Trust: "approve"}}, runtime)
+
+	if _, err := service.Start(domain.StartTerminalRequest{ThreadID: "thread-1", SessionID: " session-b ", WorkspacePath: "D:\\repo", Columns: 80, Rows: 24}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.startConfig.SessionID != "session-b" {
+		t.Fatalf("start lost the session id: %#v", runtime.startConfig)
+	}
+	state, err := service.Snapshot(domain.TerminalRequest{ThreadID: "thread-1", SessionID: "session-b"})
+	if err != nil || state.SessionID != "session-b" {
+		t.Fatalf("snapshot error=%v state=%#v", err, state)
+	}
+	if err := service.Write(domain.TerminalWriteRequest{ThreadID: "thread-1", SessionID: "session-b", Data: "ls"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Resize(domain.TerminalResizeRequest{ThreadID: "thread-1", SessionID: "session-b", Columns: 90, Rows: 30}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Stop(domain.TerminalRequest{ThreadID: "thread-1", SessionID: "session-b"}); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.writeSession != "session-b" || runtime.resizeSession != "session-b" || runtime.stopSession != "session-b" {
+		t.Fatalf("a call lost its session: write=%q resize=%q stop=%q", runtime.writeSession, runtime.resizeSession, runtime.stopSession)
+	}
+	if err := service.stopThreadIfRunning("thread-1"); err != nil || runtime.threadStops != 1 {
+		t.Fatalf("task teardown error=%v stops=%d", err, runtime.threadStops)
 	}
 }
 

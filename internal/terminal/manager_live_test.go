@@ -60,7 +60,7 @@ shellReady:
 				_, _ = output.Write(event.Data)
 			}
 			if bytes.Contains(output.Bytes(), []byte("pi-desk-terminal-smoke")) {
-				if err := manager.Stop("shell-smoke"); err != nil {
+				if err := manager.Stop("shell-smoke", ""); err != nil {
 					t.Fatal(err)
 				}
 				return
@@ -69,11 +69,11 @@ shellReady:
 				t.Fatalf("interactive shell exited before returning output: %s", event.Error)
 			}
 		case <-ticker.C:
-			if err := manager.Write("shell-smoke", []byte(command)); err != nil {
+			if err := manager.Write("shell-smoke", "", []byte(command)); err != nil {
 				t.Fatal(err)
 			}
 		case <-deadline:
-			_ = manager.Stop("shell-smoke")
+			_ = manager.Stop("shell-smoke", "")
 			t.Fatalf("interactive shell did not execute input; output: %q", output.String())
 		}
 	}
