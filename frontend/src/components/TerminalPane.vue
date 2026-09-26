@@ -15,6 +15,7 @@ const loading = ref(false);
 const running = ref(false);
 const shell = ref("");
 const error = ref("");
+const exitHint = ref("");
 const activeThread = computed(() => appStore.activeThread);
 const workspacePath = computed(() => activeThread.value?.workspacePath || "");
 const workspaceLabel = computed(() => {
@@ -34,6 +35,7 @@ let loadToken = 0;
 let lastSequence = 0;
 let terminalGeneration = 0;
 let hydrated = false;
+let pendingWrites = 0;
 let pendingEvents: TerminalEvent[] = [];
 let inputChain = Promise.resolve();
 let recoveringGap = false;
@@ -77,7 +79,25 @@ function decodeBase64(value?: string): Uint8Array {
 
 function writeOutput(value?: string) {
   const bytes = decodeBase64(value);
-  if (bytes.length) terminal?.write(bytes);
+  if (!bytes.length || !terminal) return;
+  pendingWrites++;
+  terminal.write(bytes, () => { pendingWrites = Math.max(0, pendingWrites - 1); });
+}
+
+// xterm parses write() payloads on an internal queue while reset() runs synchronously, so bytes a
+// previous task queued used to land after the reset and repaint themselves over the new screen.
+// Bounded because a disposed terminal never drains its own queue.
+async function drainOutput() {
+  for (let attempt = 0; pendingWrites > 0 && attempt < 50; attempt++) {
+    await new Promise<void>((resolve) => { setTimeout(resolve, 0); });
+  }
+}
+
+function exitLabel(event: TerminalEvent) {
+  if (event.error) return "";
+  return event.exitCode && event.exitCode !== 0
+    ? tr("terminal.exitedWithCode", { code: event.exitCode })
+    : tr("terminal.exited");
 }
 
 function applyEvent(event: TerminalEvent) {
@@ -102,6 +122,7 @@ function applyEvent(event: TerminalEvent) {
   }
   if (event.type === "exit") {
     running.value = false;
+    exitHint.value = exitLabel(event);
     if (event.error) error.value = event.error;
     appStore.handleTerminalEvent(event);
   }
@@ -122,9 +143,15 @@ async function hydrate(load: () => ReturnType<typeof terminalService.snapshot>) 
   pendingEvents = [];
   loading.value = true;
   error.value = "";
+  exitHint.value = "";
   try {
     const state = await load();
     if (token !== loadToken) return;
+    await drainOutput();
+    // Fit before replaying: the buffer was captured at the session's own geometry, and writing it
+    // into an unresized terminal makes xterm reflow cursor addressing into mojibake.
+    await nextTick();
+    fitAddon?.fit();
     terminal?.reset();
     lastSequence = state.sequence;
     terminalGeneration = state.generation || 0;
@@ -135,8 +162,6 @@ async function hydrate(load: () => ReturnType<typeof terminalService.snapshot>) 
     hydrated = true;
     for (const event of pendingEvents.sort((left, right) => left.sequence - right.sequence)) applyEvent(event);
     pendingEvents = [];
-    await nextTick();
-    fitAddon?.fit();
     if (running.value) terminal?.focus();
   } catch (cause) {
     if (token === loadToken) {
@@ -153,10 +178,12 @@ async function hydrate(load: () => ReturnType<typeof terminalService.snapshot>) 
 
 async function loadActiveTerminal() {
   const thread = activeThread.value;
+  await drainOutput();
   terminal?.reset();
   running.value = false;
   shell.value = "";
   error.value = "";
+  exitHint.value = "";
   lastSequence = 0;
   terminalGeneration = 0;
   if (!thread) {
@@ -325,7 +352,10 @@ onBeforeUnmount(() => {
       <div ref="host" class="terminal-host" />
       <div v-if="!activeThread" class="terminal-empty" :class="ui.empty"><span>{{ tr('terminal.selectTask') }}</span></div>
       <div v-else-if="!running && !loading && !error" class="terminal-empty" :class="ui.empty">
-        <button class="text-button" :class="ui.button" type="button" @click="void startTerminal()"><Play :size="14" />{{ tr('terminal.start') }}</button>
+        <div class="terminal-empty-body">
+          <button class="text-button" :class="ui.button" type="button" @click="void startTerminal()"><Play :size="14" />{{ tr('terminal.start') }}</button>
+          <span v-if="exitHint" class="terminal-exit-hint">{{ exitHint }}</span>
+        </div>
       </div>
     </div>
     <div v-if="error" class="terminal-error" role="alert">{{ error }}</div>

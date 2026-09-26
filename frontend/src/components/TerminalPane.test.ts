@@ -7,8 +7,8 @@ import TerminalPane from "./TerminalPane.vue";
 const terminalHarness = vi.hoisted(() => ({
   dataHandler: undefined as ((data: string) => void) | undefined,
   resizeHandler: undefined as ((size: { cols: number; rows: number }) => void) | undefined,
-  eventHandler: undefined as ((event: { threadId: string; type: "output" | "error" | "exit"; sequence: number; dataB64?: string }) => void) | undefined,
-  write: vi.fn(),
+  eventHandler: undefined as ((event: { threadId: string; type: "output" | "error" | "exit"; sequence: number; dataB64?: string; exitCode?: number; error?: string }) => void) | undefined,
+  write: vi.fn((_data: unknown, callback?: () => void) => { callback?.(); }),
   reset: vi.fn(),
   clear: vi.fn(),
   focus: vi.fn(),
@@ -129,7 +129,7 @@ describe("TerminalPane", () => {
     await wrapper.get('button[title="Start terminal"]').trigger("click");
     await flushPromises();
     expect(terminalMocks.start).toHaveBeenCalledWith("thread-1", "D:\\repo", 80, 24);
-    expect(terminalHarness.write).toHaveBeenCalledWith(expect.any(Uint8Array));
+    expect(terminalHarness.write).toHaveBeenCalledWith(expect.any(Uint8Array), expect.any(Function));
     expect(wrapper.text()).toContain("pwsh.exe");
 
     terminalHarness.dataHandler?.("dir\r");
@@ -150,6 +150,38 @@ describe("TerminalPane", () => {
     await wrapper.get('button[title="Stop terminal"]').trigger("click");
     await flushPromises();
     expect(terminalMocks.stop).toHaveBeenCalledWith("thread-1");
+  });
+
+  it("reports a nonzero shell exit as a stopped terminal instead of a stream failure", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-1", title: "Terminal", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-1",
+    });
+    const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
+    await flushPromises();
+    await wrapper.get('button[title="Start terminal"]').trigger("click");
+    await flushPromises();
+
+    terminalHarness.eventHandler?.({ threadId: "thread-1", type: "exit", sequence: 2, exitCode: 1 });
+    await flushPromises();
+
+    // `exit` inherits the status of the last command: the pane must fall back to the start
+    // overlay with the code as a note, not an error bar that hides the overlay behind it.
+    expect(wrapper.find(".terminal-error").exists()).toBe(false);
+    expect(wrapper.get(".terminal-exit-hint").text()).toContain("code 1");
+    expect(wrapper.find('button[title="Stop terminal"]').exists()).toBe(false);
+    expect(wrapper.find('button[title="Start terminal"]').exists()).toBe(true);
+
+    terminalHarness.eventHandler?.({ threadId: "thread-1", type: "exit", sequence: 3, exitCode: 2, error: "terminal read failed" });
+    await flushPromises();
+    expect(wrapper.get(".terminal-error").text()).toContain("terminal read failed");
+    expect(wrapper.find(".terminal-exit-hint").exists()).toBe(false);
   });
 
   it("clears remote readiness when Terminal input loses its generation", async () => {

@@ -433,6 +433,8 @@ const messages = {
       clear: "Clear terminal",
       selectTask: "Select a task to open its terminal.",
       streamFailed: "Terminal stream failed",
+      exited: "Terminal exited",
+      exitedWithCode: "Terminal exited with code {code}",
     },
     settings: {
       title: "Settings",
@@ -1448,6 +1450,8 @@ const messages = {
       clear: "清空终端",
       selectTask: "请选择任务以打开它的终端。",
       streamFailed: "终端数据流中断",
+      exited: "终端已退出",
+      exitedWithCode: "终端已退出（退出码 {code}）",
     },
     settings: {
       title: "设置",
