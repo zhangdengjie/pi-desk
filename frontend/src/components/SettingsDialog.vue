@@ -359,6 +359,17 @@ function sourceIcon(source: SlashCommand["source"]) {
                   @change="void updateRuntimeBehavior(() => appStore.setAutoRetry(($event.target as HTMLInputElement).checked))"
                 />
               </label>
+              <label class="model-field" :class="ui.field">
+                <span>{{ tr("settings.hiddenCommands") }}</span>
+                <input
+                  :class="ui.input"
+                  type="text"
+                  spellcheck="false"
+                  :value="appStore.hiddenSlashCommands"
+                  @change="appStore.setHiddenSlashCommands(($event.target as HTMLInputElement).value)"
+                />
+                <small>{{ tr("settings.hiddenCommandsHelp") }}</small>
+              </label>
             </div>
           </section>
           <section>

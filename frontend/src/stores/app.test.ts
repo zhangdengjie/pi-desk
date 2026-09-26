@@ -1903,6 +1903,29 @@ describe("app store", () => {
     ]);
   });
 
+  it("keeps hidden slash commands out of the composer list whatever the user typed", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "deny");
+    const threadID = store.activeThreadId;
+    const commands = { commands: [
+      { name: "btw", description: "Side question", source: "extension" },
+      { name: "review", description: "Review the diff", source: "template" },
+      { name: "compact", description: "Compact", source: "builtin" },
+    ] };
+
+    // The setting is free text: a leading slash and any casing must still match.
+    store.hiddenSlashCommands = "/BTW, compact";
+    mocks.getCommands.mockResolvedValueOnce(commands);
+    await store.refreshCommands(threadID);
+    expect(store.commandsByThread[threadID].map((command) => command.name)).toEqual(["review"]);
+
+    store.hiddenSlashCommands = "";
+    expect(store.hiddenSlashCommandNames).toEqual([]);
+    mocks.getCommands.mockResolvedValueOnce(commands);
+    await store.refreshCommands(threadID);
+    expect(store.commandsByThread[threadID]).toHaveLength(3);
+  });
+
   it("keeps running prompts in an editable local queue and steers on demand", async () => {
     const store = useAppStore();
     await store.createThread("D:\\work\\repo", "deny");

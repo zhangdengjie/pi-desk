@@ -531,6 +531,14 @@ function terminalGenerationThread(key: string) {
   return key.split("\u001f")[0];
 }
 
+function normalizeSlashCommandName(value: string) {
+  return value.trim().replace(/^\//, "").toLocaleLowerCase();
+}
+
+function normalizeSlashCommandList(value: string | undefined) {
+  return (value ?? "").split(/[,\n\s]+/).map(normalizeSlashCommandName).filter(Boolean);
+}
+
 function taskNotificationSummary(title: string): string {
   const normalized = title.replace(/\s+/g, " ").trim() || tr("notifications.untitledTask");
   const characters = Array.from(normalized);
@@ -1005,6 +1013,8 @@ export const useAppStore = defineStore("app", {
     sessionOperationByThread: {} as Record<string, string | undefined>,
     proxyEnabled: false,
     proxyURL: "socks5://127.0.0.1:10800",
+    /** Comma or newline separated slash-command names kept out of the composer's `/` list. */
+    hiddenSlashCommands: "",
     offlineMode: true,
     notificationsEnabled: true,
     updateChecksEnabled: true,
@@ -1078,6 +1088,9 @@ export const useAppStore = defineStore("app", {
     },
     activeCommands(state): SlashCommand[] {
       return state.commandsByThread[state.activeThreadId] ?? [];
+    },
+    hiddenSlashCommandNames(state): string[] {
+      return [...new Set(normalizeSlashCommandList(state.hiddenSlashCommands))];
     },
     activeQueue(state): QueuedMessages {
       return state.queueByThread[state.activeThreadId] ?? { steering: [], followUp: [] };
@@ -2063,6 +2076,14 @@ export const useAppStore = defineStore("app", {
     preferencesChanged() {
       this.settingsError = "";
       this.scheduleDesktopStateSave();
+    },
+    setHiddenSlashCommands(value: string) {
+      this.hiddenSlashCommands = value;
+      this.preferencesChanged();
+      // The composer caches the list per task, so re-pull it now instead of after a task switch.
+      for (const thread of this.threads) {
+        if (thread.started) void this.refreshCommands(thread.id).catch(() => undefined);
+      }
     },
     openSettings(section: SettingsSection = "general") {
       this.settingsSection = section;
@@ -3387,13 +3408,19 @@ export const useAppStore = defineStore("app", {
       const wasStarted = thread?.started;
       const response = await agentService.getCommands<CommandsResponse>(threadId);
       if (!isCurrentPiRequest(this.threads, thread, generation, wasStarted)) return;
-      this.commandsByThread[threadId] = (response.commands ?? []).map((command) => ({
-        name: command.name,
-        description: command.description,
-        source: command.source,
-        location: command.location ?? (command.sourceInfo?.scope === "temporary" ? "path" : command.sourceInfo?.scope),
-        path: command.path ?? command.sourceInfo?.path,
-      }));
+      // Pi sends every registered command regardless of what this client can actually run: an
+      // extension command that draws its own terminal UI has no flag to say so, and fails with a
+      // notify once invoked. The user names those once here and they stop being offered.
+      const hidden = new Set(this.hiddenSlashCommandNames);
+      this.commandsByThread[threadId] = (response.commands ?? [])
+        .filter((command) => !hidden.has(normalizeSlashCommandName(command.name)))
+        .map((command) => ({
+          name: command.name,
+          description: command.description,
+          source: command.source,
+          location: command.location ?? (command.sourceInfo?.scope === "temporary" ? "path" : command.sourceInfo?.scope),
+          path: command.path ?? command.sourceInfo?.path,
+        }));
     },
     applyCompactionEstimate(threadId: string, compaction: TimelineCompaction, invalidateStats = true) {
       const estimate = compaction.estimatedTokensAfter;
@@ -3995,6 +4022,7 @@ export const useAppStore = defineStore("app", {
         }
       } catch { /* Older or invalid panel state starts empty. */ }
       this.notificationsEnabled = desktop.preferences.notificationsEnabled ?? true;
+      this.hiddenSlashCommands = desktop.preferences.hiddenSlashCommands || "";
       this.updateChecksEnabled = desktop.preferences.updateChecksEnabled ?? true;
       this.closeToTray = true;
       this.workspaceApplication = desktop.preferences.workspaceApplication || "";
@@ -4270,6 +4298,7 @@ export const useAppStore = defineStore("app", {
           panelState: JSON.stringify(Object.fromEntries(Object.entries(this.inspectorByThread).map(([id, panel]) => [
             id, { ...panel, tabs: panel.tabs.filter(tab => !tab.browserTemporary).map(({ preview, diff, loading, closing, error, generation, ...tab }) => tab) },
           ]))),
+          hiddenSlashCommands: this.hiddenSlashCommands.trim(),
           notificationsEnabled: this.notificationsEnabled,
           updateChecksEnabled: this.updateChecksEnabled,
           closeToTray: true,

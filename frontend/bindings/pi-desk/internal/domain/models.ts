@@ -141,6 +141,7 @@ export interface DesktopPreferences {
     "inspectorWidth"?: number;
     "inspectorTab": string;
     "panelState"?: string;
+    "hiddenSlashCommands"?: string;
     "notificationsEnabled": boolean;
     "updateChecksEnabled": boolean;
     "closeToTray": boolean;

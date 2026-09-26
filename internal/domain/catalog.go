@@ -244,6 +244,7 @@ type DesktopPreferences struct {
 	InspectorWidth       int    `json:"inspectorWidth,omitempty"`
 	InspectorTab         string `json:"inspectorTab"`
 	PanelState           string `json:"panelState,omitempty"`
+	HiddenSlashCommands  string `json:"hiddenSlashCommands,omitempty"`
 	NotificationsEnabled bool   `json:"notificationsEnabled"`
 	UpdateChecksEnabled  bool   `json:"updateChecksEnabled"`
 	CloseToTray          bool   `json:"closeToTray"`
