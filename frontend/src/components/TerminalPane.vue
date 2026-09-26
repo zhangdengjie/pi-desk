@@ -53,6 +53,8 @@ let pendingRemoteStartThreadID = "";
 // were produced at.
 let ptyGeometry = { columns: 0, rows: 0 };
 let wantedGeometry = { columns: 0, rows: 0 };
+// True while the snapshot bytes are in xterm's parse queue. See the `onData` handler.
+let replaying = false;
 
 function terminalTheme() {
   const shellElement = document.querySelector<HTMLElement>(".app-shell");
@@ -90,11 +92,11 @@ function decodeBase64(value?: string): Uint8Array {
   return bytes;
 }
 
-function writeOutput(value?: string) {
+function writeOutput(value?: string, done?: () => void) {
   const bytes = decodeBase64(value);
-  if (!bytes.length || !terminal) return;
+  if (!bytes.length || !terminal) { done?.(); return; }
   pendingWrites++;
-  terminal.write(bytes, () => { pendingWrites = Math.max(0, pendingWrites - 1); });
+  terminal.write(bytes, () => { pendingWrites = Math.max(0, pendingWrites - 1); done?.(); });
 }
 
 // xterm parses write() payloads on an internal queue while reset() runs synchronously, so bytes a
@@ -174,7 +176,8 @@ async function hydrate(load: () => ReturnType<typeof terminalService.snapshot>) 
     appStore.setTerminalGeneration(state.threadId, props.sessionId, state.generation);
     running.value = state.running;
     shell.value = state.shell || "";
-    writeOutput(state.outputB64);
+    replaying = true;
+    writeOutput(state.outputB64, () => { replaying = false; });
     hydrated = true;
     for (const event of pendingEvents.sort((left, right) => left.sequence - right.sequence)) applyEvent(event);
     pendingEvents = [];
@@ -187,6 +190,7 @@ async function hydrate(load: () => ReturnType<typeof terminalService.snapshot>) 
     sendResize();
     if (running.value) terminal?.focus();
   } catch (cause) {
+    replaying = false;
     if (token === loadToken) {
       const threadID = activeThread.value?.id;
       error.value = threadID ? appStore.remoteFailureMessage(threadID, cause) : cause instanceof Error ? cause.message : String(cause);
@@ -304,6 +308,11 @@ onMounted(() => {
     return true;
   });
   disposeInput = terminal.onData((data) => {
+    // While the snapshot is being parsed, xterm answers every query those bytes contain - and the
+    // program was answered the first time round. A second copy goes into the pty's input queue, no
+    // reader takes it, and the tty echoes it back: `^[]11;rgb:fdfcfcfc/f9f9f9^[\` across the screen.
+    // Only the replay is muted; queries that arrive afterwards must still be answered.
+    if (replaying) return;
     const threadID = activeThread.value?.id;
     if (!threadID || !running.value) return;
     inputChain = inputChain.then(async () => {
@@ -360,6 +369,7 @@ watch(() => appStore.appearance, () => void applyTerminalTheme());
 
 onBeforeUnmount(() => {
   pendingRemoteStartThreadID = "";
+  replaying = false;
   loadToken++;
   if (resizeTimer) clearTimeout(resizeTimer);
   resizeObserver?.disconnect();

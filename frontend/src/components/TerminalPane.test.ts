@@ -160,6 +160,43 @@ describe("TerminalPane", () => {
     terminalHarness.fit.mockImplementation(() => undefined);
   });
 
+  it("does not answer the queries that the replayed bytes contain", async () => {
+    // The garbage in the screenshots is xterm's own reply to an OSC 11 / DSR query, echoed by the tty:
+    // the program asked once and was answered once, so replaying the buffer must not answer again.
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-1", title: "Replay", workspace: "repo", workspacePath: "/repo", trust: "approve",
+        status: "idle", started: true, generation: 0,
+      }],
+      activeThreadId: "thread-1",
+    });
+    let finishReplay: (() => void) | undefined;
+    terminalHarness.write.mockImplementation((_data: unknown, callback?: () => void) => { finishReplay = callback; });
+    terminalMocks.snapshot.mockResolvedValue({
+      threadId: "thread-1", running: true, sequence: 1, outputB64: btoa("\u001b]11;?\u001b\\"),
+    });
+
+    const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    terminalHarness.dataHandler?.("\u001b]11;rgb:fdfd/fdfd/fdfd\u001b\\");
+    await flushPromises();
+    expect(terminalMocks.write).not.toHaveBeenCalled();
+
+    // Once the replay is parsed, the pane answers queries again - a program that asks from now on has
+    // never been answered and would otherwise hang.
+    finishReplay?.();
+    terminalHarness.dataHandler?.("ls\r");
+    await flushPromises();
+    expect(terminalMocks.write).toHaveBeenCalledWith("thread-1", undefined, "ls\r");
+    wrapper.unmount();
+
+    terminalHarness.write.mockImplementation((_data: unknown, callback?: () => void) => { callback?.(); });
+  });
+
   it("starts a trusted task terminal and forwards input and sequenced output", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
