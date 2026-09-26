@@ -8145,6 +8145,19 @@ article.mcp-server-row {
   scrollbar-width: thin;
 }
 
+/* Upstream xterm.css paints the viewport `background-color: #000` (a macOS overlay-scrollbar
+ * workaround). The fitted grid is shorter than the host by up to one line, so that black leaked
+ * out as a solid strip under the last row — invisible in the dark theme, loud in the light one.
+ * The selector carries an extra class on purpose: it has to beat `.xterm .xterm-viewport` in
+ * xterm.css no matter which order the bundles land in. */
+.terminal-host .xterm .xterm-viewport {
+  background-color: var(--bg-panel);
+  /* A fixed-column grid must never scroll sideways; `overflow-y: scroll` alone promotes the
+   * implicit visible overflow-x to auto, and a few pixels of reflow error drew a full-width
+   * scrollbar thumb across the bottom of the pane. */
+  overflow-x: hidden;
+}
+
 .terminal-empty {
   position: absolute;
   inset: 0;
@@ -8157,6 +8170,19 @@ article.mcp-server-row {
 
 .terminal-empty .text-button {
   gap: 6px;
+}
+
+.terminal-empty-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-exit-hint {
+  color: var(--text-muted);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: calc(10.5px + var(--font-size-delta));
 }
 
 .terminal-error {
