@@ -253,8 +253,16 @@ onMounted(() => {
   });
   disposeResize = terminal.onResize(({ cols, rows }) => scheduleResize(cols, rows));
   disposeEvent = onTerminalEvent(handleEvent);
-  resizeObserver = new ResizeObserver(() => fitAddon?.fit());
+  resizeObserver = new ResizeObserver(() => {
+    // A pane drag resizes the host on every frame; fit() reads and writes layout and would
+    // otherwise run each of those frames. Stand down and let the watcher catch up on release.
+    if (appStore.paneResizing) return;
+    fitAddon?.fit();
+  });
   if (host.value) resizeObserver.observe(host.value);
+  watch(() => appStore.paneResizing, (resizing) => {
+    if (!resizing) fitAddon?.fit();
+  });
   fitAddon.fit();
   void loadActiveTerminal();
 });

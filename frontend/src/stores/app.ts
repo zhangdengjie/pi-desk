@@ -853,6 +853,8 @@ export const useAppStore = defineStore("app", {
     sidebarCollapsed: false,
     activePage: "task" as AppPage,
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+    /** See `setPaneResizing`: true only while a resizer is being dragged. */
+    paneResizing: false,
     inspectorOpen: true,
     inspectorWidth: DEFAULT_INSPECTOR_WIDTH,
     inspectorTab: "changes" as InspectorTab,
@@ -1261,6 +1263,20 @@ export const useAppStore = defineStore("app", {
     setSidebarWidth(width: number, persist = false) {
       this.sidebarWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, Math.round(width)));
       if (persist) this.scheduleDesktopStateSave();
+    },
+
+    /**
+     * True while a pane resizer is being dragged.
+     *
+     * Every observable box in the shell changes size on each frame of that drag, so every
+     * ResizeObserver callback fires too - and most of them write to the DOM (scrollTop, an
+     * xterm fit, a measurement). Each write is a forced synchronous layout that invalidates
+     * style for the whole tree, so a 6-second drag profiled as **Styles 80.3% (2672ms)**
+     * against Layout 3.8%, with 68 observer callbacks. Nothing they produce is needed until
+     * the drag ends, so they skip while this is set and run once when it clears.
+     */
+    setPaneResizing(value: boolean) {
+      this.paneResizing = value;
     },
     appearanceChanged() {
       this.scheduleDesktopStateSave();

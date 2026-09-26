@@ -1,8 +1,18 @@
 import { mount } from "@vue/test-utils";
-import { describe, expect, it } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import PaneResizer from "./PaneResizer.vue";
 
 describe("PaneResizer", () => {
+  // The resizer coalesces pointer samples into one width write per frame. Running the frame
+  // callback inline - and returning 0, which the component reads as "nothing pending" - keeps
+  // the emitted widths synchronous so each case can assert on them directly.
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { callback(0); return 0; });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+  });
+
   it("tracks pointer movement and commits the left pane width", async () => {
     const wrapper = mount(PaneResizer, {
       props: { side: "left", value: 280, min: 220, max: 420, label: "Resize sidebar" },

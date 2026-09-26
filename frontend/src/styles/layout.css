@@ -158,6 +158,12 @@
   font-size: calc(12.5px + var(--font-size-delta));
   text-align: left;
   cursor: pointer;
+  /* This list is not virtualized, and dragging either pane resizer rewrites the shell's grid
+     columns every frame, so without this every thread row re-lays-out on each sample - which
+     is why the drag gets heavy as the session count grows. `auto` skips the rows outside the
+     scrollport; the remembered size keeps the scrollbar honest for the rows it skipped. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 30px;
 }
 
 .primary-nav button:hover,
@@ -2147,6 +2153,14 @@
   display: block;
   min-height: 18px;
   padding: 0 10px;
+  /* A diff or a file preview is thousands of `.diff-line`s, each with a number span and one
+     span per syntax segment, and neither view is virtualized. Without this, dragging a pane
+     resizer re-lays-out every one of them on each frame - which is the difference between the
+     drag being smooth and it sitting at ~150ms per frame. `auto` skips the lines outside the
+     scrollport; an explicit intrinsic size keeps the scrollbar honest for the skipped ones
+     (line-height is 24px in .diff-section pre). */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 24px;
 }
 
 .tool-diff .diff-line.is-added {
@@ -4003,6 +4017,12 @@
   grid-template-columns: 48px max-content;
   align-items: stretch;
   white-space: pre;
+  /* The inspector's diff view renders every line, each with a number span and one span per
+     syntax segment, and it is not virtualized: a 2000-line diff is ~8000 elements that all
+     re-lay-out whenever a pane resizer rewrites the grid columns. `auto` skips the lines
+     outside the scrollport so a drag only pays for what is on screen. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 24px;
 }
 
 .diff-line-number {
@@ -4247,6 +4267,10 @@
   border-radius: 4px;
   color: var(--text-muted);
   text-align: left;
+  /* Same reason as .thread-row: an expanded tree is long, it is not virtualized, and every
+     pane drag re-lays it out. Rows outside the scrollport are skipped instead. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 29px;
 }
 
 .file-tree-children {
