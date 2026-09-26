@@ -108,6 +108,9 @@ function tabIcon(tab: PanelTab) {
 }
 function addTab(kind: "changes" | "browser" | "terminal") {
   addMenu.value?.hidePopover();
+  // The + menu is the "give me another one" entry point, so a terminal gets a fresh session here.
+  // The topbar shortcut keeps meaning "show me a terminal" and still reuses the one that is open.
+  if (kind === "terminal") { appStore.openTerminalTab(); return; }
   appStore.setInspectorTab(kind);
 }
 function toggleTree() {
