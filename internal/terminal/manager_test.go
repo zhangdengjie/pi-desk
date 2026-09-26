@@ -3,8 +3,12 @@ package terminal
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
+	"os/exec"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -32,6 +36,7 @@ type fakeProcess struct {
 	columns   int
 	rows      int
 	exitCode  int
+	waitErr   error
 }
 
 func newFakeProcess() *fakeProcess {
@@ -58,7 +63,7 @@ func (process *fakeProcess) Resize(columns, rows int) error {
 
 func (process *fakeProcess) Wait() error {
 	<-process.wait
-	return nil
+	return process.waitErr
 }
 
 func (process *fakeProcess) Stop() error {
@@ -83,6 +88,56 @@ func (process *fakeProcess) inputString() string {
 	process.mu.Lock()
 	defer process.mu.Unlock()
 	return process.input.String()
+}
+
+func TestManagerExitsWithShellStatusWithoutReportingAnError(t *testing.T) {
+	process := newFakeProcess()
+	process.exitCode = 1
+	// `exit` in zsh/bash inherits the status of the previous command, which exec reports as
+	// *exec.ExitError. The terminal stopped legitimately and must not surface as a stream failure.
+	process.waitErr = &exec.ExitError{}
+	starter := &fakeStarter{process: process}
+	events := make(chan Event, 4)
+	manager := newManager(context.Background(), starter, func(event Event) { events <- event })
+	t.Cleanup(manager.Shutdown)
+
+	if _, err := manager.Start(StartConfig{ThreadID: "thread-1", CWD: t.TempDir(), Columns: 80, Rows: 24}); err != nil {
+		t.Fatal(err)
+	}
+	close(process.wait)
+	exit := waitForTerminalEvent(t, events, "exit")
+	if exit.ExitCode != 1 || exit.Error != "" {
+		t.Fatalf("nonzero exit was reported as an error: %#v", exit)
+	}
+}
+
+func TestManagerReportsWaitFailureThatIsNotAnExitStatus(t *testing.T) {
+	process := newFakeProcess()
+	process.waitErr = errors.New("wait: no child process")
+	starter := &fakeStarter{process: process}
+	events := make(chan Event, 4)
+	manager := newManager(context.Background(), starter, func(event Event) { events <- event })
+	t.Cleanup(manager.Shutdown)
+
+	if _, err := manager.Start(StartConfig{ThreadID: "thread-1", CWD: t.TempDir(), Columns: 80, Rows: 24}); err != nil {
+		t.Fatal(err)
+	}
+	close(process.wait)
+	exit := waitForTerminalEvent(t, events, "exit")
+	if exit.Error != "wait: no child process" {
+		t.Fatalf("real wait failure was swallowed: %#v", exit)
+	}
+}
+
+func TestTerminalTeardownErrorsAreSuppressed(t *testing.T) {
+	for _, err := range []error{io.EOF, io.ErrClosedPipe, syscall.EIO, fmt.Errorf("read pseudo-terminal: %w", syscall.EIO)} {
+		if !isTerminalTeardown(err) {
+			t.Fatalf("%v must count as a teardown error", err)
+		}
+	}
+	if isTerminalTeardown(errors.New("terminal read failed")) {
+		t.Fatal("an unrelated read error was classified as teardown")
+	}
 }
 
 func TestManagerRunsOneTerminalPerThreadAndReplaysOutput(t *testing.T) {

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 
 	ptylib "github.com/aymanbagabas/go-pty"
 )
@@ -271,7 +273,7 @@ func (manager *Manager) read(running *session) {
 			manager.emit(Event{ThreadID: running.info.ThreadID, Type: "output", Generation: running.info.Generation, Sequence: sequence, Data: data})
 		}
 		if err != nil {
-			if !errors.Is(err, io.EOF) && !running.suppressReadError() {
+			if !isTerminalTeardown(err) && !running.suppressReadError() {
 				sequence := running.nextSequence()
 				manager.emit(Event{ThreadID: running.info.ThreadID, Type: "error", Generation: running.info.Generation, Sequence: sequence, Error: err.Error()})
 			}
@@ -293,10 +295,24 @@ func (manager *Manager) wait(running *session) {
 	}
 	manager.mu.Unlock()
 	event := Event{ThreadID: running.info.ThreadID, Type: "exit", Generation: running.info.Generation, Sequence: running.nextSequence(), ExitCode: running.process.ExitCode()}
-	if err != nil && !stopping {
+	// A shell inherits the status of its last command, so `exit` after a failed command reaches us
+	// as *exec.ExitError. That is a normal exit, not a stream failure; reporting it as an error
+	// used to paint a red bar over the stopped terminal and suppress its start affordance.
+	var exitErr *exec.ExitError
+	if err != nil && !stopping && !errors.As(err, &exitErr) {
 		event.Error = err.Error()
 	}
 	manager.emit(event)
+}
+
+// isTerminalTeardown reports the errors a pseudo-terminal answers with the moment its child is
+// reaped. On macOS the master fd turns EIO before wait() can mark the session finished, so the
+// race used to surface a spurious stream error on every clean exit.
+func isTerminalTeardown(err error) bool {
+	return errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrClosedPipe) ||
+		errors.Is(err, os.ErrClosed) ||
+		errors.Is(err, syscall.EIO)
 }
 
 func (manager *Manager) emit(event Event) {
