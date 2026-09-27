@@ -717,6 +717,115 @@ describe("InspectorPanel", () => {
     ]);
   });
 
+  it("offers an outline of the previewed document and jumps to the heading picked", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-outline", title: "Outline", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-outline",
+      ...panelState("thread-outline", { kind: "file", path: "notes/plan.md", markdownRendered: true, preview: {
+        path: "notes/plan.md", absolutePath: "D:\\repo\\notes\\plan.md", mediaType: "text/markdown",
+        content: "# Plan\n\n## Intro\n\n### Setup\n\n## 深度工作\n\nbody\n", size: 60, binary: false, truncated: false,
+      } }),
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    // The outline is opt-in: a 240px inspector cannot spare a permanent rail.
+    expect(wrapper.find(".markdown-outline").exists()).toBe(false);
+    await wrapper.get(".markdown-outline-toggle").trigger("click");
+    const items = wrapper.findAll(".markdown-outline-item");
+    expect(items.map((item) => item.text())).toEqual(["Plan", "Intro", "Setup", "深度工作"]);
+    // Indent tracks the document's own nesting, and only down to h4 - deeper levels are noise here.
+    expect(items.map((item) => item.classes().find((name) => name.startsWith("level-")))).toEqual(["level-0", "level-1", "level-2", "level-1"]);
+
+    await items[2].trigger("click");
+    expect(wrapper.findAll(".markdown-outline-item")[2].classes()).toContain("is-active");
+
+    await wrapper.get(".markdown-outline-toggle").trigger("click");
+    expect(wrapper.find(".markdown-outline").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("hides the outline control from a document with no headings", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-noheadings", title: "Plain", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-noheadings",
+      ...panelState("thread-noheadings", { kind: "file", path: "notes/plain.md", markdownRendered: true, preview: {
+        path: "notes/plain.md", absolutePath: "D:\\repo\\notes\\plain.md", mediaType: "text/markdown",
+        content: "just prose\n\n- and a list\n", size: 22, binary: false, truncated: false,
+      } }),
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    expect(wrapper.find(".markdown-outline-toggle").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("follows a Markdown link into a second document, then goes back to the first", async () => {
+    const scrolled: string[] = [];
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn(function (this: Element) { scrolled.push(this.id); }) as typeof original;
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-jump", title: "Jump", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-jump",
+      ...panelState("thread-jump", { kind: "file", path: "notes/a.md", markdownRendered: true, preview: {
+        path: "notes/a.md", absolutePath: "D:\\repo\\notes\\a.md", mediaType: "text/markdown",
+        content: "# A\n\n[goto b](b.md#target)\n", size: 24, binary: false, truncated: false,
+      } }),
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    repositoryMocks.previewFile.mockImplementation((_root: string, path: string) => Promise.resolve({
+      path, absolutePath: `D:\\repo\\${path}`, mediaType: "text/markdown",
+      content: path.endsWith("b.md") ? "# B\n\n## Target\n\nthe section\n" : "# other\n", size: 40, binary: false, truncated: false,
+    }));
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    await flushPromises();
+    expect(store.activePanel?.tabs).toHaveLength(1);
+
+    await wrapper.get(".markdown-body a").trigger("click");
+    await flushPromises();
+    // The link opened a second document in a second tab; the first one is still there.
+    expect(store.activeRepositoryFilePreviewPath).toBe("notes/b.md");
+    expect(store.activePanel?.tabs.map((tab) => tab.path)).toEqual(["notes/a.md", "notes/b.md"]);
+    expect(wrapper.text()).toContain("the section");
+    // `b.md#target` is only useful if the reader lands on the section, not on the top of the file.
+    // The jump is deliberately one macrotask late (it has to beat the per-tab scroll restore), so
+    // flushPromises alone cannot observe it.
+    await vi.waitFor(() => expect(scrolled.some((id) => id.endsWith("-target"))).toBe(true), { timeout: 2000 });
+
+    const back = wrapper.get(".markdown-link-back");
+    expect(back.text()).toContain("a.md");
+    await back.trigger("click");
+    expect(store.activeRepositoryFilePreviewPath).toBe("notes/a.md");
+    expect(store.activePanelTab?.returnToTabId).toBeUndefined();
+    // The trail is one-way: going back must leave a "back" button waiting on the source document.
+    // Both documents stay open: going back closes nothing, and the trail itself is cleared.
+    expect(store.activePanel?.tabs).toHaveLength(2);
+    expect(wrapper.find(".markdown-link-back").exists()).toBe(false);
+    wrapper.unmount();
+    HTMLElement.prototype.scrollIntoView = original;
+  });
+
   it("restores the file tree scroll offset when returning to the tab", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

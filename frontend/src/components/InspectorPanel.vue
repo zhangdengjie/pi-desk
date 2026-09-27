@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { Binary, ChevronRight, FileCode2, FileDiff, LoaderCircle, PanelRightClose, FolderOpen, Globe, Terminal, Plus, X, Maximize2, Minimize2, Search, ChevronDown, ExternalLink } from "lucide-vue-next";
+import { Binary, ChevronRight, FileCode2, FileDiff, LoaderCircle, PanelRightClose, FolderOpen, Globe, Terminal, Plus, X, Maximize2, Minimize2, Search, ChevronDown, ExternalLink, List, ArrowLeft } from "lucide-vue-next";
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { type PanelTab, useAppStore } from "../stores/app";
 import { buildRepositoryTree, type RepositoryTreeEntry } from "../utils/fileMentions";
@@ -149,6 +149,7 @@ function saveScroll(event: Event) {
   if (selector) {
     (tab.scroll ??= {})[selector] = [target.scrollLeft, target.scrollTop];
     appStore.scheduleDesktopStateSave();
+    if (selector === ".file-markdown-preview" && outlineOpen.value) markOutlineActive(target.scrollTop);
   }
 }
 async function restoreScroll() {
@@ -204,6 +205,102 @@ const spreadsheet = computed<SpreadsheetPreview | undefined>(() => {
 });
 const activeSheet = computed(() => spreadsheet.value?.sheets[activeSpreadsheetSheet.value] ?? spreadsheet.value?.sheets[0]);
 const spreadsheetColumns = computed(() => Array.from({ length: activeSheet.value?.columns ?? 0 }, (_, index) => index));
+
+/**
+ * The Markdown outline.
+ *
+ * It is read back out of the rendered DOM instead of being computed from the source: MarkdownBody
+ * already stamps every heading with an id (the same thing `#anchor` links need), so asking the pane
+ * for `h1[id]…h4[id]` is the only place where "what the reader can actually see" and "what the list
+ * offers" cannot drift - a source-level scan would happily list a `#` inside a fenced block, and
+ * would have to re-implement the renderer's slug rules to know what to scroll to.
+ */
+interface OutlineItem { id: string; level: number; title: string; offset: number }
+const markdownBody = ref<InstanceType<typeof MarkdownBody>>();
+const outlineOpen = ref(false);
+const outline = ref<OutlineItem[]>([]);
+const outlineActiveId = ref("");
+// ATX headings only, matching the ids MarkdownBody stamps. Deeper levels are noise in a 240-840px pane.
+const outlineSource = computed(() => (filePreview.value?.mediaType === "text/markdown" && markdownRendered.value ? filePreview.value?.content ?? "" : ""));
+const hasOutlineCandidates = computed(() => /^ {0,3}#{1,4}\s+\S/m.test(outlineSource.value));
+const returnToTab = computed(() => {
+  const id = currentTab.value?.returnToTabId;
+  return id ? appStore.activePanel?.tabs.find((tab) => tab.id === id) : undefined;
+});
+
+function markdownPreviewElement(): HTMLElement | undefined {
+  return panelElement.value?.querySelector<HTMLElement>(".file-markdown-preview") ?? undefined;
+}
+function collectOutline() {
+  const host = markdownPreviewElement();
+  if (!host) { outline.value = []; return; }
+  const headings = Array.from(host.querySelectorAll<HTMLElement>("h1[id], h2[id], h3[id], h4[id]"));
+  // A document that opens on `##` should not indent as if it had an `#` above it.
+  const minLevel = headings.reduce((min, element) => Math.min(min, Number(element.tagName.slice(1)) || 4), 4);
+  const scrollTop = host.scrollTop;
+  outline.value = headings.map((element) => ({
+    id: element.id,
+    level: (Number(element.tagName.slice(1)) || 4) - minLevel,
+    title: (element.textContent ?? "").trim() || element.id,
+    // offsetTop is measured against the nearest *positioned* ancestor, which is the host's parent,
+    // so it ignores the scroll. Rects move with the scroll; adding it back gives content coordinates.
+    offset: element.getBoundingClientRect().top - host.getBoundingClientRect().top + scrollTop,
+  }));
+  markOutlineActive(scrollTop);
+}
+function markOutlineActive(scrollTop: number) {
+  let current = "";
+  for (const item of outline.value) {
+    if (item.offset - 12 <= scrollTop) current = item.id;
+    else break;
+  }
+  outlineActiveId.value = current;
+}
+function toggleOutline() {
+  outlineOpen.value = !outlineOpen.value;
+  if (outlineOpen.value) collectOutline();
+}
+function jumpToOutlineItem(item: OutlineItem) {
+  const host = markdownPreviewElement();
+  if (!host) return;
+  // Element.scrollTo is what gets the smooth glide in WebKit; the fallback keeps the jump working
+  // where it is missing (jsdom has no scroll API on Element at all, so a test would otherwise throw).
+  if (typeof host.scrollTo === "function") host.scrollTo({ top: item.offset, behavior: "smooth" });
+  else host.scrollTop = item.offset;
+  outlineActiveId.value = item.id;
+}
+function backToLinkedFrom() {
+  const id = returnToTab.value?.id;
+  if (!id) return;
+  if (currentTab.value) currentTab.value.returnToTabId = undefined;
+  appStore.selectPanelTab(id);
+}
+watch(() => [currentTab.value?.id, filePreview.value?.content, markdownRendered.value], () => {
+  if (outlineOpen.value) void nextTick(collectOutline);
+});
+// The overlay belongs to one document: leaving the tab must not leave a list of the old headings up,
+// and switching to the source view must not leave the overlay floating over a code listing.
+watch(() => [currentTab.value?.id, markdownRendered.value], () => { outlineOpen.value = false; outline.value = []; });
+watch(
+  () => [currentTab.value?.id, currentTab.value?.loading, currentTab.value?.anchor, markdownRendered.value],
+  async () => {
+    const tab = currentTab.value, anchor = tab?.anchor;
+    if (!tab || !anchor || tab.loading) return;
+    // Consumed whether or not the heading is found: a stale anchor from a saved session must not
+    // re-scroll the pane every time this tab is opened again.
+    tab.anchor = undefined;
+    markdownRendered.value = true;
+    // A macrotask on purpose: the per-tab scroll restore is also a nextTick job and runs after this
+    // watcher, so jumping on the same tick would let "put the pane back where it was" win and the
+    // requested section would never show. An explicit heading request outranks a remembered offset.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (let attempt = 0; attempt < 8; attempt++) {
+      await nextTick();
+      if (markdownBody.value?.scrollToAnchor(anchor)) break;
+    }
+  },
+  { flush: "post" },
+);
 
 const sessionChanges = computed(() => appStore.activeSessionChanges);
 const sessionChangesError = computed(() => appStore.activeSessionChangesError);
@@ -512,14 +609,31 @@ watch(() => currentTab.value?.id, async () => {
             <button v-for="(sheet, index) in spreadsheet.sheets" :key="`${index}-${sheet.name}`" type="button" role="tab" :aria-selected="activeSpreadsheetSheet === index" :class="{ 'is-active': activeSpreadsheetSheet === index }" @click="activeSpreadsheetSheet = index">{{ sheet.name }}</button>
           </div>
         </div>
-        <template v-else-if="filePreview.mediaType === 'text/markdown'">
-          <div class="markdown-preview-toggle" role="group" :aria-label="tr('files.markdownMode')">
-            <button type="button" :class="{ 'is-active': markdownRendered }" @click="markdownRendered = true">{{ tr("files.rendered") }}</button>
-            <button type="button" :class="{ 'is-active': !markdownRendered }" @click="markdownRendered = false">{{ tr("files.source") }}</button>
+        <div v-else-if="filePreview.mediaType === 'text/markdown'" class="markdown-preview-host">
+          <div class="markdown-preview-bar">
+            <button v-if="returnToTab" class="markdown-link-back" type="button" :aria-label="tr('files.backToLinkedFrom', { title: returnToTab.title })" :title="tr('files.backToLinkedFrom', { title: returnToTab.title })" @click="backToLinkedFrom"><ArrowLeft :size="14" /><span>{{ returnToTab.title }}</span></button>
+            <button v-if="hasOutlineCandidates" class="markdown-outline-toggle" type="button" :class="{ 'is-active': outlineOpen }" :aria-expanded="outlineOpen" :aria-label="outlineOpen ? tr('files.outlineHide') : tr('files.outlineHelp')" :title="outlineOpen ? tr('files.outlineHide') : tr('files.outlineHelp')" @click="toggleOutline"><List :size="14" /><span>{{ tr("files.outline") }}</span></button>
+            <div class="markdown-preview-toggle" role="group" :aria-label="tr('files.markdownMode')">
+              <button type="button" :class="{ 'is-active': markdownRendered }" @click="markdownRendered = true">{{ tr("files.rendered") }}</button>
+              <button type="button" :class="{ 'is-active': !markdownRendered }" @click="markdownRendered = false">{{ tr("files.source") }}</button>
+            </div>
           </div>
-          <div v-if="markdownRendered" class="file-markdown-preview"><MarkdownBody :text="filePreview.content ?? ''" /></div>
+          <div v-if="markdownRendered" class="file-markdown-preview"><MarkdownBody ref="markdownBody" :text="filePreview.content ?? ''" :base-path="filePreview.path" /></div>
           <CodePreview v-else flush :path="filePreview.path" :content="filePreview.content ?? ''" :label="tr('files.previewContent')" />
-        </template>
+          <nav v-if="outlineOpen" class="markdown-outline" :aria-label="tr('files.outline')">
+            <p v-if="!outline.length" class="markdown-outline-empty">{{ tr("files.outlineEmpty") }}</p>
+            <button
+              v-for="item in outline"
+              :key="item.id"
+              type="button"
+              class="markdown-outline-item"
+              :class="[{ 'is-active': outlineActiveId === item.id }, `level-${Math.min(item.level, 4)}`]"
+              :aria-label="tr('files.outlineJump', { title: item.title })"
+              :title="item.title"
+              @click="jumpToOutlineItem(item)"
+            >{{ item.title }}</button>
+          </nav>
+        </div>
         <div v-else-if="filePreview.binary" class="repository-state" :class="ui.empty"><Binary :size="18" /><span>{{ tr("files.binaryPreview") }}</span></div>
         <CodePreview v-else flush :path="filePreview.path" :content="filePreview.content ?? ''" :label="tr('files.previewContent')" />
         <div v-if="filePreview.truncated" class="diff-notice">{{ tr("files.previewTruncated") }}</div>

@@ -3883,6 +3883,135 @@
   color: var(--text);
 }
 
+/* A Markdown document gets three vertical layers: a control bar, the scrolling prose, and the outline
+   floating over both. The host is the positioned box the outline measures itself against - if the
+   outline lived inside `.file-markdown-preview` it would scroll away with the text it describes. */
+.markdown-preview-host {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.markdown-preview-bar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The row it used to own keeps its look, but the bar now does the spacing and the border. */
+.markdown-preview-bar .markdown-preview-toggle {
+  padding: 0;
+  border-bottom: 0;
+}
+
+.markdown-outline-toggle,
+.markdown-link-back {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 22px;
+  align-items: center;
+  gap: 4px;
+  /* The outline/back group sits left, Preview|Source stays pinned right. */
+  margin-inline-end: auto;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: calc(10px + var(--font-size-delta));
+  cursor: pointer;
+}
+
+.markdown-outline-toggle:hover,
+.markdown-link-back:hover,
+.markdown-outline-toggle.is-active {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.markdown-outline-toggle span,
+.markdown-link-back span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown-link-back span {
+  max-width: 180px;
+}
+
+.markdown-outline {
+  position: absolute;
+  inset-block-start: 36px;
+  inset-inline-end: 10px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: min(280px, 72%);
+  max-height: 62%;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 28%);
+}
+
+.markdown-outline-item {
+  display: block;
+  width: 100%;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: calc(11px + var(--font-size-delta));
+  text-align: start;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.markdown-outline-item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.markdown-outline-item.is-active {
+  background: var(--bg-active);
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Indent lives here, not in the template: a utility padding would be an `!important` utility and beat
+   these rules (see the file-tree regression). */
+.markdown-outline-item.level-1 { padding-inline-start: 16px; }
+.markdown-outline-item.level-2 { padding-inline-start: 26px; }
+.markdown-outline-item.level-3 { padding-inline-start: 36px; }
+.markdown-outline-item.level-4 { padding-inline-start: 46px; }
+
+.markdown-outline-empty {
+  margin: 0;
+  padding: 4px 6px;
+  color: var(--text-muted);
+  font-size: calc(11px + var(--font-size-delta));
+}
+
+/* An anchor jump puts the heading flush against the pane's top edge, which reads as if the heading
+   belonged to the previous section. */
+.file-markdown-preview :is(h1, h2, h3, h4) {
+  scroll-margin-block-start: 10px;
+}
+
 :is(.file-preview-content, .diff-line-text) :is(.tok-keyword, .tok-deleted, .tok-invalid) {
   color: var(--preview-keyword);
 }
