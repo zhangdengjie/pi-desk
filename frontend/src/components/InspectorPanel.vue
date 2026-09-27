@@ -331,24 +331,20 @@ watch(() => [currentTab.value?.id, filePreview.value?.content], () => {
 // gets the width-appropriate default again, and the source view never shows a list of headings that
 // are not on screen.
 watch(() => [currentTab.value?.id, markdownRendered.value], () => { outlineChoice.value = undefined; });
-// The element carrying the width is recreated on every tab switch (`:key="currentTab.id"`), so the
-// observer has to be re-armed there rather than once on mount.
+// The host is a template ref, not a `querySelector`: the markdown document appears only after the
+// preview has loaded, and a watcher on store state cannot see the moment that element enters the DOM.
+// Vue hands it over exactly once on mount and again on every tab switch (the block is keyed), which is
+// also when the old measured width stops meaning anything.
+const markdownHost = ref<HTMLElement>();
 watch(
-  () => [currentTab.value?.id, currentTab.value?.kind, markdownRendered.value, appStore.inspectorOpen],
-  () => {
-    void nextTick(() => {
-      watchMarkdownPreviewWidth(
-        currentTab.value?.kind === "file" && markdownRendered.value
-          ? panelElement.value?.querySelector<HTMLElement>(".markdown-preview-host") ?? undefined
-          : undefined,
-      );
-      // The list is measured out of the rendered document, so it has to be taken again once this
-      // watcher's own first pass has put that document on screen: an outline that is open by default
-      // never flips `outlineOpen`, and would otherwise stay empty in a restored session.
-      if (outlineOpen.value) collectOutline();
-    });
+  markdownHost,
+  (host) => {
+    watchMarkdownPreviewWidth(host ?? undefined);
+    // An outline that is open by default never flips `outlineOpen`, so a restored session would
+    // otherwise keep the list it collected before the document was on screen - which is nothing.
+    if (host && outlineOpen.value) void nextTick(collectOutline);
   },
-  { flush: "post", immediate: true },
+  { flush: "post" },
 );
 watch(
   () => [currentTab.value?.id, currentTab.value?.loading, currentTab.value?.anchor, markdownRendered.value],
@@ -678,7 +674,7 @@ watch(() => currentTab.value?.id, async () => {
             <button v-for="(sheet, index) in spreadsheet.sheets" :key="`${index}-${sheet.name}`" type="button" role="tab" :aria-selected="activeSpreadsheetSheet === index" :class="{ 'is-active': activeSpreadsheetSheet === index }" @click="activeSpreadsheetSheet = index">{{ sheet.name }}</button>
           </div>
         </div>
-        <div v-else-if="filePreview.mediaType === 'text/markdown'" class="markdown-preview-host" :class="{ 'has-outline-rail': outlineOpen && outlineIsRail }">
+        <div v-else-if="filePreview.mediaType === 'text/markdown'" ref="markdownHost" class="markdown-preview-host" :class="{ 'has-outline-rail': outlineOpen && outlineIsRail }">
           <div class="markdown-preview-bar">
             <button v-if="returnToTab" class="markdown-link-back" type="button" :aria-label="tr('files.backToLinkedFrom', { title: returnToTab.title })" :title="tr('files.backToLinkedFrom', { title: returnToTab.title })" @click="backToLinkedFrom"><ArrowLeft :size="14" /><span>{{ returnToTab.title }}</span></button>
             <button v-if="hasOutlineCandidates" class="markdown-outline-toggle" type="button" :class="{ 'is-active': outlineOpen }" :aria-expanded="outlineOpen" :aria-label="outlineOpen ? tr('files.outlineHide') : tr('files.outlineHelp')" :title="outlineOpen ? tr('files.outlineHide') : tr('files.outlineHelp')" @click="toggleOutline"><List :size="14" /><span>{{ tr("files.outline") }}</span></button>

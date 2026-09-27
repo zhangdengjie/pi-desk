@@ -787,6 +787,34 @@ describe("InspectorPanel", () => {
     wrapper.unmount();
   });
 
+  it("stands the outline up as a rail when the document only arrives after the tab was opened", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.inspectorWidth = 700;
+    store.$patch({
+      threads: [{
+        id: "thread-late", title: "Late", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-late",
+      // The tab exists but its content does not: this is what a click in the file tree actually does,
+      // and the old watcher on store state never saw the markdown document enter the DOM afterwards.
+      ...panelState("thread-late", { kind: "file", path: "plan.md", markdownRendered: true }),
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    repositoryMocks.previewFile.mockResolvedValue({
+      path: "plan.md", absolutePath: "D:\\repo\\plan.md", mediaType: "text/markdown",
+      content: "# Plan\n\n## Intro\n\n### Setup\n\n## Ship\n", size: 40, binary: false, truncated: false,
+    });
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    expect(wrapper.get(".markdown-preview-host").classes()).toContain("has-outline-rail");
+    expect(wrapper.findAll(".markdown-outline-item").map((item) => item.text())).toEqual(["Plan", "Intro", "Setup", "Ship"]);
+    wrapper.unmount();
+  });
+
   it("dismisses the floating outline on an outside click or Escape, never on a click inside it", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
