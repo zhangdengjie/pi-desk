@@ -3878,6 +3878,17 @@
   border-left: 0;
 }
 
+/* One control made of two buttons: only the outer corners round, same as `.panel-open-split`. */
+.markdown-preview-toggle button:first-of-type {
+  border-start-start-radius: var(--radius-md);
+  border-end-start-radius: var(--radius-md);
+}
+
+.markdown-preview-toggle button:last-of-type {
+  border-start-end-radius: var(--radius-md);
+  border-end-end-radius: var(--radius-md);
+}
+
 .markdown-preview-toggle button.is-active {
   background: var(--bg-hover);
   color: var(--text);
@@ -3922,6 +3933,9 @@
   margin-inline-end: auto;
   padding: 3px 8px;
   border: 1px solid var(--border);
+  /* The bar's own radius: `--radius-md` is what every other button in this panel rounds to
+     (`.panel-menu button`, `.panel-open-split`), and a square chip in that row reads as a bug. */
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-muted);
   font-size: calc(10px + var(--font-size-delta));
@@ -3963,7 +3977,7 @@
   margin-inline-start: auto;
   padding: 0 6px;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-muted);
   font-size: calc(10px + var(--font-size-delta));
@@ -4024,7 +4038,8 @@
   overflow: auto;
   padding: 6px;
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  /* A menu-like surface, so it rounds like one (`.panel-tab` is 12px, `.panel-menu` 16px). */
+  border-radius: var(--radius-lg);
   background: var(--bg-raised);
   box-shadow: 0 8px 22px rgb(0 0 0 / 28%);
 }
@@ -4051,7 +4066,7 @@
   width: 100%;
   padding: 3px 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--text-secondary);
   font-size: calc(11px + var(--font-size-delta));
