@@ -752,6 +752,81 @@ describe("InspectorPanel", () => {
     wrapper.unmount();
   });
 
+  it("stands the outline up as a column when the pane is wide enough to spare one", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    // No ResizeObserver in this environment, so the panel width is what the decision reads.
+    store.inspectorWidth = 700;
+    store.$patch({
+      threads: [{
+        id: "thread-rail", title: "Rail", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-rail",
+      ...panelState("thread-rail", { kind: "file", path: "plan.md", markdownRendered: true, preview: {
+        path: "plan.md", absolutePath: "D:\\repo\\plan.md", mediaType: "text/markdown",
+        content: "# Plan\n\n## Intro\n\n### Setup\n\n## Ship\n", size: 40, binary: false, truncated: false,
+      } }),
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    // Wide means the reader wanted the map: it is there without asking.
+    expect(wrapper.get(".markdown-preview-host").classes()).toContain("has-outline-rail");
+    expect(wrapper.get(".markdown-outline").classes()).toContain("is-rail");
+    expect(wrapper.findAll(".markdown-outline-item")).toHaveLength(4);
+
+    // A column of the layout survives a click elsewhere; only the control decides.
+    document.dispatchEvent(new Event("pointerdown"));
+    await nextTick();
+    expect(wrapper.find(".markdown-outline").exists()).toBe(true);
+    await wrapper.get(".markdown-outline-toggle").trigger("click");
+    expect(wrapper.find(".markdown-outline").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("dismisses the floating outline on an outside click or Escape, never on a click inside it", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.inspectorWidth = 420;
+    store.$patch({
+      threads: [{
+        id: "thread-float", title: "Float", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-float",
+      ...panelState("thread-float", { kind: "file", path: "notes/float.md", markdownRendered: true, preview: {
+        path: "notes/float.md", absolutePath: "D:\\repo\\notes\\float.md", mediaType: "text/markdown",
+        content: "# Float\n\n## One\n\n## Two\n\n## Three\n", size: 40, binary: false, truncated: false,
+      } }),
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    // A narrow pane keeps the list out of the way until it is asked for.
+    expect(wrapper.find(".markdown-outline").exists()).toBe(false);
+    await wrapper.get(".markdown-outline-toggle").trigger("click");
+    expect(wrapper.findAll(".markdown-outline-item")).toHaveLength(4);
+
+    await wrapper.get(".markdown-outline-item").trigger("pointerdown");
+    await nextTick();
+    expect(wrapper.find(".markdown-outline").exists()).toBe(true);
+
+    document.dispatchEvent(new Event("pointerdown"));
+    await nextTick();
+    expect(wrapper.find(".markdown-outline").exists()).toBe(false);
+
+    await wrapper.get(".markdown-outline-toggle").trigger("click");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await nextTick();
+    expect(wrapper.find(".markdown-outline").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it("hides the outline control from a document with no headings", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

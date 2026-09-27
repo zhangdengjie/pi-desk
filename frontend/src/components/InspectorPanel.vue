@@ -9,6 +9,8 @@ import { highlightCodeLines, type CodeSegment } from "../utils/codeHighlight";
 import CodePreview from "./CodePreview.vue";
 import FileTreeNode from "./FileTreeNode.vue";
 import MarkdownBody from "./MarkdownBody.vue";
+import MarkdownOutlineNav from "./MarkdownOutlineNav.vue";
+import { collectMarkdownOutline, markdownHasHeadings, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import { tr } from "../i18n";
 
 const TerminalPane = defineAsyncComponent(() => import("./TerminalPane.vue"));
@@ -88,12 +90,20 @@ async function togglePanelMenu(name: "add" | "open") {
 
 const menuDismissible = "#panel-add-menu, #panel-add-button, #panel-open-menu, #panel-open-button";
 function onDocumentPointerDown(event: PointerEvent) {
-  if (!panelMenu.value) return;
-  if (event.target instanceof Element && event.target.closest(menuDismissible)) return;
-  panelMenu.value = undefined;
+  const target = event.target instanceof Element ? event.target : undefined;
+  if (target?.closest(menuDismissible)) return;
+  if (panelMenu.value) panelMenu.value = undefined;
+  // An outline that floats over the document is a box, so a click anywhere else means the reader is
+  // done with it. Two clicks do not dismiss: inside the box itself (that is a choice about the list),
+  // and anywhere at all once it is a rail - a column of the layout must not vanish because the reader
+  // clicked the text beside it. The toggle button needs no exemption: pointerdown runs before click,
+  // so closing here and reopening there still ends on "open" and the button stays a plain toggle.
+  if (outlineOpen.value && !outlineIsRail.value && !target?.closest(".markdown-outline")) outlineChoice.value = false;
 }
 function onDocumentKeydown(event: KeyboardEvent) {
-  if (event.key === "Escape" && panelMenu.value) panelMenu.value = undefined;
+  if (event.key !== "Escape") return;
+  if (panelMenu.value) panelMenu.value = undefined;
+  else if (outlineOpen.value && !outlineIsRail.value) outlineChoice.value = false;
 }
 let tabDrag: { id: string; x: number; y: number } | undefined;
 let draggedClick = false;
@@ -209,20 +219,14 @@ const spreadsheetColumns = computed(() => Array.from({ length: activeSheet.value
 /**
  * The Markdown outline.
  *
- * It is read back out of the rendered DOM instead of being computed from the source: MarkdownBody
- * already stamps every heading with an id (the same thing `#anchor` links need), so asking the pane
- * for `h1[id]…h4[id]` is the only place where "what the reader can actually see" and "what the list
- * offers" cannot drift - a source-level scan would happily list a `#` inside a fenced block, and
- * would have to re-implement the renderer's slug rules to know what to scroll to.
+ * `collectMarkdownOutline` reads the list back out of the rendered DOM, so it can only offer headings
+ * the reader can actually reach - see that file for why it is not a source scan.
  */
-interface OutlineItem { id: string; level: number; title: string; offset: number }
 const markdownBody = ref<InstanceType<typeof MarkdownBody>>();
-const outlineOpen = ref(false);
-const outline = ref<OutlineItem[]>([]);
+const outline = ref<MarkdownOutlineEntry[]>([]);
 const outlineActiveId = ref("");
-// ATX headings only, matching the ids MarkdownBody stamps. Deeper levels are noise in a 240-840px pane.
 const outlineSource = computed(() => (filePreview.value?.mediaType === "text/markdown" && markdownRendered.value ? filePreview.value?.content ?? "" : ""));
-const hasOutlineCandidates = computed(() => /^ {0,3}#{1,4}\s+\S/m.test(outlineSource.value));
+const hasOutlineCandidates = computed(() => markdownHasHeadings(outlineSource.value));
 const returnToTab = computed(() => {
   const id = currentTab.value?.returnToTabId;
   return id ? appStore.activePanel?.tabs.find((tab) => tab.id === id) : undefined;
@@ -231,22 +235,58 @@ const returnToTab = computed(() => {
 function markdownPreviewElement(): HTMLElement | undefined {
   return panelElement.value?.querySelector<HTMLElement>(".file-markdown-preview") ?? undefined;
 }
+
+/**
+ * Rail or floating box?
+ *
+ * Above 620px of panel width the outline becomes a column beside the document, so the reader can see
+ * where they are without a box covering the text they are reading. Below it a column would squeeze the
+ * prose into a gutter: measured in the running app, a two-column table inside a 360px reading column
+ * wrapped its prose to one glyph per line because WebKit refuses to break inside a word.
+ */
+const OUTLINE_RAIL_MIN_WIDTH = 620;
+const markdownPreviewWidth = ref(0);
+let outlineResize: ResizeObserver | undefined;
+let outlineResizeTarget: HTMLElement | undefined;
+function watchMarkdownPreviewWidth(host?: HTMLElement) {
+  if (host === outlineResizeTarget) return;
+  outlineResizeTarget = host;
+  if (!host) {
+    outlineResize?.disconnect();
+    outlineResize = undefined;
+    markdownPreviewWidth.value = 0;
+    return;
+  }
+  // An environment without ResizeObserver (the test runner) falls back to the panel width, which is
+  // the same column until the divider is dragged. Real shells get the measured value below.
+  if (typeof ResizeObserver !== "function") {
+    markdownPreviewWidth.value = appStore.inspectorWidth;
+    return;
+  }
+  outlineResize ??= new ResizeObserver((entries) => {
+    const width = entries[entries.length - 1]?.contentRect.width;
+    // An environment with no layout reports 0 for everything; collapsing to "narrow" there would be a
+    // wrong answer, not an absent one, so only a real measurement overrides the panel width.
+    if (typeof width === "number" && width > 0) markdownPreviewWidth.value = width;
+  });
+  outlineResize.observe(host);
+  markdownPreviewWidth.value = host.clientWidth || appStore.inspectorWidth;
+}
+const outlineIsRail = computed(() => markdownPreviewWidth.value >= OUTLINE_RAIL_MIN_WIDTH);
+
+/**
+ * Undecided means "follow the width": a wide pane shows the column on its own, a narrow one keeps the
+ * list out of the way until asked. Once the reader has clicked, their choice wins - including after a
+ * drag of the divider, which is when a silently re-appearing (or vanishing) outline would be worst.
+ */
+const outlineChoice = ref<boolean>();
+const outlineOpen = computed(() => hasOutlineCandidates.value && (outlineChoice.value ?? outlineIsRail.value));
+
 function collectOutline() {
   const host = markdownPreviewElement();
   if (!host) { outline.value = []; return; }
-  const headings = Array.from(host.querySelectorAll<HTMLElement>("h1[id], h2[id], h3[id], h4[id]"));
-  // A document that opens on `##` should not indent as if it had an `#` above it.
-  const minLevel = headings.reduce((min, element) => Math.min(min, Number(element.tagName.slice(1)) || 4), 4);
-  const scrollTop = host.scrollTop;
-  outline.value = headings.map((element) => ({
-    id: element.id,
-    level: (Number(element.tagName.slice(1)) || 4) - minLevel,
-    title: (element.textContent ?? "").trim() || element.id,
-    // offsetTop is measured against the nearest *positioned* ancestor, which is the host's parent,
-    // so it ignores the scroll. Rects move with the scroll; adding it back gives content coordinates.
-    offset: element.getBoundingClientRect().top - host.getBoundingClientRect().top + scrollTop,
-  }));
-  markOutlineActive(scrollTop);
+  outline.value = collectMarkdownOutline(host, host);
+  markOutlineActive(host.scrollTop);
 }
 function markOutlineActive(scrollTop: number) {
   let current = "";
@@ -256,11 +296,12 @@ function markOutlineActive(scrollTop: number) {
   }
   outlineActiveId.value = current;
 }
-function toggleOutline() {
-  outlineOpen.value = !outlineOpen.value;
-  if (outlineOpen.value) collectOutline();
-}
-function jumpToOutlineItem(item: OutlineItem) {
+watch(outlineOpen, (open) => {
+  if (open) void nextTick(collectOutline);
+  else { outline.value = []; outlineActiveId.value = ""; }
+}, { flush: "post", immediate: true });
+function toggleOutline() { outlineChoice.value = !outlineOpen.value; }
+function jumpToOutlineItem(item: MarkdownOutlineEntry) {
   const host = markdownPreviewElement();
   if (!host) return;
   // Element.scrollTo is what gets the smooth glide in WebKit; the fallback keeps the jump working
@@ -269,18 +310,46 @@ function jumpToOutlineItem(item: OutlineItem) {
   else host.scrollTop = item.offset;
   outlineActiveId.value = item.id;
 }
+function jumpToOutlineId(id: string) {
+  const item = outline.value.find((entry) => entry.id === id);
+  // A document that reloaded while the list was open can outlive the offsets measured for it; ask
+  // MarkdownBody to resolve the id itself instead of jumping nowhere.
+  if (item) jumpToOutlineItem(item);
+  else markdownBody.value?.scrollToAnchor(id);
+}
 function backToLinkedFrom() {
   const id = returnToTab.value?.id;
   if (!id) return;
   if (currentTab.value) currentTab.value.returnToTabId = undefined;
   appStore.selectPanelTab(id);
 }
-watch(() => [currentTab.value?.id, filePreview.value?.content, markdownRendered.value], () => {
+
+watch(() => [currentTab.value?.id, filePreview.value?.content], () => {
   if (outlineOpen.value) void nextTick(collectOutline);
 });
-// The overlay belongs to one document: leaving the tab must not leave a list of the old headings up,
-// and switching to the source view must not leave the overlay floating over a code listing.
-watch(() => [currentTab.value?.id, markdownRendered.value], () => { outlineOpen.value = false; outline.value = []; });
+// An outline belongs to one document: switching tabs drops the reader's choice so the new document
+// gets the width-appropriate default again, and the source view never shows a list of headings that
+// are not on screen.
+watch(() => [currentTab.value?.id, markdownRendered.value], () => { outlineChoice.value = undefined; });
+// The element carrying the width is recreated on every tab switch (`:key="currentTab.id"`), so the
+// observer has to be re-armed there rather than once on mount.
+watch(
+  () => [currentTab.value?.id, currentTab.value?.kind, markdownRendered.value, appStore.inspectorOpen],
+  () => {
+    void nextTick(() => {
+      watchMarkdownPreviewWidth(
+        currentTab.value?.kind === "file" && markdownRendered.value
+          ? panelElement.value?.querySelector<HTMLElement>(".markdown-preview-host") ?? undefined
+          : undefined,
+      );
+      // The list is measured out of the rendered document, so it has to be taken again once this
+      // watcher's own first pass has put that document on screen: an outline that is open by default
+      // never flips `outlineOpen`, and would otherwise stay empty in a restored session.
+      if (outlineOpen.value) collectOutline();
+    });
+  },
+  { flush: "post", immediate: true },
+);
 watch(
   () => [currentTab.value?.id, currentTab.value?.loading, currentTab.value?.anchor, markdownRendered.value],
   async () => {
@@ -609,7 +678,7 @@ watch(() => currentTab.value?.id, async () => {
             <button v-for="(sheet, index) in spreadsheet.sheets" :key="`${index}-${sheet.name}`" type="button" role="tab" :aria-selected="activeSpreadsheetSheet === index" :class="{ 'is-active': activeSpreadsheetSheet === index }" @click="activeSpreadsheetSheet = index">{{ sheet.name }}</button>
           </div>
         </div>
-        <div v-else-if="filePreview.mediaType === 'text/markdown'" class="markdown-preview-host">
+        <div v-else-if="filePreview.mediaType === 'text/markdown'" class="markdown-preview-host" :class="{ 'has-outline-rail': outlineOpen && outlineIsRail }">
           <div class="markdown-preview-bar">
             <button v-if="returnToTab" class="markdown-link-back" type="button" :aria-label="tr('files.backToLinkedFrom', { title: returnToTab.title })" :title="tr('files.backToLinkedFrom', { title: returnToTab.title })" @click="backToLinkedFrom"><ArrowLeft :size="14" /><span>{{ returnToTab.title }}</span></button>
             <button v-if="hasOutlineCandidates" class="markdown-outline-toggle" type="button" :class="{ 'is-active': outlineOpen }" :aria-expanded="outlineOpen" :aria-label="outlineOpen ? tr('files.outlineHide') : tr('files.outlineHelp')" :title="outlineOpen ? tr('files.outlineHide') : tr('files.outlineHelp')" @click="toggleOutline"><List :size="14" /><span>{{ tr("files.outline") }}</span></button>
@@ -620,19 +689,14 @@ watch(() => currentTab.value?.id, async () => {
           </div>
           <div v-if="markdownRendered" class="file-markdown-preview"><MarkdownBody ref="markdownBody" :text="filePreview.content ?? ''" :base-path="filePreview.path" /></div>
           <CodePreview v-else flush :path="filePreview.path" :content="filePreview.content ?? ''" :label="tr('files.previewContent')" />
-          <nav v-if="outlineOpen" class="markdown-outline" :aria-label="tr('files.outline')">
-            <p v-if="!outline.length" class="markdown-outline-empty">{{ tr("files.outlineEmpty") }}</p>
-            <button
-              v-for="item in outline"
-              :key="item.id"
-              type="button"
-              class="markdown-outline-item"
-              :class="[{ 'is-active': outlineActiveId === item.id }, `level-${Math.min(item.level, 4)}`]"
-              :aria-label="tr('files.outlineJump', { title: item.title })"
-              :title="item.title"
-              @click="jumpToOutlineItem(item)"
-            >{{ item.title }}</button>
-          </nav>
+          <MarkdownOutlineNav
+            v-if="outlineOpen"
+            class="markdown-outline"
+            :class="{ 'is-rail': outlineIsRail }"
+            :items="outline"
+            :active-id="outlineActiveId"
+            @jump="jumpToOutlineId"
+          />
         </div>
         <div v-else-if="filePreview.binary" class="repository-state" :class="ui.empty"><Binary :size="18" /><span>{{ tr("files.binaryPreview") }}</span></div>
         <CodePreview v-else flush :path="filePreview.path" :content="filePreview.content ?? ''" :label="tr('files.previewContent')" />

@@ -3947,6 +3947,70 @@
   max-width: 180px;
 }
 
+/* An answer owns the outline box drawn over it, so it is the reference for the absolute list - not
+   the transcript, which would park the box at the top of the whole conversation. */
+.message-content {
+  position: relative;
+}
+
+/* The header row is small and quiet; the control has to match it, not the inspector's toolbar. */
+.message-outline-toggle {
+  display: inline-flex;
+  min-height: 18px;
+  align-items: center;
+  gap: 4px;
+  /* The row's own items sit left; this one belongs at the far end. */
+  margin-inline-start: auto;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: calc(10px + var(--font-size-delta));
+  cursor: pointer;
+}
+
+.message-outline-toggle:hover,
+.message-outline-toggle.is-active {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* Hang under the header row (6px of header padding + its 16px line) and stay inside the bubble. */
+.message-content .markdown-outline {
+  inset-block-start: 24px;
+  inset-inline-end: 0;
+  width: min(260px, 76%);
+  max-height: 46vh;
+}
+
+/* Rail mode: a persistent column beside the document, so the reader can see where they are without a
+   box covering the text. It only turns on above 620px of panel width because the rail itself takes up
+   to 220px and the prose half still has to hold a two-column table - measured in the running app, a
+   360px reading column wrapped labels to one glyph per line (WebKit will not break inside a word).
+   The document keeps owning its own scroll: the second scroller here is the outline, a nav.
+   `contain: inline-size` is what makes that safe - without it the column tracks the content's min
+   content width, so a long document title grew the rail and starved the prose (the same trap that
+   took the chat rail down at layout.css:3707). */
+.markdown-preview-host.has-outline-rail {
+  contain: inline-size;
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.markdown-preview-host.has-outline-rail .markdown-preview-bar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.markdown-preview-host.has-outline-rail > :not(.markdown-preview-bar):not(.markdown-outline) {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 0;
+}
+
 .markdown-outline {
   position: absolute;
   inset-block-start: 36px;
@@ -3963,6 +4027,23 @@
   border-radius: 6px;
   background: var(--bg-raised);
   box-shadow: 0 8px 22px rgb(0 0 0 / 28%);
+}
+
+.markdown-outline.is-rail {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  grid-column: 1;
+  grid-row: 2;
+  width: auto;
+  max-height: none;
+  height: 100%;
+  border: 0;
+  border-inline-end: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--bg-code);
+  padding: 8px 6px;
 }
 
 .markdown-outline-item {
