@@ -77,6 +77,11 @@ function stop() {
 function start(event: PointerEvent) {
   if (event.button !== 0) return;
   event.preventDefault();
+  // A selection left over from the transcript or the terminal is what WebKit would offer to a
+  // native NSDragging session (the frozen-pane bug this component guards against), and while it
+  // lives the engine re-hits and repaints it on every frame of the drag. The gesture starts
+  // clean: kill it here; `.is-resizing-pane` keeps new ones from starting until release.
+  window.getSelection()?.removeAllRanges();
   startX = event.clientX;
   startWidth = props.value;
   currentWidth = props.value;
