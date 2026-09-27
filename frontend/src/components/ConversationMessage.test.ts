@@ -1,8 +1,9 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia, type Pinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
 import ConversationMessage from "./ConversationMessage.vue";
-import { useAppStore } from "../stores/app";
+import { type TimelineMessage, useAppStore } from "../stores/app";
 import { groupConversationTurns } from "../utils/conversationGrouping";
 import { forgetPanelOpenStates } from "../utils/detailsOpenState";
 
@@ -32,6 +33,111 @@ describe("ConversationMessage", () => {
     await fork.trigger("click");
     expect(store.forkFromMessage).toHaveBeenCalledWith("photo");
     wrapper.unmount();
+  });
+
+  it("offers an outline for a long finished answer and jumps to the heading picked", async () => {
+    const wrapper = mount(ConversationMessage, { props: { message: {
+      id: "answer-outline", role: "assistant", text: "# A\n\n## B\n\n## C\n\n### D\n", thinking: "",
+      timestamp: "10:00", streaming: false, tools: [],
+    } } });
+    await flushPromises();
+
+    expect(wrapper.find(".message-outline").exists()).toBe(false);
+    await wrapper.get(".message-outline-toggle").trigger("click");
+    // The list comes out of what MarkdownBody actually rendered, ids and all, so a row in the outline
+    // cannot name a heading the answer does not have.
+    expect(wrapper.findAll(".markdown-outline-item").map((item) => item.text())).toEqual(["A", "B", "C", "D"]);
+    expect(wrapper.findAll(".markdown-outline-item")[3].classes()).toContain("level-2");
+
+    await wrapper.findAll(".markdown-outline-item")[2].trigger("click");
+    // One click, one jump, then out of the way: it covers the answer it belongs to.
+    expect(wrapper.find(".message-outline").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("keeps the outline control off short, live and non-answer messages", async () => {
+    const wrapper = mount(ConversationMessage, { props: { message: {
+      id: "answer-hidden", role: "assistant", text: "# A\n\n## B\n", thinking: "",
+      timestamp: "10:00", streaming: false, tools: [],
+    } } });
+    await flushPromises();
+    // Two headings is a document with two parts, not a map worth a control.
+    expect(wrapper.find(".message-outline-toggle").exists()).toBe(false);
+
+    await wrapper.setProps({ message: { id: "answer-live", role: "assistant", text: "# A\n\n## B\n\n## C\n", thinking: "", timestamp: "10:00", streaming: true, tools: [] } });
+    // A streaming answer would have to rebuild the list every chunk.
+    expect(wrapper.find(".message-outline-toggle").exists()).toBe(false);
+
+    await wrapper.setProps({ message: { id: "asked", role: "user", text: "# A\n\n## B\n\n## C\n", thinking: "", timestamp: "10:00", streaming: false, tools: [] } });
+    expect(wrapper.find(".message-outline-toggle").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("closes a chat answer's outline on a click anywhere else", async () => {
+    const wrapper = mount(ConversationMessage, { props: { message: {
+      id: "answer-dismiss", role: "assistant", text: "# A\n\n## B\n\n## C\n", thinking: "",
+      timestamp: "10:00", streaming: false, tools: [],
+    } }, attachTo: document.body });
+    await flushPromises();
+    await wrapper.get(".message-outline-toggle").trigger("click");
+    expect(wrapper.find(".message-outline").exists()).toBe(true);
+
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await nextTick();
+    expect(wrapper.find(".message-outline").exists()).toBe(false);
+    // The listener is added only while the box is open, and a transcript is hundreds of these rows.
+    wrapper.unmount();
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await nextTick();
+    expect(wrapper.find(".message-outline").exists()).toBe(false);
+  });
+
+  it("keeps the outline control away from a short, live or user message", async () => {
+    const mountWith = async (message: TimelineMessage) => {
+      const wrapper = mount(ConversationMessage, { props: { message } });
+      await flushPromises();
+      const has = wrapper.find(".message-outline-toggle").exists();
+      wrapper.unmount();
+      return has;
+    };
+    const base = { thinking: "", timestamp: "10:00", streaming: false, tools: [] };
+
+    // Two headings is a paragraph split in two, not a document worth a map.
+    expect(await mountWith({ id: "short", role: "assistant", text: "# A\n\n## B\n", ...base })).toBe(false);
+    // A streaming answer would have the list rebuilt under the reader's cursor every chunk.
+    expect(await mountWith({ id: "live", role: "assistant", text: "# A\n\n## B\n\n## C\n", ...base, streaming: true })).toBe(false);
+    // What the reader typed is not an answer to navigate.
+    expect(await mountWith({ id: "asked", role: "user", text: "# A\n\n## B\n\n## C\n", ...base })).toBe(false);
+    expect(await mountWith({ id: "long", role: "assistant", text: "# A\n\n## B\n\n## C\n", ...base })).toBe(true);
+  });
+
+  it("closes a chat answer's outline when the click lands somewhere else", async () => {
+    const wrapper = mount(ConversationMessage, {
+      props: { message: {
+        id: "dismiss", role: "assistant", text: "# A\n\n## B\n\n## C\n", thinking: "",
+        timestamp: "10:00", streaming: false, tools: [],
+      } },
+      attachTo: document.body,
+    });
+    await flushPromises();
+    await wrapper.get(".message-outline-toggle").trigger("click");
+    expect(wrapper.find(".markdown-outline").exists()).toBe(true);
+
+    // The listener only exists while the box is open: a transcript is hundreds of these rows, and a
+    // document listener on every one of them would be paid on every pointer down.
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await nextTick();
+    expect(wrapper.find(".markdown-outline").exists()).toBe(false);
+
+    await wrapper.get(".message-outline-toggle").trigger("click");
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await nextTick();
+    expect(wrapper.find(".markdown-outline").exists()).toBe(false);
+
+    wrapper.unmount();
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await nextTick();
+    expect(wrapper.find(".markdown-outline").exists()).toBe(false);
   });
 
   it("shows time above the response and collapses completed execution", async () => {

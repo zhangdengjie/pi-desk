@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
 import { ui } from "../ui/classes";
-import { ArrowUp, BrainCircuit, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Copy, FileDiff, GitFork, LoaderCircle, Pencil, RefreshCw, Save, Sparkles, Trash2, TriangleAlert, X } from "lucide-vue-next";
+import { ArrowUp, BrainCircuit, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Copy, FileDiff, GitFork, List, LoaderCircle, Pencil, RefreshCw, Save, Sparkles, Trash2, TriangleAlert, X } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { ExecutionStep, StreamPanelMode, TimelineMessage, ToolDiff } from "../stores/app";
 import { useAppStore } from "../stores/app";
@@ -15,6 +15,8 @@ import { attachInnerTail, type InnerTail } from "../utils/innerTail";
 import { humanizeRunError } from "../utils/runErrors";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 import MarkdownBody from "./MarkdownBody.vue";
+import MarkdownOutlineNav from "./MarkdownOutlineNav.vue";
+import { markdownHasHeadings, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import ToolCallPanel from "./ToolCallPanel.vue";
 import { tr } from "../i18n";
 
@@ -364,7 +366,61 @@ onBeforeUnmount(() => {
   reasoningTail?.destroy();
   reasoningTail = undefined;
   reasoningTailEl = undefined;
+  document.removeEventListener("pointerdown", onAnswerOutlinePointerDown, true);
+  document.removeEventListener("keydown", onAnswerOutlineKeydown);
 });
+
+/**
+ * An outline for one long answer.
+ *
+ * Three headings is the floor: below that the list is shorter than the scroll it would save, and every
+ * answer in the transcript would grow a control nobody asked for. The list itself is taken from
+ * MarkdownBody, never re-derived here, so it cannot offer a heading the document does not have - and
+ * jumping goes through the same component that owns the ids, which are per-instance.
+ *
+ * A streaming answer is excluded on purpose: the list would have to be rebuilt as headings arrive.
+ */
+const ANSWER_OUTLINE_MIN_HEADINGS = 3;
+const answerBody = ref<InstanceType<typeof MarkdownBody>>();
+const answerOutline = ref<MarkdownOutlineEntry[]>([]);
+const answerOutlineOpen = ref(false);
+const answerOutlineAvailable = computed(() => (
+  props.message.role === "assistant"
+  && !props.message.streaming
+  && markdownHasHeadings(visibleMessageText.value, ANSWER_OUTLINE_MIN_HEADINGS)
+));
+function openAnswerOutline() {
+  answerOutline.value = answerBody.value?.outline() ?? [];
+  answerOutlineOpen.value = true;
+}
+function closeAnswerOutline() { answerOutlineOpen.value = false; }
+function jumpAnswerOutline(id: string) {
+  answerBody.value?.scrollToAnchor(id);
+  closeAnswerOutline();
+}
+function onAnswerOutlinePointerDown(event: PointerEvent) {
+  // The toggle is excluded so its own click still gets to run: pointerdown fires first, and closing
+  // here would make the button look dead.
+  if (event.target instanceof Element && event.target.closest(".message-outline-toggle, .markdown-outline")) return;
+  closeAnswerOutline();
+}
+function onAnswerOutlineKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape") closeAnswerOutline();
+}
+// The listener exists only while the box is open: a transcript is hundreds of these rows, and a
+// document listener on every one of them would be paid on every pointer down.
+watch(answerOutlineOpen, (open) => {
+  if (open) {
+    document.addEventListener("pointerdown", onAnswerOutlinePointerDown, true);
+    document.addEventListener("keydown", onAnswerOutlineKeydown);
+    return;
+  }
+  document.removeEventListener("pointerdown", onAnswerOutlinePointerDown, true);
+  document.removeEventListener("keydown", onAnswerOutlineKeydown);
+});
+// A rewrite of the answer (an edit, a redo) drops the box: its entries point at headings that are gone.
+watch(visibleMessageText, () => { if (answerOutlineOpen.value) closeAnswerOutline(); });
+watch(() => props.message.id, () => closeAnswerOutline());
 </script>
 
 <template>
@@ -400,6 +456,16 @@ onBeforeUnmount(() => {
         <span class="message-sender">Pi</span>
         <time>{{ message.timestamp }}</time>
         <span v-if="durationLabel" class="message-duration">{{ durationLabel }}</span>
+        <button
+          v-if="answerOutlineAvailable"
+          class="message-outline-toggle"
+          type="button"
+          :class="{ 'is-active': answerOutlineOpen }"
+          :aria-expanded="answerOutlineOpen"
+          :aria-label="answerOutlineOpen ? tr('files.outlineHide') : tr('files.outlineHelp')"
+          :title="answerOutlineOpen ? tr('files.outlineHide') : tr('files.outlineHelp')"
+          @click="answerOutlineOpen ? closeAnswerOutline() : openAnswerOutline()"
+        ><List :size="12" aria-hidden="true" />{{ tr("files.outline") }}</button>
       </div>
       <details v-if="executionSteps.length" class="execution-process" :open="executionOpen" @toggle="syncExecutionOpen">
         <summary>
@@ -459,7 +525,13 @@ onBeforeUnmount(() => {
         <p v-if="editError" class="error-text" role="alert">{{ tr("conversation.editFailed") }} {{ editError === tr("conversation.editFailed") ? '' : editError }}</p>
       </div>
       <p v-else-if="message.text && message.role === 'system'" :class="{ 'error-text': message.error }">{{ message.text }}</p>
-      <MarkdownBody v-else-if="visibleMessageText" :text="visibleMessageText" :streaming="message.streaming" :search-query="searchQuery" :search-active="searchActive" />
+      <MarkdownBody v-else-if="visibleMessageText" ref="answerBody" :text="visibleMessageText" :streaming="message.streaming" :search-query="searchQuery" :search-active="searchActive" />
+      <MarkdownOutlineNav
+        v-if="answerOutlineOpen"
+        class="message-outline"
+        :items="answerOutline"
+        @jump="jumpAnswerOutline"
+      />
       <section v-if="changedFiles.length" class="mt-4 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-card)]" :aria-label="tr('conversation.filesChanged')">
         <header class="flex min-h-14 items-center gap-3 border-b border-[var(--border)] px-3 py-2">
           <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-[var(--bg-app)] text-[var(--text-secondary)]" aria-hidden="true">
