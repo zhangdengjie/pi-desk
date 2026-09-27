@@ -335,13 +335,13 @@ function onKeydown(event: KeyboardEvent) {
       return;
     }
   }
-  if (event.key === "Enter" && !event.shiftKey) {
-    // Enter that confirms an IME composition is not Enter-presses-send: the draft is still holding
-    // pinyin when this fires, so let the key reach the field.
+  if (event.key === "Enter" && event.shiftKey) {
+    // Shift+Enter sends; plain Enter is left alone so the textarea can insert its own "\n". An Enter
+    // that confirms an IME composition is not a send: the draft is still holding pinyin when this
+    // fires, so let the key reach the field.
     if (event.isComposing || event.keyCode === 229) return;
     event.preventDefault();
     event.stopPropagation();
-    if (!event.repeat && markdownEditor.value?.handleEnter(event)) return;
     if (!event.repeat) submit();
   }
 }

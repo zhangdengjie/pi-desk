@@ -18,8 +18,8 @@ let lastValue = props.modelValue;
  * string sent to Pi — so paying for a document model meant re-declaring every character-level
  * behaviour the browser already owns: Enter, caret affinity at a line edge, IME, undo, and the
  * serialize/parse round trip that drops leading blank lines and trailing spaces. A textarea settles
- * all of them at once: one Shift+Enter is one "\n" and one line box, and a typed fence stays the
- * literal characters the reader meant to send.
+ * all of them at once: one Enter is one "\n" and one line box (Shift+Enter belongs to the host and
+ * sends), and a typed fence stays the literal characters the reader meant to send.
  *
  * The field is deliberately uncontrolled (`:value` is never bound): Vue re-assigning `value` on
  * every keystroke is how caret-jump bugs get born. `onMounted` seeds it and the watcher below
@@ -86,8 +86,8 @@ function replaceMarkdown(value: string) {
   else write(value, value.length);
 }
 
-// Plain Enter belongs to the host: ComposerBar submits on it. There is no fence to convert and no
-// list to continue, so this never claims the key.
+// Plain Enter is the field's own newline, and Shift+Enter is consumed by ComposerBar before it
+// reaches us. There is no fence to convert and no list to continue, so this never claims the key.
 function handleEnter(): boolean {
   return false;
 }
