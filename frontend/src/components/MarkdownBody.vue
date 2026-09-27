@@ -6,6 +6,7 @@ import { useAppStore } from "../stores/app";
 import { useRevealedText } from "../composables/useRevealedText";
 import { resolveWorkspaceFileLink, type WorkspaceFileLink } from "../utils/fileLinks";
 import { normalizeMarkdownBreakTags, slugifyHeading, uniqueHeadingSlug } from "../utils/markdown";
+import { collectMarkdownOutline, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import FileLinkContextMenu from "./FileLinkContextMenu.vue";
 
 const props = defineProps<{
@@ -210,6 +211,20 @@ function findAnchorTarget(anchor: string): HTMLElement | undefined {
     ?? undefined;
 }
 
+/**
+ * The headings of *this* rendered document, for a host that wants to list them.
+ *
+ * Only the component can answer reliably: the ids carry its own instance prefix, so an outline built
+ * anywhere else would either miss the prefix or name a heading belonging to a different document that
+ * happens to share the slug.
+ */
+function outline(): MarkdownOutlineEntry[] {
+  const root = bodyElement.value;
+  // No scroller passed: a host that scrolls the heading itself (the transcript) does not need an
+  // offset, and the pane that does pass its own element to `collectMarkdownOutline` directly.
+  return root ? collectMarkdownOutline(root) : [];
+}
+
 function scrollToAnchor(anchor: string): boolean {
   const target = findAnchorTarget(anchor);
   if (!target) return false;
@@ -220,7 +235,7 @@ function scrollToAnchor(anchor: string): boolean {
 }
 // The preview panel needs this because a cross-file link opens a tab whose MarkdownBody has not
 // rendered yet; the ids are per-instance, so only the component itself can resolve one.
-defineExpose({ scrollToAnchor });
+defineExpose({ scrollToAnchor, outline });
 
 function fileLinkFromEvent(event: MouseEvent): WorkspaceFileLink | undefined {
   const target = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a.markdown-file-link") : null;

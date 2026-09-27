@@ -212,6 +212,18 @@ describe("MarkdownBody", () => {
     wrapper.unmount();
   });
 
+  it("hands a host the headings it rendered, with the levels rebased", () => {
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn() as typeof original;
+    const { wrapper } = mountMarkdown("## Deep Work\n\n### Today\n\n## Ship log\n\n##### noise\n");
+    const vm = wrapper.vm as unknown as { outline(): { id: string; level: number; title: string }[] };
+
+    // The document opens on `##`, so that is level 0 - and h5 never makes the list at all.
+    expect(vm.outline().map((entry) => [entry.level, entry.title])).toEqual([[0, "Deep Work"], [1, "Today"], [0, "Ship log"]]);
+    wrapper.unmount();
+    HTMLElement.prototype.scrollIntoView = original;
+  });
+
   it("highlights search matches in rendered Markdown", async () => {
     const { wrapper } = mountMarkdown("**Done** and done");
     await wrapper.setProps({ searchQuery: "done", searchActive: true });

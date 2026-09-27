@@ -1,3 +1,10 @@
+/** One entry of a document outline: where it is, how deep, and what the reader sees. */
+export interface MarkdownHeading {
+  id: string;
+  level: number;
+  title: string;
+}
+
 /**
  * GitHub-compatible heading anchor, with one deliberate exception: CJK letters survive.
  *
@@ -30,6 +37,20 @@ export function uniqueHeadingSlug(counts: Map<string, number>, value: string): s
   const seen = counts.get(slug);
   counts.set(slug, (seen ?? 0) + 1);
   return seen === undefined ? slug : `${slug}-${seen}`;
+}
+
+/**
+ * Rebase heading levels onto the shallowest one actually present, so an outline always starts flush
+ * left at `level: 0`.
+ *
+ * Most documents start at `##`, and an outline that indents everything by that missing `#` spends a
+ * third of a narrow panel on nothing.
+ */
+export function outlineLevels<T extends MarkdownHeading>(headings: T[]): T[] {
+  if (!headings.length) return headings;
+  const min = headings.reduce((lowest, item) => Math.min(lowest, item.level), 6);
+  if (min === 0) return headings;
+  return headings.map((item) => ({ ...item, level: item.level - min }));
 }
 
 export function normalizeMarkdownBreakTags(value: string): string {
