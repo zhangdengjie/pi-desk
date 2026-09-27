@@ -14,12 +14,16 @@ async function topbarText(): Promise<string> {
   return vueText("src/components/AppTopbar.vue");
 }
 
-async function vueText(path: string): Promise<string> {
+async function textAt(path: string): Promise<string> {
   const moduleName = ["node", "fs/promises"].join(":");
   const { readFile } = await import(/* @vite-ignore */ moduleName) as {
     readFile(path: string, encoding: "utf8"): Promise<string>;
   };
   return (await readFile(path, "utf8")).replace(/\r\n?/g, "\n");
+}
+
+async function vueText(path: string): Promise<string> {
+  return textAt(path);
 }
 
 // Tailwind utilities that emit `display: … !important` under `@import "tailwindcss" important`.
@@ -184,6 +188,55 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.file-markdown-preview h2\s*{[^}]*margin:\s*32px 0 12px[^}]*font-size:\s*calc\(19px \+ var\(--font-size-delta\)\)/s);
     // The scroll wrapper, not the <table>, owns the vertical gap in file previews.
     expect(css).toMatch(/\.file-markdown-preview \.markdown-table-scroll\s*{[^}]*margin:\s*0 0 14px/s);
+  });
+
+  it("separates transcript markdown levels by a size step and a rule, not by hue", async () => {
+    const css = await workbenchText();
+    // Typora's contract: headings are ink, and the level is carried by size + a hairline under
+    // h1/h2. Pi's TUI has no size channel and uses a hue instead - that was tried first and read
+    // as a theme change rather than as structure.
+    const heading = css.match(/\.markdown-body :is\(h1, h2, h3, h4\)\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(heading).toMatch(/color:\s*var\(--md-heading\)/);
+    expect(heading).toMatch(/font-weight:\s*700/);
+    for (const [level, size] of [["h1", "1.75em"], ["h2", "1.5em"], ["h3", "1.25em"], ["h4", "1.08em"]] as const) {
+      expect(css, level).toMatch(new RegExp(`\\.markdown-body ${level}\\s*\\{[^}]*font-size:\\s*${size}`));
+    }
+    expect(css).toMatch(/\.markdown-body h1\s*\{[^}]*border-bottom:\s*1px solid var\(--md-rule\)/);
+    expect(css).toMatch(/\.markdown-body h2\s*\{[^}]*border-bottom:\s*1px solid var\(--md-rule\)/);
+    // em, not px: the same rules apply inside the 12-13px reasoning and compaction panes.
+    expect(css).not.toMatch(/\.markdown-body h[1-4]\s*\{[^}]*font-size:\s*calc/);
+    // The document scale in file previews must keep winning, which it only does while the
+    // transcript block sits above it - equal specificity, so source order decides.
+    expect(css.indexOf(".markdown-body h1")).toBeLessThan(css.indexOf(".file-markdown-preview h1"));
+  });
+
+  it("lays code as a fill-only panel and keeps tables a closed grid in a hairline", async () => {
+    const css = await workbenchText();
+    const code = css.match(/\.markdown-body code\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(code).toMatch(/border-color:\s*transparent/);
+    expect(code).toMatch(/color:\s*var\(--md-code\)/);
+    // ...and the same for the block: outline off, fill on. A whole block of hue would be a
+    // syntax theme this app does not have.
+    const pre = css.match(/\.markdown-body pre\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(pre).toMatch(/border-color:\s*transparent/);
+    expect(pre).toMatch(/background:\s*var\(--md-code-panel-bg\)/);
+    expect(css).toMatch(/\.markdown-body pre code\s*\{[^}]*color:\s*var\(--text-secondary\)/);
+    // A closed grid, but the rule is nearly the surface colour - the borderless variant read as
+    // open underlines, and columns stopped lining up once a cell wrapped.
+    expect(css).toMatch(/\.markdown-body table\s*\{[^}]*border:\s*1px solid var\(--md-rule\)/);
+    const cell = css.match(/\.markdown-body th,\n\.markdown-body td\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(cell).toMatch(/border-color:\s*var\(--md-cell-rule\)/);
+    expect(css).toMatch(/\.markdown-body thead th\s*\{[^}]*background:\s*var\(--md-table-head-bg\)/);
+    expect(css).toMatch(/\.markdown-body tbody tr:nth-child\(even\) > td\s*\{[^}]*background:\s*var\(--md-table-row-bg\)/);
+    // Every --md-* role has to resolve in both palettes. The geometry ones are derived in :root
+    // from tokens that flip, so a missing base token would silently paint nothing; the two
+    // foregrounds are asserted as deliberately *not* mixes - the hue experiments were reverted.
+    const tokens = await textAt("src/styles/tokens.css");
+    for (const role of ["code-bg", "code-panel-bg", "rule", "table-head-bg", "table-row-bg"]) {
+      expect(tokens, `--md-${role}`).toMatch(new RegExp(`--md-${role}:\\s*color-mix\\(in srgb`));
+    }
+    expect(tokens).toMatch(/--md-heading:\s*var\(--text\)/);
+    expect(tokens).toMatch(/--md-code:\s*var\(--text-code\)/);
   });
 
   it("keeps the inspector resize target on the panel edge without a visible rail", async () => {

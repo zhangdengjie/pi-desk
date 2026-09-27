@@ -797,18 +797,146 @@
   border-radius: var(--radius-md);
 }
 
-.markdown-body h1,
-.markdown-body h2,
-.markdown-body h3,
-.markdown-body h4 {
-  margin-top: 18px;
-  margin-bottom: 8px;
-  font-size: var(--font-size-title);
+/* Transcript markdown hierarchy.
+ *
+   The first pass borrowed Pi's terminal contract - it has no size channel, so it separates
+   structure by hue (mdHeading / mdCode / mdQuote / mdHr in
+   dist/modes/interactive/theme/{light,dark}.json). Review said the complaint was never the
+   palette: coloured headings and teal code read as a theme change, not as structure. So this
+   block now copies Typora's *geometry* instead, which is the thing that actually makes a long
+   document scannable:
+     - headings are neutral ink, but a real size step (Typora's h2 sits ~1.6x the body) with a
+       hairline under h1/h2, so a section break is whitespace + rule, not a hue
+     - tables stay a closed grid, drawn in a hairline: Typora's cell rule is #dfdfdf on white,
+       and it is the weight of the line, not its presence, that keeps a table from reading as a
+       cage
+     - code is a panel, not a box with a border: fill + radius, no outline
+   Sizes are `em` against `.markdown-body`'s own font-size so the same scale stays sane inside
+   the 12-13px reasoning and compaction panes, where an absolute px heading would have been
+   larger than the answer body. Placed before the `.file-markdown-preview` rules below, which
+   keep their own, wider document scale. */
+.markdown-body {
+  /* Typora's airiness is mostly this plus the heading margins below. */
+  line-height: 1.7;
+}
+
+.markdown-body :is(h1, h2, h3, h4) {
+  margin-top: 26px;
+  margin-bottom: 10px;
+  color: var(--md-heading);
+  font-weight: 700;
   line-height: 1.35;
 }
 
+.markdown-body h1 {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--md-rule);
+  font-size: 1.75em;
+}
+
+.markdown-body h2 {
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--md-rule);
+  font-size: 1.5em;
+}
+
+.markdown-body h3 {
+  margin-top: 22px;
+  font-size: 1.25em;
+}
+
+.markdown-body h4 {
+  margin-top: 18px;
+  font-size: 1.08em;
+  font-weight: 650;
+}
+
+/* Paragraph rhythm: one soft break in the composer already produced a <br>, so this is the gap
+   between *blocks*, which is what Typora's spacing reads as. */
+.markdown-body p + p,
+.markdown-body p + :is(ul, ol, pre, blockquote),
+.markdown-body :is(ul, ol, pre, blockquote) + p,
+.markdown-body :is(h1, h2, h3, h4) + p {
+  margin-top: 12px;
+}
+
 .markdown-body code {
-  font-size: var(--font-size-label);
+  /* The 1px border stays, but goes transparent: removing it would reflow every line that
+     contains code, and the outline was the actual noise - a faint fill is enough to keep
+     `code` scannable without fragmenting the sentence into boxes. The colour is spelled out
+     even though it resolves to the pre-existing --text-code: the role belongs to this set, and
+     pinning it here is what keeps a future mdHeading-style experiment from leaking into it. */
+  border-color: transparent;
+  background: var(--md-code-bg);
+  color: var(--md-code);
+  font-size: 0.9em;
+}
+
+/* Code blocks keep the neutral foreground they had before. `.markdown-body code` also matches a
+   <code> inside a <pre>, and layout.css:1826 resets only padding/border/background there, so the
+   hue above would otherwise leak into the whole block - a wall of green is a syntax theme this
+   app does not have. The transparent border and the faint fill are wanted; the colour is not. */
+.markdown-body pre code {
+  color: var(--text-secondary);
+}
+
+/* Typora's code panel: fill and radius, no outline. The border stays declared but transparent
+   because layout.css:1799 sets it on `.markdown-body pre, .oversized-message` together, and
+   dropping the 1px would shift every block's content box. */
+.markdown-body pre {
+  padding: 14px 16px;
+  border-color: transparent;
+  border-radius: 8px;
+  background: var(--md-code-panel-bg);
+  line-height: 1.6;
+}
+
+/* A closed grid in a hairline. The borderless variant was tried first and it reads as a set of
+   open underlines - columns stop lining up as soon as a cell wraps. What makes Typora's table calm
+   is that the rule is nearly the colour of the surface, which is what these two tokens are.
+
+   The rules have to be OPAQUE, and this is the measured reason: in the collapsing border model an
+   internal edge is painted twice (WebKit), so a semi-transparent rule blends to roughly double its
+   own alpha there while the outer frame stays single. With a 50% transparent-mix: outer #eaeaea,
+   inner #cecece - exactly 1-(1-0.5)^2 (#cf), not the single layer's #dc. Making one edge belong to
+   one cell (`border-inline-end` only) does not remove it. Typora gets away with #dfdfdf because it
+   is opaque, and an opaque line is idempotent under repeated painting. */
+.markdown-body table {
+  border: 1px solid var(--md-rule);
+}
+
+.markdown-body th,
+.markdown-body td {
+  padding: 8px 10px;
+  border-color: var(--md-cell-rule);
+}
+
+.markdown-body thead th {
+  background: var(--md-table-head-bg);
+  color: var(--text);
+  font-weight: 650;
+}
+
+.markdown-body tbody tr:nth-child(even) > td {
+  background: var(--md-table-row-bg);
+}
+
+.markdown-body .markdown-table-scroll {
+  margin: 14px 0;
+}
+
+.markdown-body blockquote {
+  padding: 6px 11px;
+  border-left: 3px solid var(--md-rule);
+  border-radius: 0 4px 4px 0;
+  background: var(--md-table-row-bg);
+}
+
+.markdown-body hr {
+  height: 1px;
+  margin: 14px 0;
+  border: 0;
+  background: var(--md-rule);
 }
 
 .markdown-body pre,

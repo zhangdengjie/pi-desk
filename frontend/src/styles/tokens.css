@@ -58,6 +58,37 @@
   /* Smallest width a prose column may be squeezed to before the table overflows its
      pane and scrolls instead (see .markdown-cell.is-wide in layout.css). */
   --markdown-cell-wrap-min: 200px;
+  /* Transcript markdown roles. The names mirror the roles Pi's terminal theme declares
+     (mdHeading, mdCode, mdQuote, mdHr in dist/modes/interactive/theme/{light,dark}.json) so a
+     future "follow the Pi theme" setting maps 1:1, but the *values* follow Typora's geometry:
+     headings are ink, not a hue, and the code panel is a fill with no outline.
+     Derived, not literal: every base token here already flips between the light and dark
+     palettes, so mixing toward --text darkens in light and lightens in dark from one place,
+     instead of touching the three blocks where the light palette is duplicated.
+     in srgb, deliberately: these neutrals carry hue 255, so an oklch mix would rotate any
+     chromatic member toward that hue by however much --text contributes. */
+  --md-heading: var(--text);
+  --md-code: var(--text-code);
+  --md-code-bg: color-mix(in srgb, var(--text) 6.5%, transparent);
+  /* Weaker than the inline fill: the panel is large, and --bg-code is the same lightness as the
+     conversation background, which is exactly why it used to need a border to be visible. */
+  --md-code-panel-bg: color-mix(in srgb, var(--text) 4.5%, transparent);
+  /* Typora's rules are #dfdfdf on white - a hairline, not a stroke.
+     OPAQUE on purpose, and mixed toward the surface they sit on rather than toward transparent:
+     an internal table edge is painted twice by WebKit, so an alpha rule doubles there while the
+     outer frame does not (measured: 50% alpha gave #ea outside and #ce inside). An opaque line is
+     idempotent under repeated painting. --bg-conversation is where every one of these rules is
+     drawn - the transcript pane and the markdown preview both use it.
+     Not mixed with --text: these neutrals carry hue 255, so an oklch mix (or a --text mix) drags
+     a chromatic member toward blue by however much the second colour contributes.
+     Two of them because the collapsing border model gives a cell's border priority over the table
+     frame at equal width, so --md-cell-rule governs *every* line of a table - frame included -
+     and --md-rule is left with the heading hairline, hr and the quote bar. Measured: with 25% and
+     35% declared, all four vertical rules of a rendered table come out #e5e5e5, the cell value. */
+  --md-rule: color-mix(in srgb, var(--border-strong) 25%, var(--bg-conversation));
+  --md-cell-rule: color-mix(in srgb, var(--border-strong) 35%, var(--bg-conversation));
+  --md-table-head-bg: color-mix(in srgb, var(--text) 3.5%, transparent);
+  --md-table-row-bg: color-mix(in srgb, var(--text) 2%, transparent);
   font-family: var(--font-sans);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
