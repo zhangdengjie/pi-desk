@@ -54,6 +54,12 @@ export interface PanelTab {
   sheet?: number;
   scroll?: Record<string, [number, number]>;
   line?: number;
+  /** Heading anchor requested by a `other.md#section` link, consumed once by the preview panel after
+   *  the document renders (the ids live inside MarkdownBody, so only it can resolve the anchor). */
+  anchor?: string;
+  /** Tab that opened this one through a Markdown link. Drives the "back" control; scroll of the
+   *  source tab is already preserved per tab in `scroll`, so going back lands where the reader left. */
+  returnToTabId?: string;
   preview?: RepositoryFilePreview;
   diff?: RepositoryDiffView;
   loading?: boolean;
@@ -1934,18 +1940,25 @@ export const useAppStore = defineStore("app", {
       });
       await this.loadPanelFile(thread.id, tab.id);
     },
-    async openRepositoryFilePreview(path: string, line?: number, pinned = true) {
+    async openRepositoryFilePreview(path: string, line?: number, pinned = true, anchor?: string) {
       const thread = this.activeThread;
       if (!thread || thread.trust !== "approve") return;
+      const id = `${thread.id}:file:${path.replaceAll("\\", "/")}`;
+      // Captured before openPanelTab moves the active tab: this is where the reader came from.
+      const sourceTabId = this.activePanelTab?.id;
+      const isNewTab = !this.activePanel?.tabs.some((tab) => tab.id === id);
       const tab = this.openPanelTab({
-        id: `${thread.id}:file:${path.replaceAll("\\", "/")}`,
-        kind: "file", title: path.split(/[\\/]/).pop() || path, path, line, pinned,
+        id, kind: "file", title: path.split(/[\\/]/).pop() || path, path, line, pinned,
         treeOpen: this.activePanelTab?.kind === "files" || this.activePanelTab?.treeOpen,
         expanded: { ...this.activePanelTab?.expanded },
         filter: this.activePanelTab?.filter,
       });
       if (pinned) tab.pinned = true;
       if (line !== undefined) tab.line = line;
+      // A tab that was already open keeps its own reading position; only a jump that creates one
+      // records where to go back to, otherwise clicking two links would rewrite the trail.
+      if (isNewTab && sourceTabId && sourceTabId !== id) tab.returnToTabId = sourceTabId;
+      if (anchor) tab.anchor = anchor;
       await this.loadPanelFile(thread.id, tab.id);
     },
     async loadPanelFile(threadId: string, id: string) {

@@ -3,6 +3,8 @@ export interface WorkspaceFileLink {
   absolutePath: string;
   name: string;
   line?: number;
+  /** Heading anchor from `other.md#install` - the target document has to scroll there after opening. */
+  anchor?: string;
 }
 
 function decodeLink(value: string): string {
@@ -13,14 +15,16 @@ function decodeLink(value: string): string {
   }
 }
 
-function stripLocationSuffix(value: string): { path: string; line?: number } {
+function stripLocationSuffix(value: string): { path: string; line?: number; anchor?: string } {
   let path = value;
   let line: number | undefined;
+  let anchor: string | undefined;
   const hashIndex = path.indexOf("#");
   if (hashIndex >= 0) {
     const fragment = path.slice(hashIndex + 1);
     const match = fragment.match(/^L?(\d+)(?:[-:]L?\d+)?$/i);
     if (match) line = Number(match[1]);
+    else anchor = fragment || undefined;
     path = path.slice(0, hashIndex);
   }
   const queryIndex = path.indexOf("?");
@@ -30,7 +34,7 @@ function stripLocationSuffix(value: string): { path: string; line?: number } {
     line ??= Number(location[1]);
     path = path.slice(0, location.index);
   }
-  return { path, line };
+  return { path, line, anchor };
 }
 
 function fileURLPath(value: string, windows: boolean): string | undefined {
@@ -73,11 +77,24 @@ function normalizePosixPath(value: string): string | undefined {
   return `/${segments.join("/")}`;
 }
 
-export function resolveWorkspaceFileLink(href: string, workspacePath: string): WorkspaceFileLink | undefined {
+/**
+ * Resolve an href to a file inside the workspace.
+ *
+ * `baseDir` is the workspace-relative directory of the document the link was found in. Markdown
+ * resolves a relative link against that directory (`notes/a.md` linking `./b.md` means `notes/b.md`),
+ * which is not what a link in a chat message means - there the reader is at the repository itself, so
+ * the caller passes nothing. Containment is still checked against the workspace root, so `../` in a
+ * nested document can move around inside the repository but never leave it.
+ */
+export function resolveWorkspaceFileLink(href: string, workspacePath: string, baseDir = ""): WorkspaceFileLink | undefined {
   const root = workspacePath.trim().replace(/[\\/]+$/, "");
+  const base = baseDir.trim().replace(/[\\/]+$/, "");
   let target = decodeLink(href.trim().replace(/^<|>$/g, ""));
   if (!root || !target || target.startsWith("#")) return undefined;
   const windows = /^[a-z]:[\\/]/i.test(root);
+  const separator = windows ? "\\" : "/";
+  // `root` stays the fence; `linkedRoot` is what a relative href is joined to.
+  const linkedRoot = base ? `${root}${separator}${base}` : root;
   if (/^file:/i.test(target)) {
     const filePath = fileURLPath(target, windows);
     if (!filePath) return undefined;
@@ -91,21 +108,21 @@ export function resolveWorkspaceFileLink(href: string, workspacePath: string): W
 
   if (windows) {
     const normalizedRoot = normalizeWindowsPath(root);
-    const absolute = normalizeWindowsPath(/^[a-z]:[\\/]/i.test(target) ? target : `${root}\\${target}`);
+    const absolute = normalizeWindowsPath(/^[a-z]:[\\/]/i.test(target) ? target : `${linkedRoot}\\${target}`);
     if (!normalizedRoot || !absolute) return undefined;
     const rootKey = normalizedRoot.toLocaleLowerCase();
     const absoluteKey = absolute.toLocaleLowerCase();
     if (absoluteKey !== rootKey && !absoluteKey.startsWith(`${rootKey}\\`)) return undefined;
     const relativePath = absolute.slice(normalizedRoot.length).replace(/^\\/, "").replaceAll("\\", "/");
     if (!relativePath) return undefined;
-    return { relativePath, absolutePath: absolute, name: relativePath.split("/").pop() ?? relativePath, line: location.line };
+    return { relativePath, absolutePath: absolute, name: relativePath.split("/").pop() ?? relativePath, line: location.line, anchor: location.anchor };
   }
 
   const normalizedRoot = normalizePosixPath(root);
-  const absolute = normalizePosixPath(target.startsWith("/") ? target : `${root}/${target}`);
+  const absolute = normalizePosixPath(target.startsWith("/") ? target : `${linkedRoot}/${target}`);
   if (!normalizedRoot || !absolute) return undefined;
   if (absolute !== normalizedRoot && !absolute.startsWith(`${normalizedRoot}/`)) return undefined;
   const relativePath = absolute.slice(normalizedRoot.length).replace(/^\//, "");
   if (!relativePath) return undefined;
-  return { relativePath, absolutePath: absolute, name: relativePath.split("/").pop() ?? relativePath, line: location.line };
+  return { relativePath, absolutePath: absolute, name: relativePath.split("/").pop() ?? relativePath, line: location.line, anchor: location.anchor };
 }

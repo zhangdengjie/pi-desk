@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
 import MarkdownIt from "markdown-it";
-import { computed, ref } from "vue";
+import { computed, getCurrentInstance, ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useRevealedText } from "../composables/useRevealedText";
 import { resolveWorkspaceFileLink, type WorkspaceFileLink } from "../utils/fileLinks";
-import { normalizeMarkdownBreakTags } from "../utils/markdown";
+import { normalizeMarkdownBreakTags, slugifyHeading, uniqueHeadingSlug } from "../utils/markdown";
 import FileLinkContextMenu from "./FileLinkContextMenu.vue";
 
 const props = defineProps<{
@@ -13,6 +13,10 @@ const props = defineProps<{
   streaming?: boolean;
   searchQuery?: string;
   searchActive?: boolean;
+  /** Workspace-relative path of the document being previewed. A relative Markdown link resolves
+   *  against this file's own directory, exactly as it would on GitHub. Absent (chat messages,
+   *  reasoning blocks) means "the reader is at the repository", so links stay root-relative. */
+  basePath?: string;
 }>();
 // 本组件是多根（内容节点 + 右键菜单），Vue 不会自动透传 class/style，
 // 必须自己绑到内容根节点上，否则调用方的布局类（如 .file-markdown-preview 的 overflow）会静默丢失。
@@ -20,17 +24,34 @@ defineOptions({ inheritAttrs: false });
 const appStore = useAppStore();
 const MAX_MARKDOWN_CHARS = 100_000;
 const workspacePath = computed(() => appStore.activeThread?.workspacePath || "");
+const linkBaseDir = computed(() => {
+  const path = (props.basePath ?? "").replaceAll("\\", "/");
+  const cut = path.lastIndexOf("/");
+  return cut < 0 ? "" : path.slice(0, cut);
+});
 const contextMenu = ref<{ file: WorkspaceFileLink; x: number; y: number }>();
+// Headings get an id so the outline and `#anchor` links have something to aim at. The prefix makes
+// the id unique per rendered document: a transcript shows dozens of MarkdownBody instances at once,
+// and two "## Setup" headings in one window would otherwise be an id collision the browser resolves
+// by picking whichever comes first in the DOM - usually not the one the reader was looking at.
+const instanceUid = `md${getCurrentInstance()?.uid ?? 0}`;
+const slugCounts = new Map<string, number>();
 const markdown = new MarkdownIt({ html: false, breaks: true, linkify: true, typographer: false });
 const defaultValidateLink = markdown.validateLink.bind(markdown);
 const originalLinkOpen = markdown.renderer.rules.link_open;
+
+markdown.renderer.rules.heading_open = (tokens, index, options, _env, self) => {
+  const inline = tokens[index + 1];
+  tokens[index].attrSet("id", `${instanceUid}-${uniqueHeadingSlug(slugCounts, inline?.type === "inline" ? inline.content : "")}`);
+  return self.renderToken(tokens, index, options);
+};
 
 markdown.validateLink = (url) => /^file:/i.test(url) || defaultValidateLink(url);
 markdown.renderer.rules.link_open = (tokens, index, options, environment, renderer) => {
   const rawHref = tokens[index].attrGet("href");
   const href = typeof rawHref === "string" ? rawHref : String(rawHref ?? "");
-  const linkEnvironment = (environment ?? {}) as { workspacePath?: string };
-  const file = resolveWorkspaceFileLink(href, String(linkEnvironment.workspacePath ?? ""));
+  const linkEnvironment = (environment ?? {}) as { workspacePath?: string; baseDir?: string };
+  const file = resolveWorkspaceFileLink(href, String(linkEnvironment.workspacePath ?? ""), String(linkEnvironment.baseDir ?? ""));
   if (file) {
     tokens[index].attrSet("href", "#");
     tokens[index].attrSet("class", "markdown-file-link");
@@ -39,6 +60,7 @@ markdown.renderer.rules.link_open = (tokens, index, options, environment, render
     tokens[index].attrSet("data-file-absolute", file.absolutePath);
     tokens[index].attrSet("data-file-name", file.name);
     if (file.line) tokens[index].attrSet("data-file-line", String(file.line));
+    if (file.anchor) tokens[index].attrSet("data-file-anchor", file.anchor);
   } else if (/^(https?:)\/\//i.test(href)) {
     // Web links route to the managed browser panel; the click handler below
     // prevents default and falls back to the system browser on failure.
@@ -156,9 +178,49 @@ function highlightRenderedHtml(html: string, query: string, active: boolean): st
 
 const rendered = computed(() => {
   if (!renderMarkdown.value) return "";
-  const html = markdown.render(normalizeMarkdownBreakTags(shownText.value), { workspacePath: workspacePath.value });
+  // Reset per pass: slugs are deduplicated by occurrence, and re-rendering the same document must
+  // produce the same ids, otherwise an open outline would point at headings that no longer exist.
+  slugCounts.clear();
+  const html = markdown.render(normalizeMarkdownBreakTags(shownText.value), {
+    workspacePath: workspacePath.value,
+    baseDir: linkBaseDir.value,
+  });
   return highlightRenderedHtml(html, props.searchQuery ?? "", props.searchActive ?? false);
 });
+
+const bodyElement = ref<HTMLElement>();
+
+function anchorSelector(anchor: string): string {
+  return anchor.replace(/["\\\s]/g, "");
+}
+
+/** Find a heading inside *this* document only - never `document.getElementById`, which would happily
+ *  answer with a heading from a different message or a different preview tab. */
+function findAnchorTarget(anchor: string): HTMLElement | undefined {
+  const root = bodyElement.value;
+  let needle = anchor.replace(/^#/, "").trim();
+  try {
+    needle = decodeURIComponent(needle);
+  } catch {
+    // A malformed escape is not a crash: fall back to the literal text the author wrote.
+  }
+  if (!root || !needle) return undefined;
+  return root.querySelector<HTMLElement>(`[id="${anchorSelector(`${instanceUid}-${slugifyHeading(needle)}`)}"]`)
+    ?? root.querySelector<HTMLElement>(`[id="${anchorSelector(needle)}"]`)
+    ?? undefined;
+}
+
+function scrollToAnchor(anchor: string): boolean {
+  const target = findAnchorTarget(anchor);
+  if (!target) return false;
+  // Guarded the way ConversationPane and ComposerBar guard it: jsdom has no scrollIntoView at all,
+  // and an unwrapped call would throw out of a click handler that is otherwise working.
+  if (typeof target.scrollIntoView === "function") target.scrollIntoView({ block: "start" });
+  return true;
+}
+// The preview panel needs this because a cross-file link opens a tab whose MarkdownBody has not
+// rendered yet; the ids are per-instance, so only the component itself can resolve one.
+defineExpose({ scrollToAnchor });
 
 function fileLinkFromEvent(event: MouseEvent): WorkspaceFileLink | undefined {
   const target = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a.markdown-file-link") : null;
@@ -171,6 +233,7 @@ function fileLinkFromEvent(event: MouseEvent): WorkspaceFileLink | undefined {
     absolutePath,
     name: target.dataset.fileName || relativePath.split("/").pop() || relativePath,
     line: Number.isFinite(line) && line > 0 ? line : undefined,
+    anchor: target.dataset.fileAnchor || undefined,
   };
 }
 
@@ -179,14 +242,27 @@ function openPreview(event: MouseEvent) {
   if (file) {
     event.preventDefault();
     contextMenu.value = undefined;
-    void appStore.openRepositoryFilePreview(file.relativePath, file.line);
+    void appStore.openRepositoryFilePreview(file.relativePath, file.line, true, file.anchor);
+    return;
+  }
+  // A `#heading` link keeps its href so it is copyable, but letting the webview follow it would put
+  // the fragment in the app's own URL. Scroll inside the preview pane instead, and swallow the
+  // navigation even when the target does not exist - a dead anchor must not reload the shell.
+  const anchor = event.target instanceof Element
+    ? event.target.closest<HTMLAnchorElement>("a[href]")
+    : null;
+  const href = anchor?.getAttribute("href") ?? "";
+  if (anchor && href.length > 1 && href.startsWith("#")) {
+    event.preventDefault();
+    contextMenu.value = undefined;
+    scrollToAnchor(href.slice(1));
     return;
   }
   const target = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a.markdown-web-link") : null;
-  const href = target?.getAttribute("href");
-  if (!target || !href) return;
+  const webHref = target?.getAttribute("href");
+  if (!target || !webHref) return;
   event.preventDefault();
-  appStore.openBrowserTab(href);
+  appStore.openBrowserTab(webHref);
 }
 
 function openContextMenu(event: MouseEvent) {
@@ -200,9 +276,11 @@ function openContextMenu(event: MouseEvent) {
 <template>
   <div
     v-if="renderMarkdown"
+    ref="bodyElement"
     v-bind="$attrs"
     class="markdown-body"
     :class="[ui.root, { streaming }]"
+    :data-markdown-uid="instanceUid"
     v-html="rendered"
     @click="openPreview"
     @contextmenu="openContextMenu"

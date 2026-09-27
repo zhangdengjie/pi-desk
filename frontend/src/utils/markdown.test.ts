@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { normalizeMarkdownBreakTags } from "./markdown";
+import { normalizeMarkdownBreakTags, slugifyHeading, uniqueHeadingSlug } from "./markdown";
+
+describe("heading anchors", () => {
+  it("slugs a heading the way GitHub does, and keeps Chinese", () => {
+    expect(slugifyHeading("Hello, World!")).toBe("hello-world");
+    expect(slugifyHeading("  Ship   It  ")).toBe("ship-it");
+    expect(slugifyHeading("v1.2 — now with `code` and **bold**")).toBe("v1.2-now-with-code-and-bold");
+    // The stock markdown-it-anchor slugify strips \W, which is every CJK character: a Chinese-only
+    // heading would slug to "" and every outline entry would collide on the empty id.
+    expect(slugifyHeading("## 目录 与锚点")).toBe("目录-与锚点");
+    expect(slugifyHeading("状态：第三次点名")).toBe("状态第三次点名");
+    // A heading with nothing word-like left still has to be addressable.
+    expect(slugifyHeading("---")).toBe("section");
+  });
+
+  it("suffixes repeats the way GitHub numbers them", () => {
+    const counts = new Map<string, number>();
+    expect(uniqueHeadingSlug(counts, "Setup")).toBe("setup");
+    expect(uniqueHeadingSlug(counts, "Setup")).toBe("setup-1");
+    expect(uniqueHeadingSlug(counts, "Setup")).toBe("setup-2");
+    expect(uniqueHeadingSlug(counts, "其他")).toBe("其他");
+  });
+});
 
 describe("normalizeMarkdownBreakTags", () => {
   it("turns break tags and escaped breaks into plain newlines", () => {

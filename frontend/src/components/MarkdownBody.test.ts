@@ -16,7 +16,7 @@ vi.mock("../services/repository", () => ({
 
 
 
-function mountMarkdown(text: string) {
+function mountMarkdown(text: string, extraProps: Record<string, unknown> = {}) {
   const pinia = createPinia();
   setActivePinia(pinia);
   const store = useAppStore();
@@ -27,7 +27,7 @@ function mountMarkdown(text: string) {
     }],
     activeThreadId: "thread-1",
   });
-  return { store, wrapper: mount(MarkdownBody, { props: { text }, attachTo: document.body, global: { plugins: [pinia] } }) };
+  return { store, wrapper: mount(MarkdownBody, { props: { text, ...extraProps }, attachTo: document.body, global: { plugins: [pinia] } }) };
 }
 
 describe("MarkdownBody", () => {
@@ -123,7 +123,7 @@ describe("MarkdownBody", () => {
     expect(links[1].attributes("target")).toBeUndefined();
 
     await links[0].trigger("click");
-    expect(store.openRepositoryFilePreview).toHaveBeenCalledWith("reports/tg_groups.csv", undefined);
+    expect(store.openRepositoryFilePreview).toHaveBeenCalledWith("reports/tg_groups.csv", undefined, true, undefined);
 
     await links[1].trigger("click");
     expect(store.openBrowserTab).toHaveBeenCalledWith("https://example.com/docs");
@@ -136,6 +136,79 @@ describe("MarkdownBody", () => {
     expect(menu?.textContent).toContain("Save as...");
     expect(menu?.textContent).toContain("Copy path");
     expect(menu?.textContent).toContain("Show in file manager");
+    wrapper.unmount();
+  });
+
+  it("stamps every heading with a slug id, deduplicated and scoped to this document", () => {
+    const { wrapper } = mountMarkdown("# Title\n\n## Setup\n\n## Setup\n\n## 目录与锚点\n");
+    const ids = wrapper.findAll("h1, h2").map((heading) => heading.attributes("id"));
+
+    // The prefix is per MarkdownBody instance: a transcript mounts dozens of them, and a bare
+    // "setup" would be claimed by whichever message renders first.
+    expect(ids[0]).toMatch(/-title$/);
+    expect(ids[1]).toMatch(/-setup$/);
+    expect(ids[2]).toMatch(/-setup-1$/);
+    expect(ids[3]).toMatch(/-目录与锚点$/);   // CJK survives the slug
+    wrapper.unmount();
+  });
+
+  it("scrolls to a heading for an in-document anchor instead of navigating the WebView", async () => {
+    const scrolled: string[] = [];
+    const spy = vi.fn(function (this: Element) { scrolled.push(this.id); });
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = spy as typeof original;
+    const { wrapper } = mountMarkdown("Jump [down](#target).\n\n## Target");
+
+    const anchor = wrapper.get('a[href="#target"]');
+    await anchor.trigger("click");
+    expect(scrolled).toHaveLength(1);
+    expect(scrolled[0]).toMatch(/-target$/);
+
+    // A dead anchor must still not leak the fragment into the app's own URL.
+    const dead = wrapper.find('a[href="#nope"]');
+    expect(dead.exists()).toBe(false);
+    await wrapper.setProps({ text: "Dead [link](#nope).\n\n## Target" });
+    const before = scrolled.length;
+    await wrapper.get('a[href="#nope"]').trigger("click");
+    expect(scrolled).toHaveLength(before);
+    wrapper.unmount();
+    HTMLElement.prototype.scrollIntoView = original;
+  });
+
+  it("resolves a relative link against the previewed file, not the workspace root", async () => {
+    const { store, wrapper } = mountMarkdown("[daily](./daily.md) and [up](../readme.md)", { basePath: "notes/a.md" });
+    store.openRepositoryFilePreview = vi.fn().mockResolvedValue(undefined);
+
+    const links = wrapper.findAll("a");
+    expect(links[0].classes()).toContain("markdown-file-link");
+    expect(links[0].attributes("title")).toBe("D:\\repo\\notes\\daily.md");
+    await links[0].trigger("click");
+    expect(store.openRepositoryFilePreview).toHaveBeenLastCalledWith("notes/daily.md", undefined, true, undefined);
+
+    await links[1].trigger("click");
+    expect(store.openRepositoryFilePreview).toHaveBeenLastCalledWith("readme.md", undefined, true, undefined);
+    wrapper.unmount();
+  });
+
+  it("keeps chat-message links root-relative while carrying a cross-file anchor through", async () => {
+    const { store, wrapper } = mountMarkdown("[plan](plan.md#deep-work)");
+    store.openRepositoryFilePreview = vi.fn().mockResolvedValue(undefined);
+
+    const link = wrapper.get("a");
+    expect(link.attributes("data-file-anchor")).toBe("deep-work");
+    await link.trigger("click");
+    // No basePath here: a link in an answer is written from the repository's own directory.
+    expect(store.openRepositoryFilePreview).toHaveBeenCalledWith("plan.md", undefined, true, "deep-work");
+    wrapper.unmount();
+  });
+
+  it("lets the host panel jump to an anchor it only knows by slug", () => {
+    const { wrapper } = mountMarkdown("## Deep Work\n\n## 目录");
+    const vm = wrapper.vm as unknown as { scrollToAnchor(anchor: string): boolean };
+
+    expect(vm.scrollToAnchor("deep-work")).toBe(true);
+    expect(vm.scrollToAnchor("目录")).toBe(true);
+    expect(vm.scrollToAnchor("missing-section")).toBe(false);
     wrapper.unmount();
   });
 

@@ -1,3 +1,37 @@
+/**
+ * GitHub-compatible heading anchor, with one deliberate exception: CJK letters survive.
+ *
+ * The stock `markdown-it-anchor` slugify drops everything outside `\w-`, so a Chinese heading -
+ * which is most of what this app previews - would slug to the empty string and every entry in the
+ * outline would collide. Unicode property escapes keep `\p{L}` (Han included) and `\p{N}`.
+ */
+export function slugifyHeading(value: string): string {
+  const slug = value
+    .toLocaleLowerCase()
+    // `<br>` survives normalizeMarkdownBreakTags as a literal inside the heading's own text, and
+    // emphasis/code markers are markup, not words - both must not reach the anchor.
+    .replace(/<[^>]*>/g, "")
+    .replace(/[`*_~]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^\p{L}\p{N}\p{M}._-]/gu, "")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "section";
+}
+
+/**
+ * Deduplicate slugs the way GitHub does: the second `## Setup` becomes `setup-1`.
+ * `counts` is owned by a single render pass, so it has to be recreated per render - a map that
+ * outlives the pass would keep growing `-1`, `-2` suffixes every time the same text re-renders.
+ */
+export function uniqueHeadingSlug(counts: Map<string, number>, value: string): string {
+  const slug = slugifyHeading(value);
+  const seen = counts.get(slug);
+  counts.set(slug, (seen ?? 0) + 1);
+  return seen === undefined ? slug : `${slug}-${seen}`;
+}
+
 export function normalizeMarkdownBreakTags(value: string): string {
   let normalized = "";
   let cursor = 0;
