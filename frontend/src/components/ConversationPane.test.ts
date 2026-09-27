@@ -97,7 +97,10 @@ describe("ConversationPane", () => {
     await flushPromises();
 
     expect((wrapper.get(".timeline").element as HTMLElement).style.getPropertyValue("--composer-overlay-reserve")).toBe("320px");
-    expect(timeline.scrollTop).toBe(1200);
+    // scrollToBottom writes an oversized offset and lets the engine clamp it (reading
+    // scrollHeight there would force a layout); jsdom lays nothing out, so the raw
+    // write is what lands.
+    expect(timeline.scrollTop).toBe(Number.MAX_SAFE_INTEGER);
 
     timeline.scrollTop = 100;
     await wrapper.get(".timeline").trigger("scroll");
@@ -234,7 +237,9 @@ describe("ConversationPane", () => {
 
     expect(wrapper.find(".timeline-jump-latest").exists()).toBe(true);
     await wrapper.get(".timeline-jump-latest").trigger("click");
-    expect(timeline.scrollTop).toBe(1900);
+    // The jump pins with an oversized scrollTop that the engine clamps to the exact
+    // bottom; jsdom does not clamp, so the raw write is what lands.
+    expect(timeline.scrollTop).toBe(Number.MAX_SAFE_INTEGER);
     expect(wrapper.find(".timeline-jump-latest").exists()).toBe(false);
 
     await stream("Message 3 finished writing", 2020);

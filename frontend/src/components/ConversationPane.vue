@@ -171,7 +171,11 @@ function scrollToBottom() {
   // Pin to the exact bottom (padding included) so the streaming tail stays
   // visible above the floating composer; estimate-based scrollToIndex fights
   // the ResizeObserver size corrections while content streams in.
-  if (element) element.scrollTop = element.scrollHeight;
+  // Write an oversized offset and let the engine clamp it instead of reading
+  // `scrollHeight` first: this runs right after the composer's new padding
+  // landed, so the read would force a synchronous layout of the whole
+  // transcript - the third forced layout of a single Enter keystroke.
+  if (element) element.scrollTop = Number.MAX_SAFE_INTEGER;
 }
 
 // The follow is one frame chain, not one scroll per event: several ResizeObserver

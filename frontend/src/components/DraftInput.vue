@@ -29,13 +29,32 @@ let lastValue = props.modelValue;
  * switching the composer surface is a two-line diff on a file upstream touches often.
  */
 
+let lastHeight = -1;
+let lastLength = 0;
+
 function resize() {
   const element = input.value;
   if (!element) return;
   // `field-sizing: content` is what this wants, but WKWebView on macOS 15 is Safari 18 and does not
   // have it (Chrome 123+). Measure instead; `.composer-editor` keeps the 180px cap and scrolls.
-  element.style.height = "auto";
-  element.style.height = `${element.scrollHeight}px`;
+  //
+  // Every newline used to run `height:auto` + read `scrollHeight` + write the height back - two
+  // forced synchronous layouts of the whole shell per keystroke, with a streaming transcript
+  // keeping the tree dirty, which is exactly the Enter-key typing stutter. Growth needs no reset:
+  // a textarea reports its full content height through `scrollHeight` even while the box still
+  // stands at the previous height. Only a shrink has to go through `auto`, because a fixed height
+  // clamps `scrollHeight` to `clientHeight` - so the reset stays reserved for deletions, and an
+  // unchanged height now skips the style write entirely instead of dirtying the tree for nothing.
+  const shorter = element.value.length < lastLength;
+  lastLength = element.value.length;
+  if (shorter || lastHeight < 0) {
+    element.style.height = "auto";
+    lastHeight = -1;
+  }
+  const next = element.scrollHeight;
+  if (next === lastHeight) return;
+  lastHeight = next;
+  element.style.height = `${next}px`;
 }
 
 function write(value: string, caret: number | null) {
