@@ -26,6 +26,23 @@ describe("PaneResizer", () => {
     expect(wrapper.emitted("commit")).toEqual([[344]]);
   });
 
+  it("cancels the compatible mousedown so WebKit cannot open a selection drag", () => {
+    const wrapper = mount(PaneResizer, {
+      props: { side: "right", value: 360, min: 240, max: 840, label: "Resize inspector" },
+    });
+
+    // WebKit turns a press on the handle into a native NSDragging session whenever the
+    // document still holds a text selection and the mousedown goes through - the drag loop
+    // then swallows every pointermove and the pane freezes. The template must cancel it.
+    const event = new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true });
+    wrapper.element.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+
+    const dragEvent = new Event("dragstart", { bubbles: true, cancelable: true });
+    wrapper.element.dispatchEvent(dragEvent);
+    expect(dragEvent.defaultPrevented).toBe(true);
+  });
+
   it("reverses pointer movement for the right pane", async () => {
     const wrapper = mount(PaneResizer, {
       props: { side: "right", value: 320, min: 280, max: 720, label: "Resize inspector" },

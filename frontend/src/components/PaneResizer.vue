@@ -45,6 +45,19 @@ function move(event: PointerEvent) {
   });
 }
 
+// WebKit only: `preventDefault()` on pointerdown does not reliably suppress the
+// compatibility mousedown. When one slips through while the document still holds a text
+// selection (a double-clicked word in xterm, a copied range in the transcript), WebKit reads
+// the press-and-move on the handle as "drag the existing selection" and opens a native
+// NSDragging session - from then on every pointermove goes into AppKit's drag loop and JS
+// receives none of them. The handle shows the col-resize cursor but the pane is frozen; the
+// only observed recoveries were a click elsewhere (collapses the selection) or a native
+// window operation (ends the session). Cancelling mousedown at the source is what keeps the
+// drag in the pointer-event world, where the rAF coalescing below stays real-time.
+function suppressCompatibleMouse(event: MouseEvent) {
+  event.preventDefault();
+}
+
 function stop() {
   if (frame) cancelAnimationFrame(frame);
   frame = 0;
@@ -57,6 +70,7 @@ function stop() {
   window.removeEventListener("pointermove", move);
   window.removeEventListener("pointerup", stop);
   window.removeEventListener("pointercancel", stop);
+  window.removeEventListener("mousedown", suppressCompatibleMouse, true);
   emit("commit", currentWidth);
 }
 
@@ -67,11 +81,25 @@ function start(event: PointerEvent) {
   startWidth = props.value;
   currentWidth = props.value;
   pending = -1;
+  // Belt and braces: if a previous drag ended without its rAF ever running (a paused or
+  // throttled frame), `frame` would stay non-zero and `move()` would drop every sample of
+  // the next drag. A fresh gesture always starts unarmed.
+  if (frame) cancelAnimationFrame(frame);
+  frame = 0;
   document.documentElement.classList.add("is-resizing-pane");
   appStore.setPaneResizing(true);
+  // Route the whole gesture to this element: even if the pointer slides over an embedded
+  // surface (native browser pane, iframe) mid-drag, the events keep coming here.
+  const handle = event.currentTarget as HTMLElement | null;
+  try {
+    handle?.setPointerCapture(event.pointerId);
+  } catch {
+    // capture is a hardening, not a requirement - the window listeners below still work
+  }
   window.addEventListener("pointermove", move);
   window.addEventListener("pointerup", stop, { once: true });
   window.addEventListener("pointercancel", stop, { once: true });
+  window.addEventListener("mousedown", suppressCompatibleMouse, true);
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -90,6 +118,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("pointermove", move);
   window.removeEventListener("pointerup", stop);
   window.removeEventListener("pointercancel", stop);
+  window.removeEventListener("mousedown", suppressCompatibleMouse, true);
 });
 </script>
 
@@ -105,7 +134,10 @@ onBeforeUnmount(() => {
     :aria-valuemax="max"
     :aria-valuenow="value"
     tabindex="0"
+    draggable="false"
     @pointerdown="start"
+    @mousedown.prevent
+    @dragstart.prevent
     @keydown="onKeydown"
   />
 </template>

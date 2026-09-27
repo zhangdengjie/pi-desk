@@ -52,6 +52,12 @@
   background: transparent;
   cursor: col-resize;
   touch-action: none;
+  /* The handle must never become a native drag source or join a text selection: WebKit
+     turns either into an NSDragging session that swallows every subsequent pointermove
+     (see suppressCompatibleMouse in PaneResizer.vue). */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
   --wails-draggable: no-drag;
 }
 
@@ -1631,7 +1637,7 @@
 
 /* MarkdownBody renders with `breaks: true`, so every soft break in the source already became a
    <br>, and markdown-it keeps the literal newline in the text node next to it. The inherited
-   `white-space: pre-wrap` from `.message-content p` then broke a second line, so one Shift+Enter in
+   `white-space: pre-wrap` from `.message-content p` then broke a second line, so one Enter in
    the composer showed up as a blank line in the transcript. Later in the file than that rule and of
    equal specificity, so this one wins. */
 .markdown-body p {
