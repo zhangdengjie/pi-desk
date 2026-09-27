@@ -18,6 +18,7 @@ import PaneResizer from "./components/PaneResizer.vue";
 import WindowControls from "./components/WindowControls.vue";
 import { tr } from "./i18n";
 import { onBrowserEvent } from "./services/browser";
+import { installGhostSelectionGuard } from "./services/ghostSelectionGuard";
 import {
   MAX_INSPECTOR_WIDTH,
   MAX_SIDEBAR_WIDTH,
@@ -35,6 +36,7 @@ const isMac = ref(System.IsMac() || /Macintosh|Mac OS X/.test(navigator.userAgen
 const systemDark = ref(window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
 let colorSchemeQuery: MediaQueryList | undefined;
 let disposeBrowserEvents: (() => void) | undefined;
+let disposeGhostSelectionGuard: (() => void) | undefined;
 function syncSystemColorScheme(event: MediaQueryListEvent) {
   systemDark.value = event.matches;
 }
@@ -82,6 +84,7 @@ async function initializeDesktop() {
 
 onMounted(() => {
   disposeBrowserEvents = onBrowserEvent(event => appStore.handleBrowserEvent(event));
+  disposeGhostSelectionGuard = installGhostSelectionGuard();
   window.addEventListener("beforeunload", persistDesktopState);
   colorSchemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
   colorSchemeQuery?.addEventListener("change", syncSystemColorScheme);
@@ -91,6 +94,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   disposeBrowserEvents?.();
+  disposeGhostSelectionGuard?.();
   window.removeEventListener("beforeunload", persistDesktopState);
   colorSchemeQuery?.removeEventListener("change", syncSystemColorScheme);
   appStore.stopScheduledTaskScheduler();

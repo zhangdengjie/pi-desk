@@ -131,6 +131,23 @@
   grid-template-rows: var(--topbar-height) minmax(0, 1fr);
   background: var(--bg-app);
   overflow: hidden;
+  /* Chrome is not text. A native selection that spans the sidebar list, the tab bars and the
+     virtualized transcript covers thousands of text nodes, and WebKit re-resolves and repaints
+     that range on every frame - the whole-interface freeze users hit after an accidental or
+     ghosted select-all drag. Defaulting the shell to unselectable caps any selection to one
+     content region; the reading surfaces below opt back in. Editable fields are unaffected:
+     `user-select` does not apply to them. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Copy sources opt back in: the transcript (prose, tables, code blocks), the inspector's
+   file tree / diffs / code preview, and the thread-context popover further down this file. */
+.timeline,
+.inspector-content,
+.panel-file-tree {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .app-shell.is-sidebar-collapsed {
