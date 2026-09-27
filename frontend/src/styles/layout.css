@@ -877,6 +877,12 @@
 }
 
 .conversation-pane {
+  /* The transcript's minimum inline gutter, and the whole room the outline rail may occupy. One
+     variable because the two have to agree: the rail is an overlay that sits *before* the transcript
+     in the DOM, so wherever it overhangs the gutter it eats the first characters of every line -
+     see `.conversation-outline`. The floor lives here rather than in the 32px literals that used to
+     sit in `workbench.css`'s `--conversation-inline-space`. */
+  --conversation-gutter: 32px;
   position: relative;
   display: grid;
   width: 100%;
@@ -893,7 +899,7 @@
   min-width: 0;
   min-height: 0;
   margin: 0;
-  padding: 32px max(36px, calc((100% - 828px) / 2)) 20px;
+  padding: 32px max(var(--conversation-gutter), calc((100% - 828px) / 2)) 20px;
   overflow-x: hidden;
   overflow-y: auto;
   /* Pinning is handled in JS; browser scroll anchoring only adds ±px jitter. */
@@ -996,14 +1002,26 @@
   white-space: nowrap;
 }
 
+/* The rail used to be a 48px box at left:8px, reaching x=56, while the gutter it floats in is 32px
+   (`--conversation-inline-space` in workbench.css) - so it lay on top of the first character of every
+   transcript line, and a code block's first glyph sits even further in, at 32 + 12px of `pre` padding
+   = x 45-53. Measured in a real WKWebView with `document.elementFromPoint`: a mousedown at x 45.5, 47
+   or 49 returned `conversation-outline-list`, and `caretRangeFromPoint` resolved the caret to a rail
+   tick. The nav precedes `.timeline` in the DOM, so the anchor landed above the whole message list and
+   the drag painted every message above the pointer as selected - which is why the symptom reads as
+   "I grabbed the first letter and it selected the answer". `pidesk-shot` cannot show this (nothing is
+   under the cursor), so the bound is arithmetic now: left + width == the gutter, only the ticks are
+   hit targets, and the rail's own text is not selectable. */
 .conversation-outline {
   position: absolute;
   z-index: 11;
   top: 18px;
   bottom: 18px;
   left: 8px;
-  width: 48px;
+  width: calc(var(--conversation-gutter) - 8px);
   pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* A live reasoning block gets a fixed height instead of the max-height cap: the
@@ -1040,12 +1058,15 @@
 }
 
 .conversation-outline-scroll {
-  width: 48px;
+  width: 100%;
   height: 100%;
   overflow-y: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  pointer-events: auto;
+  /* Only the ticks are targets, never the empty column between them: an invisible box that
+     swallows a mousedown is how the selection anchor escaped into the rail in the first place.
+     Wheeling over a tick still scrolls this list, because it is that button's scroll container. */
+  pointer-events: none;
 }
 
 .conversation-outline-scroll::-webkit-scrollbar {
@@ -1065,7 +1086,7 @@
 
 .conversation-outline-item {
   display: flex;
-  width: 40px;
+  width: 100%;
   height: 10px;
   align-items: center;
   padding: 0;
@@ -1083,6 +1104,9 @@
   height: 3px;
   border-radius: 999px;
   background: var(--border-strong);
+  /* The ticks grow on hover and on the active row, and the widest one is allowed to reach the
+     gutter edge but not to become a hit target past it - the item box is what the pointer owns. */
+  pointer-events: none;
 }
 
 .conversation-outline-item:hover .conversation-outline-line,
@@ -1102,7 +1126,8 @@
 }
 
 .conversation-outline-item.is-active .conversation-outline-line {
-  width: 28px;
+  /* Was 28px, which is 4px past the gutter. The active row is already told apart by its colour. */
+  width: 24px;
   background: var(--text);
 }
 

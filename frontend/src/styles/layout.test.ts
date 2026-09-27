@@ -110,6 +110,41 @@ describe("conversation scroll rail", () => {
     expect(outline).not.toMatch(/right:/);
     expect(firstRuleBody(layout, ".conversation-outline-preview")).toMatch(/left:\s*40px/);
   });
+
+  it("keeps the rail inside the transcript gutter so it cannot swallow a mousedown", async () => {
+    // The rail is an overlay that comes *before* `.timeline` in the DOM. Wherever it overhangs the
+    // gutter, a mousedown on the first character of a line hits the rail, WebKit resolves the caret
+    // to a rail tick, and the drag paints every message above the pointer as selected. Measured in a
+    // real WKWebView (`elementFromPoint` on the transcript's geometry): before the fix the first glyph
+    // of a code line sits at x 45-53 and the rail reached x 56, so x 45.5/47/49 all returned
+    // `conversation-outline-list`; after it they return `code` and the caret lands in the text node.
+    // The invariant is arithmetic, because nothing in a screenshot shows an invisible overlay.
+    const layout = await layoutText();
+    const workbench = await readStyle("workbench.css");
+    const gutter = Number(firstRuleBody(layout, ".conversation-pane").match(/--conversation-gutter:\s*(\d+)px/)?.[1]);
+    expect(gutter).toBeGreaterThan(0);
+    // `workbench.css` loads after `layout.css`, so its `.timeline` padding is the one that ships.
+    expect(firstRuleBody(workbench, ".timeline")).toMatch(/--conversation-inline-space:\s*max\(var\(--conversation-gutter\)/);
+    const rail = firstRuleBody(layout, ".conversation-outline");
+    const railLeft = Number(rail.match(/left:\s*(\d+)px/)?.[1]);
+    // The subtracted amount has to be the rail's own offset, so that left + width lands on the gutter.
+    const railInset = Number(rail.match(/width:\s*calc\(var\(--conversation-gutter\)\s*-\s*(\d+)px\)/)?.[1]);
+    expect(railLeft).toBe(8);
+    expect(railInset).toBe(railLeft);
+    // Only the ticks are hit-test targets, never the invisible column around or above them.
+    expect(firstRuleBody(layout, ".conversation-outline-scroll")).toMatch(/pointer-events:\s*none/);
+    expect(firstRuleBody(layout, ".conversation-outline-item")).toMatch(/pointer-events:\s*auto/);
+    expect(firstRuleBody(layout, ".conversation-outline-line")).toMatch(/pointer-events:\s*none/);
+    expect(rail).toMatch(/user-select:\s*none/);
+    // Every tick width, including the hover and active states that live in grouped rules the
+    // exact-selector helper above cannot reach: a tick that grows past the gutter is a hit target
+    // again, because a child of an interactive button inherits `pointer-events: auto`.
+    const tickWidths = [...layout.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .filter(([, selector]) => /(^|,)\s*[^,{}]*\.conversation-outline-line\s*(,|$)/.test(selector.replace(/\/\*[\s\S]*?\*\//g, "").trim()))
+      .flatMap(([, , body]) => [...body.matchAll(/width:\s*(\d+)px/g)].map((match) => Number(match[1])));
+    expect(tickWidths.length).toBeGreaterThanOrEqual(3);
+    expect(Math.max(...tickWidths)).toBeLessThanOrEqual(gutter - railLeft);
+  });
 });
 
 describe("reasoning window and tail control", () => {

@@ -744,7 +744,7 @@
 }
 
 .timeline {
-  --conversation-inline-space: max(32px, calc((100% - var(--conversation-content-width)) / 2));
+  --conversation-inline-space: max(var(--conversation-gutter), calc((100% - var(--conversation-content-width)) / 2));
   width: 100%;
   max-width: none;
   padding: 24px var(--conversation-inline-space) calc(var(--composer-overlay-reserve) + 20px);
@@ -752,7 +752,7 @@
 }
 
 .app-shell.is-inspector-open .timeline {
-  --conversation-inline-space: max(32px, calc((100% - var(--inspector-width) - var(--conversation-content-width)) / 2));
+  --conversation-inline-space: max(var(--conversation-gutter), calc((100% - var(--inspector-width) - var(--conversation-content-width)) / 2));
   padding-right: calc(var(--inspector-width) + var(--conversation-inline-space));
 }
 
@@ -953,7 +953,7 @@
 .composer-wrap {
   --composer-max-width: var(--conversation-content-width);
   --composer-stack-total-inset: 20px;
-  --conversation-inline-space: max(32px, calc((100% - var(--conversation-content-width)) / 2));
+  --conversation-inline-space: max(var(--conversation-gutter), calc((100% - var(--conversation-content-width)) / 2));
   position: relative;
   z-index: 2;
   grid-column: 1;
@@ -964,7 +964,7 @@
 }
 
 .app-shell.is-inspector-open .composer-wrap {
-  --conversation-inline-space: max(32px, calc((100% - var(--inspector-width) - var(--conversation-content-width)) / 2));
+  --conversation-inline-space: max(var(--conversation-gutter), calc((100% - var(--inspector-width) - var(--conversation-content-width)) / 2));
   padding-right: calc(var(--inspector-width) + var(--conversation-inline-space));
 }
 
