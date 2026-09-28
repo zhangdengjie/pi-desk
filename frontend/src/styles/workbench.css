@@ -968,12 +968,16 @@
   font-size: var(--font-size-label);
 }
 
+/* Only the button pair's look belongs here. The row metrics - min-height, padding, the bottom
+   border and the background - are leftovers from when this element owned the row itself; the bar
+   took over (see `.markdown-preview-bar` and its `.markdown-preview-bar .markdown-preview-toggle`
+   override in layout.css:3949) but only neutralised padding and border, because that override is
+   more specific. `background` and `min-height` had nothing overriding them, so this painted a
+   --bg-conversation rectangle inside the panel's --bg-panel bar, and its 40px floor pushed the
+   bar past the 40px tab strip above it. Deleting beats overriding: leaving a declaration that a
+   specificity trap silently ignores is how this came back twice. */
 .markdown-preview-toggle {
-  min-height: 40px;
   align-items: center;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--preview-border);
-  background: var(--bg-conversation);
 }
 
 .markdown-preview-toggle button {

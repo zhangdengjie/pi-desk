@@ -182,7 +182,13 @@ describe("responsive workbench layout", () => {
   it("gives markdown file previews a calm reading layout", async () => {
     const css = await workbenchText();
     expect(css).toMatch(/\.file-preview-toolbar\s*{[^}]*min-height:\s*40px[^}]*padding:\s*0 10px/s);
-    expect(css).toMatch(/\.markdown-preview-toggle\s*{[^}]*min-height:\s*40px[^}]*background:\s*var\(--bg-conversation\)/s);
+    // The bar owns the row. The toggle must not paint a surface or set a height floor of its own,
+    // or it draws a --bg-conversation rectangle inside the panel's bar - see the comment in
+    // workbench.css and the specificity trap that let it survive the bar's introduction.
+    const toggle = css.match(/\.markdown-preview-toggle\s*{[^}]*}/s)?.[0] ?? "";
+    expect(toggle).not.toMatch(/background/);
+    expect(toggle).not.toMatch(/min-height/);
+    expect(toggle).not.toMatch(/border-bottom/);
     expect(css).toMatch(/\.file-markdown-preview\s*{[^}]*padding:\s*32px max\(28px, calc\(\(100% - var\(--conversation-content-width\)\) \/ 2\)\) 72px[^}]*scrollbar-gutter:\s*stable/s);
     expect(css).toMatch(/\.file-markdown-preview h1\s*{[^}]*font-size:\s*calc\(24px \+ var\(--font-size-delta\)\)[^}]*letter-spacing:\s*-0\.02em/s);
     expect(css).toMatch(/\.file-markdown-preview h2\s*{[^}]*margin:\s*32px 0 12px[^}]*font-size:\s*calc\(19px \+ var\(--font-size-delta\)\)/s);
