@@ -313,7 +313,8 @@
   border-top-color: var(--text-secondary);
   border-radius: 50%;
   background: transparent;
-  animation: spin 0.85s linear infinite;
+  /* 旋转故意不写在这里：这个元素所在的行会被重排序，CSS animation 在 DOM 重新插入时从 0 重播。
+     改由 utils/spin.ts 的 v-spin（Web Animations API）驱动，实测见 .pi/bin/hitprobe/reorder-spin.html */
 }
 
 .thread-unread {

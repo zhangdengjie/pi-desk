@@ -30,6 +30,7 @@ import RemoveWorkspaceDialog from "./RemoveWorkspaceDialog.vue";
 import { useAppStore } from "../stores/app";
 import { tr } from "../i18n";
 import { threadTooltip } from "../utils/threadLabel";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const searchInput = ref<HTMLInputElement>();
@@ -413,7 +414,8 @@ onBeforeUnmount(() => {
             <time v-if="relativeTime(thread.modifiedAt || thread.createdAt)" class="thread-time" :datetime="thread.modifiedAt || thread.createdAt">{{ relativeTime(thread.modifiedAt || thread.createdAt) }}</time>
             <span
               v-if="thread.status === 'running' || thread.status === 'starting'"
-              class="thread-status size-3.5 shrink-0 rounded-full border-2 border-[var(--border-strong)] border-t-[var(--text-secondary)] motion-reduce:animate-none"
+              v-spin
+              class="thread-status size-3.5 shrink-0 rounded-full border-2 border-[var(--border-strong)] border-t-[var(--text-secondary)]"
               :data-state="thread.status"
               :aria-label="thread.status === 'starting' ? tr('sidebar.piStarting') : tr('sidebar.taskRunning')"
             />

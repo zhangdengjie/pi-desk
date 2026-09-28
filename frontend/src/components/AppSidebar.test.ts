@@ -285,6 +285,40 @@ describe("AppSidebar", () => {
     expect(wrapper.find(".thread-unread").exists()).toBe(false);
   });
 
+  it("rotates the running ring through the Web Animations API", async () => {
+    // 行会重排序，CSS animation 在重新插入时从 0 重播（= 用户看到的「卡卡的」）。
+    // 所以模板必须绑 v-spin；只断言元素存在抽不出这个回归。
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      catalogLoading: false,
+      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
+      threads: [{
+        id: "thread-1", title: "Spinning", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
+        status: "idle", started: true, generation: 1, modifiedAt: new Date().toISOString(), unread: false,
+      }],
+    });
+    const animate = vi.fn((_frames: Keyframe[], _options: KeyframeAnimationOptions) => ({ cancel: vi.fn(), playState: "running" }));
+    const originalAnimate = HTMLElement.prototype.animate;
+    HTMLElement.prototype.animate = animate as unknown as typeof HTMLElement.prototype.animate;
+
+    try {
+      const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
+      store.threads[0].status = "running";
+      await wrapper.vm.$nextTick();
+
+      expect(wrapper.get(".thread-status").attributes("data-state")).toBe("running");
+      expect(animate).toHaveBeenCalledTimes(1);
+      expect(animate.mock.calls[0][1]).toMatchObject({ iterations: Infinity, easing: "linear" });
+
+      wrapper.unmount();
+      expect((animate.mock.results[0].value as { cancel: ReturnType<typeof vi.fn> }).cancel).toHaveBeenCalledTimes(1);
+    } finally {
+      HTMLElement.prototype.animate = originalAnimate;
+    }
+  });
+
   it("does not bold a task or show a process marker when Pi is not started", () => {
     const pinia = createPinia();
     setActivePinia(pinia);

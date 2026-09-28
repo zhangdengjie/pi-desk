@@ -286,7 +286,11 @@ describe("session list state indicators", () => {
   it("uses process state for bold text and separate output and unread markers", async () => {
     const layout = await layoutText();
     expect(firstRuleBody(layout, ".thread-title.is-started")).toMatch(/font-weight:\s*650/);
-    expect(firstRuleBody(layout, ".thread-status")).toMatch(/animation:\s*spin/);
+    // 旋转不准写在 CSS 里：任务行会因 modifiedAt 变化被 insertBefore 移动，而同文档重新插入会让
+    // CSS animation 从 0 重播（实测 .pi/bin/hitprobe/reorder-spin.html）。旋转由 utils/spin.ts 的
+    // v-spin（Web Animations API）驱动，CSS 只留几何量。
+    expect(firstRuleBody(layout, ".thread-status")).not.toMatch(/animation:/);
+    expect(firstRuleBody(layout, ".thread-status")).toMatch(/border-radius:\s*50%/);
     expect(firstRuleBody(layout, ".thread-unread")).toMatch(/background:\s*var\(--blue\)/);
     expect(layout).not.toContain(".thread-title.is-unread");
   });
