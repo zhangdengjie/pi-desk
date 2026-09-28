@@ -4,6 +4,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore, type TimelineMessage } from "../stores/app";
 import ConversationPane from "./ConversationPane.vue";
+import { TAIL_PIN_OFFSET } from "../utils/scroll";
 
 vi.mock("../services/agent", () => ({
   agentService: { getState: vi.fn().mockResolvedValue({}) },
@@ -99,8 +100,10 @@ describe("ConversationPane", () => {
     expect((wrapper.get(".timeline").element as HTMLElement).style.getPropertyValue("--composer-overlay-reserve")).toBe("320px");
     // scrollToBottom writes an oversized offset and lets the engine clamp it (reading
     // scrollHeight there would force a layout); jsdom lays nothing out, so the raw
-    // write is what lands.
-    expect(timeline.scrollTop).toBe(Number.MAX_SAFE_INTEGER);
+    // write is what lands. The write must be past the bottom - and, unlike
+    // Number.MAX_SAFE_INTEGER, small enough that WebKit does not clamp it to the top.
+    expect(timeline.scrollTop).toBe(TAIL_PIN_OFFSET);
+    expect(timeline.scrollTop).toBeGreaterThan(1200);
 
     timeline.scrollTop = 100;
     await wrapper.get(".timeline").trigger("scroll");
@@ -238,8 +241,10 @@ describe("ConversationPane", () => {
     expect(wrapper.find(".timeline-jump-latest").exists()).toBe(true);
     await wrapper.get(".timeline-jump-latest").trigger("click");
     // The jump pins with an oversized scrollTop that the engine clamps to the exact
-    // bottom; jsdom does not clamp, so the raw write is what lands.
-    expect(timeline.scrollTop).toBe(Number.MAX_SAFE_INTEGER);
+    // bottom; jsdom does not clamp, so the raw write is what lands. Same ceiling as
+    // the composer path: at 2^31 or above WebKit clamps it to the top instead.
+    expect(timeline.scrollTop).toBe(TAIL_PIN_OFFSET);
+    expect(timeline.scrollTop).toBeGreaterThan(1800);
     expect(wrapper.find(".timeline-jump-latest").exists()).toBe(false);
 
     await stream("Message 3 finished writing", 2020);

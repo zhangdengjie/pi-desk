@@ -8,7 +8,7 @@ import ConversationMessage from "./ConversationMessage.vue";
 import SearchPopover from "./SearchPopover.vue";
 import { useAppStore } from "../stores/app";
 import { CONVERSATION_VIRTUALIZATION_THRESHOLD, estimateMessageSize, shouldVirtualizeMessages } from "../utils/conversationVirtualization";
-import { isNearBottom, createSettleSnap, nestedScrollerCanGoUp, nextTailScroll } from "../utils/scroll";
+import { isNearBottom, createSettleSnap, nestedScrollerCanGoUp, nextTailScroll, TAIL_PIN_OFFSET } from "../utils/scroll";
 import { streamTuning } from "../utils/streamTuning";
 import { groupConversationTurns } from "../utils/conversationGrouping";
 import { tr } from "../i18n";
@@ -176,7 +176,9 @@ function scrollToBottom() {
   // `scrollHeight` first: this runs right after the composer's new padding
   // landed, so the read would force a synchronous layout of the whole
   // transcript - the third forced layout of a single Enter keystroke.
-  if (element) element.scrollTop = Number.MAX_SAFE_INTEGER;
+  // It has to stay under 2^31 though: WebKit drops any bigger write at 0, which
+  // reads as "pressing Enter throws the transcript to the top" (TAIL_PIN_OFFSET).
+  if (element) element.scrollTop = TAIL_PIN_OFFSET;
 }
 
 // The follow is one frame chain, not one scroll per event: several ResizeObserver
