@@ -756,6 +756,7 @@
   padding-right: calc(var(--inspector-width) + var(--conversation-inline-space));
 }
 
+
 .message-row {
   padding: 10px 0;
 }
@@ -1059,6 +1060,15 @@
 .file-markdown-preview :is(p, ul, ol, blockquote, pre) {
   margin-top: 0;
   margin-bottom: 14px;
+}
+
+/* ...but that selector is a descendant one, so it also reaches the <p> *inside* a blockquote or a
+   list item. A block with padding cannot collapse a child's bottom margin out of itself, so the
+   14px landed inside the tinted quote box and rendered as a blank line under the last text line -
+   measured: the quote box was 49px around a 23px paragraph in the preview and 35px in the
+   transcript, where no such rule reaches. Top-level rhythm stays as authored. */
+.file-markdown-preview :is(blockquote, li) > :last-child {
+  margin-bottom: 0;
 }
 
 /* Vertical rhythm for tables lives on the scroll wrapper, because the <table>

@@ -196,6 +196,17 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.file-markdown-preview \.markdown-table-scroll\s*{[^}]*margin:\s*0 0 14px/s);
   });
 
+  it("keeps the preview's block rhythm out of quotes and list items", async () => {
+    const css = await workbenchText();
+    // Authored on top-level blocks, but written as a descendant selector...
+    expect(css).toMatch(/\.file-markdown-preview :is\(p, ul, ol, blockquote, pre\)\s*{[^}]*margin-bottom:\s*14px/s);
+    // ...so it also reaches the <p> inside a <blockquote>. A block with padding cannot collapse a
+    // child's bottom margin past its own edge, so that 14px painted inside the tinted quote box and
+    // read as a blank line: measured 49px around a 23px paragraph in the preview vs 35px in the
+    // transcript. The last child of a container must not carry it.
+    expect(css).toMatch(/\.file-markdown-preview :is\(blockquote, li\) > :last-child\s*{[^}]*margin-bottom:\s*0/s);
+  });
+
   it("separates transcript markdown levels by a size step and a rule, not by hue", async () => {
     const css = await workbenchText();
     // Typora's contract: headings are ink, and the level is carried by size + a hairline under
