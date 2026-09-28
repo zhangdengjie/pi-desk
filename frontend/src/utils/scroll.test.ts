@@ -5,9 +5,15 @@ describe("TAIL_PIN_OFFSET", () => {
   it("stays under the ceiling where WebKit drops a scrollTop write at the top", () => {
     // Measured in a real WKWebView: 2^31 - 1 lands at the bottom, 2^31 lands at 0.
     // Number.MAX_SAFE_INTEGER and Infinity both land at 0, so "just write something
-    // huge" is a jump-to-top on the engine every macOS build runs on.
+    // huge" is a jump-to-top on the engine every macOS build runs on. Blink clamps the
+    // same values correctly, which is what makes the bug invisible until someone opens
+    // a session on macOS.
     expect(TAIL_PIN_OFFSET).toBeLessThan(2 ** 31);
     expect(Number.MAX_SAFE_INTEGER).toBeGreaterThanOrEqual(2 ** 31);
+  });
+
+  it("is finite, because both engines drop a non-finite write at the top", () => {
+    expect(Number.isFinite(TAIL_PIN_OFFSET)).toBe(true);
   });
 
   it("is still far past the bottom of any transcript this pane can render", () => {

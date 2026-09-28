@@ -2,19 +2,27 @@
  * An offset that means "the very bottom" without reading layout.
  *
  * The usual trick for pinning a scroll box is to write something absurd and let the
- * engine clamp it. On WebKit that trick backfires above 2^31: a `scrollTop` write of
- * 2147483648 or more is dropped at 0, i.e. straight to the *top*. Measured in a real
- * WKWebView - the engine every macOS build ships on - with `.pi/bin/hitprobe/scrollprobe`:
- * `2147483647` -> bottom, `2147483648` -> top, `Number.MAX_SAFE_INTEGER` -> top,
- * `Infinity` -> top, `1e9` -> bottom. So `Number.MAX_SAFE_INTEGER` is not "the bottom",
- * it is a teleport to the top plus a scroll event that disarms the tail follow.
+ * engine clamp it. On WebKit that trick backfires above 2^31 through the *property
+ * setter*: `element.scrollTop = 2147483648` is dropped at 0, i.e. straight to the top,
+ * while `element.scrollTo(0, 2147483648)` clamps correctly. Measured on both engines
+ * with `.pi/bin/hitprobe/scroll-battery.html` (`scrollprobe` for WKWebView - the one
+ * every macOS build ships on - and headless Chrome for Blink):
+ *
+ * | write to `scrollTop` | WebKit | Blink |
+ * |---|---|---|
+ * | `1e9`, `2^31 - 1`, `2^30` | bottom | bottom |
+ * | `2^31`, `2^32`, `Number.MAX_SAFE_INTEGER` | **top** | bottom |
+ * | `Infinity`, `1e300`, `-1e9`, `NaN` | top | top |
+ *
+ * So `Number.MAX_SAFE_INTEGER` was never "the bottom" here - it is a teleport to the
+ * top plus a scroll event the follow then reads as "the reader left the tail", which
+ * disarms the pin mid-run. And no non-finite value is a safe alternative: both engines
+ * drop those at 0, so the only portable oversized write is a finite one under 2^31.
  *
  * 1e9 keeps the property the oversized write was there for - no `scrollHeight` read,
  * so no forced layout of the transcript - and sits 2x under the ceiling. The pane
  * would need about a million screens of content before the write stops reaching the
- * bottom. Losing that headroom is not a cosmetic failure either: the bad write also
- * arrives back as a scroll event, the follow reads it as "the reader left the tail",
- * and the pin disarms in the middle of a run.
+ * bottom.
  */
 export const TAIL_PIN_OFFSET = 1_000_000_000;
 
