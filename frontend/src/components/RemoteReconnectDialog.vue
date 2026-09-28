@@ -5,6 +5,7 @@ import { useModalFocus } from "../composables/useModalFocus";
 import { useAppStore } from "../stores/app";
 import { tr } from "../i18n";
 import { nextTick, ref, watch } from "vue";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const dialog = ref<HTMLElement | null>(null);
@@ -52,7 +53,7 @@ useModalFocus(dialog, close, { canClose: () => !appStore.remoteReconnectBusy });
       <footer :class="ui.dialogFooter">
         <button class="text-button" :class="ui.button" type="button" :disabled="appStore.remoteReconnectBusy" @click="close">{{ tr("common.cancel") }}</button>
         <button class="text-button primary" :class="ui.buttonPrimary" type="button" :disabled="appStore.remoteReconnectBusy" @click="void appStore.confirmRemoteReconnect()">
-          <LoaderCircle v-if="appStore.remoteReconnectBusy" :size="14" class="is-spinning" />
+          <LoaderCircle v-spin v-if="appStore.remoteReconnectBusy" :size="14" class="is-spinning" />
           {{ appStore.remoteReconnectBusy ? tr("remoteReconnect.connecting") : tr("remoteReconnect.connect") }}
         </button>
       </footer>

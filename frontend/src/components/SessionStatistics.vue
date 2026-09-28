@@ -6,6 +6,7 @@ import type { SessionUsageSummary } from "../../bindings/pi-desk/internal/domain
 import { tr } from "../i18n";
 import { catalogService } from "../services/catalog";
 import { useAppStore } from "../stores/app";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const scope = ref<"all" | "workspace">("all");
@@ -56,7 +57,7 @@ onMounted(() => { void refresh(); });
         <button type="button" role="tab" :aria-selected="scope === 'workspace'" :disabled="!workspacePath" @click="void changeScope('workspace')">{{ tr("settings.currentWorkspace") }}</button>
       </div>
       <p v-if="scope === 'workspace' && workspacePath" class="statistics-path" :title="workspacePath">{{ workspacePath }}</p>
-      <div v-if="loading && !usage" class="settings-empty" :class="ui.empty"><RefreshCw :size="18" class="is-spinning" /><span>{{ tr("settings.loadingStatistics") }}</span></div>
+      <div v-if="loading && !usage" class="settings-empty" :class="ui.empty"><RefreshCw v-spin :size="18" class="is-spinning" /><span>{{ tr("settings.loadingStatistics") }}</span></div>
       <div v-else-if="usage" class="statistics-content">
       <div class="statistics-grid">
         <section><span>{{ tr("settings.statSessions") }}</span><strong>{{ formatTokens(usage.sessions) }}</strong></section>

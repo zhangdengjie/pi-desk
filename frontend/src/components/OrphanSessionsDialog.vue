@@ -7,6 +7,7 @@ import { useModalFocus } from "../composables/useModalFocus";
 import { orphanSessionService } from "../services/orphanSessions";
 import { useAppStore } from "../stores/app";
 import { tr } from "../i18n";
+import { vSpin } from "../utils/spin";
 
 interface TranscriptMessage {
   id: string;
@@ -140,7 +141,7 @@ onMounted(() => { void loadSessions(); });
       </header>
       <div class="orphan-body">
         <aside class="orphan-list" :aria-label="tr('orphan.sessions')">
-          <p v-if="loading" class="sidebar-empty"><LoaderCircle :size="15" class="is-spinning" /> {{ tr("orphan.loading") }}</p>
+          <p v-if="loading" class="sidebar-empty"><LoaderCircle v-spin :size="15" class="is-spinning" /> {{ tr("orphan.loading") }}</p>
           <p v-else-if="sessions.length === 0" class="sidebar-empty">{{ tr("orphan.empty") }}</p>
           <button v-for="session in sessions" :key="session.path" type="button" :class="[ui.listItem, { active: selectedPath === session.path }]" @click="void selectSession(session.path)">
             <strong>{{ session.title || session.name || tr("orphan.untitled") }}</strong>
@@ -160,7 +161,7 @@ onMounted(() => { void loadSessions(); });
               </div>
             </header>
             <div class="orphan-messages" aria-live="polite">
-              <p v-if="loadingTranscript && messages.length === 0" class="sidebar-empty"><LoaderCircle :size="15" class="is-spinning" /> {{ tr("orphan.loadingTranscript") }}</p>
+              <p v-if="loadingTranscript && messages.length === 0" class="sidebar-empty"><LoaderCircle v-spin :size="15" class="is-spinning" /> {{ tr("orphan.loadingTranscript") }}</p>
               <article v-for="message in messages" :key="message.id" :class="ui.messageItem" :data-role="message.role">
                 <header><strong>{{ message.role }}</strong><time v-if="message.timestamp">{{ message.timestamp }}</time></header>
                 <pre>{{ message.text }}</pre>

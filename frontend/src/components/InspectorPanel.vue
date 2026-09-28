@@ -13,6 +13,7 @@ import MarkdownOutlineNav from "./MarkdownOutlineNav.vue";
 import SearchPopover from "./SearchPopover.vue";
 import { collectMarkdownOutline, markdownHasHeadings, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import { tr } from "../i18n";
+import { vSpin } from "../utils/spin";
 
 const TerminalPane = defineAsyncComponent(() => import("./TerminalPane.vue"));
 const BrowserPane = defineAsyncComponent(() => import("./BrowserPane.vue"));
@@ -739,7 +740,7 @@ watch(() => currentTab.value?.id, async () => {
     <p v-if="currentTab?.error && (currentTab.kind === 'browser' || currentTab.kind === 'terminal')" class="diff-notice error-text" role="alert">{{ currentTab.error }}</p>
     <div class="panel-body" :class="{ 'has-tree': (currentTab?.kind === 'file' || currentTab?.kind === 'diff') && currentTab.treeOpen }">
     <div v-if="currentTab?.kind === 'file'" :key="currentTab.id" class="inspector-content file-preview-panel">
-      <div v-if="appStore.activeRepositoryFilePreviewLoading && !filePreview" class="repository-state" :class="ui.empty"><LoaderCircle :size="18" class="is-spinning" /></div>
+      <div v-if="appStore.activeRepositoryFilePreviewLoading && !filePreview" class="repository-state" :class="ui.empty"><LoaderCircle v-spin :size="18" class="is-spinning" /></div>
       <div v-else-if="appStore.activeRepositoryFilePreviewError" class="repository-state error-text" :class="ui.empty">{{ appStore.activeRepositoryFilePreviewError }}</div>
       <template v-else-if="filePreview">
         <img v-if="filePreview.mediaType?.startsWith('image/') && filePreview.dataUrl" class="file-media-preview" :src="filePreview.dataUrl" :alt="filePreviewName" />
@@ -797,7 +798,7 @@ watch(() => currentTab.value?.id, async () => {
 
     <div v-else-if="currentTab?.kind === 'diff'" :key="currentTab.id" class="inspector-content repository-panel flex min-h-0 flex-col overflow-hidden p-0 text-sm">
       <div class="repository-diff">
-        <div v-if="appStore.activeRepositoryDiffLoading" class="repository-state" :class="ui.empty"><LoaderCircle :size="18" class="is-spinning" /></div>
+        <div v-if="appStore.activeRepositoryDiffLoading" class="repository-state" :class="ui.empty"><LoaderCircle v-spin :size="18" class="is-spinning" /></div>
         <div v-else-if="appStore.activeRepositoryDiffError && !activeDiff" class="repository-state error-text" :class="ui.empty">{{ appStore.activeRepositoryDiffError }}</div>
         <template v-else-if="activeDiff">
           <div v-if="appStore.activeRepositoryDiffError" class="diff-notice error-text">{{ appStore.activeRepositoryDiffError }}</div>
@@ -835,7 +836,7 @@ watch(() => currentTab.value?.id, async () => {
         <span>{{ tr("inspector.showIgnored") }}</span>
       </label>
       <div class="panel-file-tree">
-        <div v-if="appStore.activeRepositoryLoading && !repository" class="repository-state"><LoaderCircle :size="18" class="is-spinning" /></div>
+        <div v-if="appStore.activeRepositoryLoading && !repository" class="repository-state"><LoaderCircle v-spin :size="18" class="is-spinning" /></div>
         <p v-else-if="appStore.activeRepositoryError" class="error-text" role="alert">{{ appStore.activeRepositoryError }}</p>
         <template v-else>
           <p v-if="sessionChangesError" class="error-text">{{ sessionChangesError }}</p>

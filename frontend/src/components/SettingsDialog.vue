@@ -13,6 +13,7 @@ import PromptTemplateManager from "./PromptTemplateManager.vue";
 import SkillManager from "./SkillManager.vue";
 import McpManager from "./McpManager.vue";
 import SessionStatistics from "./SessionStatistics.vue";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const copied = ref(false);
@@ -292,7 +293,7 @@ function sourceIcon(source: SlashCommand["source"]) {
               </dl>
               <div class="settings-actions">
                 <button class="text-button" :class="ui.button" type="button" :disabled="!appStore.bootstrap?.runtime.command" @click="copyRuntimePath"><Copy :size="14" />{{ copied ? tr("settings.copied") : tr("settings.copyPath") }}</button>
-                <button class="text-button" :class="ui.button" type="button" :disabled="appStore.runtimeCheckLoading" @click="appStore.checkRuntime"><RotateCw :size="14" :class="{ 'is-spinning': appStore.runtimeCheckLoading }" />{{ tr("settings.recheck") }}</button>
+                <button class="text-button" :class="ui.button" type="button" :disabled="appStore.runtimeCheckLoading" @click="appStore.checkRuntime"><RotateCw :size="14" v-spin="appStore.runtimeCheckLoading" :class="{ 'is-spinning': appStore.runtimeCheckLoading }" />{{ tr("settings.recheck") }}</button>
                 <button v-if="runtimeReady" data-testid="update-pi" class="text-button" :class="ui.button" type="button" :disabled="maintenanceLoading" @click="requestPiMaintenance(PiMaintenanceAction.PiUpdateSelf)"><RefreshCw :size="14" />{{ tr("settings.updatePi") }}</button>
                 <button v-else-if="runtimeMissing" data-testid="install-pi" class="text-button primary" :class="ui.buttonPrimary" type="button" :disabled="maintenanceLoading" @click="requestPiMaintenance(PiMaintenanceAction.PiInstall)"><Download :size="14" />{{ tr("settings.installPi") }}</button>
               </div>
@@ -300,7 +301,7 @@ function sourceIcon(source: SlashCommand["source"]) {
                 <p><strong>{{ tr("settings.maintenanceConfirmTitle", { action: maintenanceActionLabel(maintenanceAction) }) }}</strong><span>{{ tr("settings.maintenanceConfirmHelp") }}</span></p>
                 <div class="settings-actions">
                   <button class="text-button" :class="ui.button" type="button" :disabled="maintenanceLoading" @click="maintenanceAction = null">{{ tr("common.cancel") }}</button>
-                  <button data-testid="confirm-pi-maintenance" class="text-button primary" :class="ui.buttonPrimary" type="button" :disabled="maintenanceLoading" @click="void confirmPiMaintenance()"><RefreshCw v-if="maintenanceLoading" :size="14" class="is-spinning" />{{ maintenanceLoading ? tr("settings.maintainingPi") : tr("common.confirm") }}</button>
+                  <button data-testid="confirm-pi-maintenance" class="text-button primary" :class="ui.buttonPrimary" type="button" :disabled="maintenanceLoading" @click="void confirmPiMaintenance()"><RefreshCw v-spin v-if="maintenanceLoading" :size="14" class="is-spinning" />{{ maintenanceLoading ? tr("settings.maintainingPi") : tr("common.confirm") }}</button>
                 </div>
               </div>
               <p v-if="maintenanceError" class="form-error">{{ maintenanceError }}</p>
@@ -425,12 +426,12 @@ function sourceIcon(source: SlashCommand["source"]) {
                   <small>{{ tr("settings.syncSessionsHelp") }}</small>
                   <small v-if="appStore.sessionSyncError" class="text-[var(--red)]" role="alert">{{ appStore.sessionSyncError }}</small>
                 </span>
-                <button class="text-button" :class="ui.button" type="button" :disabled="appStore.sessionSyncLoading" :aria-busy="appStore.sessionSyncLoading" @click="void appStore.syncAndRestoreSessions()"><RefreshCw :size="14" :class="{ 'is-spinning': appStore.sessionSyncLoading }" />{{ appStore.sessionSyncLoading ? tr("settings.syncingSessions") : tr("sidebar.syncSessions") }}</button>
+                <button class="text-button" :class="ui.button" type="button" :disabled="appStore.sessionSyncLoading" :aria-busy="appStore.sessionSyncLoading" @click="void appStore.syncAndRestoreSessions()"><RefreshCw :size="14" v-spin="appStore.sessionSyncLoading" :class="{ 'is-spinning': appStore.sessionSyncLoading }" />{{ appStore.sessionSyncLoading ? tr("settings.syncingSessions") : tr("sidebar.syncSessions") }}</button>
               </div>
               <div data-testid="update-check-row" class="setting-row" :class="ui.row">
                 <span><strong>{{ tr("settings.updates") }}</strong><small>{{ tr("settings.updatesHelp") }}</small></span>
                 <div class="flex shrink-0 items-center gap-2">
-                  <button data-testid="check-updates-now" class="text-button" :class="ui.button" type="button" :disabled="appStore.updateCheckLoading" @click="void checkForUpdates()"><RefreshCw :size="14" :class="{ 'is-spinning': appStore.updateCheckLoading }" />{{ tr("settings.checkNow") }}</button>
+                  <button data-testid="check-updates-now" class="text-button" :class="ui.button" type="button" :disabled="appStore.updateCheckLoading" @click="void checkForUpdates()"><RefreshCw :size="14" v-spin="appStore.updateCheckLoading" :class="{ 'is-spinning': appStore.updateCheckLoading }" />{{ tr("settings.checkNow") }}</button>
                   <small class="whitespace-nowrap" :class="{ 'text-[var(--amber)]': appStore.updateCheckResult?.status === 'available', 'text-[var(--red)]': appStore.updateCheckResult?.status === 'error' }">{{ updateMessage() }}</small>
                   <a v-if="appStore.updateCheckResult?.url" class="text-button" :class="ui.button" :href="appStore.updateCheckResult.url" target="_blank" rel="noreferrer"><ExternalLink :size="14" />{{ tr("settings.release") }}</a>
                 </div>

@@ -5,6 +5,7 @@ import { computed, ref } from "vue";
 import { useModalFocus } from "../composables/useModalFocus";
 import { tr } from "../i18n";
 import type { ModelTestResult } from "../services/modelconfig";
+import { vSpin } from "../utils/spin";
 
 const props = defineProps<{
   modelName: string;
@@ -77,7 +78,7 @@ useModalFocus(dialog, close);
               </span>
             </header>
             <div v-if="props.testing" class="model-test-response-loading">
-              <LoaderCircle :size="15" class="is-spinning" aria-hidden="true" />
+              <LoaderCircle v-spin :size="15" class="is-spinning" aria-hidden="true" />
               <span>{{ tr("settings.testingModel") }}</span>
             </div>
             <pre v-else>{{ responseText }}</pre>
@@ -97,7 +98,7 @@ useModalFocus(dialog, close);
             :disabled="props.testing || !props.prompt.trim()"
             @click="emit('submit')"
           >
-            <LoaderCircle v-if="props.testing" :size="14" class="is-spinning" aria-hidden="true" />
+            <LoaderCircle v-spin v-if="props.testing" :size="14" class="is-spinning" aria-hidden="true" />
             <FlaskConical v-else :size="14" aria-hidden="true" />
             {{ props.result ? tr("settings.resendModelTest") : tr("settings.sendModelTest") }}
           </button>

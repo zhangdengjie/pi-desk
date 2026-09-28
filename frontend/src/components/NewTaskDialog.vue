@@ -6,6 +6,7 @@ import { useModalFocus } from "../composables/useModalFocus";
 import { remoteWorkspaceService, type RemoteAliasSummary, type RemoteRootCandidate } from "../services/remoteWorkspaces";
 import { useAppStore } from "../stores/app";
 import { tr } from "../i18n";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const mode = ref<"local" | "ssh">("local");
@@ -319,7 +320,7 @@ async function create() {
             <FolderGit2 :size="16" />
             <input class="h-full w-full min-w-0 border-0 bg-transparent p-0 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]" id="workspace-path" v-model="workspacePath" autofocus spellcheck="false" placeholder="D:\projects\my-project" @keydown.enter="create" />
             <button class="icon-button inline-grid size-7 place-items-center rounded-md border-0 bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50" type="button" :title="tr('newTask.browse')" :disabled="browsing" @click="browse">
-              <LoaderCircle v-if="browsing" :size="15" class="is-spinning" /><FolderOpen v-else :size="15" />
+              <LoaderCircle v-spin v-if="browsing" :size="15" class="is-spinning" /><FolderOpen v-else :size="15" />
             </button>
           </div>
           <fieldset class="trust-options">
@@ -389,7 +390,7 @@ async function create() {
         <button class="text-button" :class="ui.button" type="button" :disabled="remoteBusy" @click="void close()">{{ tr("common.cancel") }}</button>
         <button v-if="candidate" class="text-button danger-button" :class="ui.buttonDanger" type="button" :disabled="remoteBusy" @click="void rejectRemoteRoot()">{{ tr("newTask.sshReject") }}</button>
         <button class="text-button primary" :class="ui.buttonPrimary" type="button" :disabled="creating || (mode === 'local' ? !workspacePath.trim() : (!candidate && (!remoteName.trim() || !remoteAlias.trim() || !remoteRoot.trim())))" @click="create">
-          <LoaderCircle v-if="creating" :size="14" class="is-spinning" />
+          <LoaderCircle v-spin v-if="creating" :size="14" class="is-spinning" />
           {{ creating ? tr("newTask.creating") : candidate ? tr("newTask.sshApprove") : mode === 'ssh' ? tr("newTask.sshCheckConnect") : tr("newTask.create") }}
         </button>
       </footer>

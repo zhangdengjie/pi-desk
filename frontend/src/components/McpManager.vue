@@ -6,6 +6,7 @@ import { McpConfigScope, type McpEffectiveServer, type McpImportCandidate, type 
 import { tr } from "../i18n";
 import { mcpConfigService, type McpConfigSnapshot } from "../services/mcpconfig";
 import { useAppStore } from "../stores/app";
+import { vSpin } from "../utils/spin";
 
 type TransportChoice = "stdio" | "http" | "socket";
 type EditorMode = "form" | "json";
@@ -475,7 +476,7 @@ onMounted(() => {
 
 <template>
   <div class="settings-content model-config-content mcp-config-content" :class="ui.settingsContent">
-    <div v-if="loading" class="settings-empty" :class="ui.empty"><RefreshCw :size="18" class="is-spinning" /><span>{{ tr("settings.loadingMcp") }}</span></div>
+    <div v-if="loading" class="settings-empty" :class="ui.empty"><RefreshCw v-spin :size="18" class="is-spinning" /><span>{{ tr("settings.loadingMcp") }}</span></div>
     <div v-else-if="loadError" class="settings-empty is-error" :class="ui.empty"><XCircle :size="18" /><span>{{ loadError }}</span></div>
     <main v-else class="mcp-page">
       <section v-if="view === 'list'" class="mcp-list-page">
@@ -511,7 +512,7 @@ onMounted(() => {
         </div>
 
         <section v-if="importOpen" class="mcp-import-panel" aria-live="polite">
-          <p v-if="importLoading" class="settings-inline-note"><RefreshCw :size="12" class="is-spinning" /><span>{{ tr("settings.loadingMcp") }}</span></p>
+          <p v-if="importLoading" class="settings-inline-note"><RefreshCw v-spin :size="12" class="is-spinning" /><span>{{ tr("settings.loadingMcp") }}</span></p>
           <p v-else-if="importError" class="settings-inline-note is-error">{{ importError }}</p>
           <p v-else-if="!importCandidates.length" class="settings-inline-note">{{ tr("settings.mcpImportEmpty") }}</p>
           <template v-else>
@@ -675,7 +676,7 @@ onMounted(() => {
             <button v-if="isExisting && !effectiveSelection" class="text-button danger" :class="ui.buttonDanger" type="button" :disabled="saving" @click="void deleteServer()"><Trash2 :size="14" />{{ deleteArmed ? tr("settings.confirmDeleteMcp") : tr("settings.deleteMcp") }}</button>
             <div>
               <button class="text-button" :class="ui.button" type="button" :disabled="saving" @click="closeEditor">{{ tr("common.cancel") }}</button>
-              <button class="text-button" :class="ui.button" type="button" :disabled="saving || testing" @click="void testServer()"><RefreshCw v-if="testing" :size="14" class="is-spinning" /><Cable v-else :size="14" />{{ testing ? tr("settings.mcpTesting") : tr("settings.mcpTest") }}</button>
+              <button class="text-button" :class="ui.button" type="button" :disabled="saving || testing" @click="void testServer()"><RefreshCw v-spin v-if="testing" :size="14" class="is-spinning" /><Cable v-else :size="14" />{{ testing ? tr("settings.mcpTesting") : tr("settings.mcpTest") }}</button>
               <button v-if="!effectiveSelection" class="text-button primary" :class="ui.buttonPrimary" type="submit" :disabled="saving || testing || !dirty"><Save :size="14" />{{ saving ? tr("settings.savingMcp") : tr("settings.saveMcp") }}</button>
             </div>
           </footer>

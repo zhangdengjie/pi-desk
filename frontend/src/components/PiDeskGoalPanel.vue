@@ -4,6 +4,7 @@ import { ChevronDown, CirclePause, CirclePlay, Goal, LoaderCircle, Trash2 } from
 import { computed, ref } from "vue";
 import { tr } from "../i18n";
 import type { GoalWidgetProjection } from "../utils/goalWidget";
+import { vSpin } from "../utils/spin";
 
 const props = defineProps<{
   goal: GoalWidgetProjection;
@@ -46,7 +47,7 @@ function armClear() {
         <strong>{{ tr("composer.goalTitle") }}</strong>
         <em class="pi-desk-goal-status">{{ statusLabel }}</em>
         <span>{{ tr("composer.goalIteration", { iteration: goal.iteration }) }}</span>
-        <LoaderCircle v-if="running && goal.status === 'active'" :size="12" class="is-spinning" aria-hidden="true" />
+        <LoaderCircle v-spin v-if="running && goal.status === 'active'" :size="12" class="is-spinning" aria-hidden="true" />
       </div>
       <div class="pi-desk-goal-actions">
         <button

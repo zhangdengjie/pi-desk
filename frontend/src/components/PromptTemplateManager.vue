@@ -6,6 +6,7 @@ import { PromptTemplateScope, type PromptTemplateSummary } from "../../bindings/
 import { tr } from "../i18n";
 import { promptTemplateService, type PromptTemplateSnapshot } from "../services/prompts";
 import { useAppStore } from "../stores/app";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const snapshot = ref<PromptTemplateSnapshot>();
@@ -179,7 +180,7 @@ onMounted(() => { void loadTemplates(); });
 
 <template>
   <div class="settings-content model-config-content prompt-config-content" :class="ui.settingsContent">
-    <div v-if="loading" class="settings-empty" :class="ui.empty"><RefreshCw :size="18" class="is-spinning" /><span>{{ tr("settings.loadingPrompts") }}</span></div>
+    <div v-if="loading" class="settings-empty" :class="ui.empty"><RefreshCw v-spin :size="18" class="is-spinning" /><span>{{ tr("settings.loadingPrompts") }}</span></div>
     <div v-else-if="loadError" class="settings-empty is-error" :class="ui.empty"><XCircle :size="18" /><span>{{ loadError }}</span></div>
     <div v-else class="prompt-manager-layout" :class="ui.managerLayout">
       <aside class="prompt-config-list" :class="ui.managerList" :aria-label="tr('settings.promptTemplates')">

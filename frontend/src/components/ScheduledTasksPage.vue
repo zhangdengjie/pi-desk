@@ -24,6 +24,7 @@ import {
   type ScheduledTaskDraft,
   type ScheduledTaskFrequency,
 } from "../utils/scheduledTasks";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const filter = ref<"active" | "paused" | "all">("active");
@@ -270,7 +271,7 @@ onBeforeUnmount(() => {
             <span aria-hidden="true" />
           </label>
           <button :class="ui.iconButton" type="button" :title="tr('scheduledTasks.runNow')" :aria-label="tr('scheduledTasks.runNow')" :disabled="appStore.scheduledTaskRunningByID[task.id] || !task.modelProvider || !task.modelId || !task.thinkingLevel" @click="void appStore.runScheduledTask(task.id)">
-            <RotateCcw v-if="appStore.scheduledTaskRunningByID[task.id]" class="is-spinning" :size="16" />
+            <RotateCcw v-spin v-if="appStore.scheduledTaskRunningByID[task.id]" class="is-spinning" :size="16" />
             <Play v-else :size="16" />
           </button>
           <button v-if="task.lastThreadId" :class="ui.iconButton" type="button" :title="tr('scheduledTasks.openRun')" :aria-label="tr('scheduledTasks.openRun')" @click="openLatestRun(task)">

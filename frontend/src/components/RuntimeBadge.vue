@@ -4,6 +4,7 @@ import { CircleAlert, CircleCheck, LoaderCircle } from "lucide-vue-next";
 import { computed } from "vue";
 import { useAppStore } from "../stores/app";
 import { tr } from "../i18n";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 
@@ -23,7 +24,7 @@ const label = computed(() => {
 
 <template>
   <div class="runtime-badge" :class="ui.root" :data-state="state" :title="appStore.bootstrap?.runtime.message">
-    <LoaderCircle v-if="checking" :size="14" class="is-spinning" />
+    <LoaderCircle v-spin v-if="checking" :size="14" class="is-spinning" />
     <CircleCheck v-else-if="state === 'ready'" :size="14" />
     <CircleAlert v-else :size="14" />
     <span>{{ label }}</span>

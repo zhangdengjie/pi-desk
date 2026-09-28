@@ -5,6 +5,7 @@ import { ref } from "vue";
 import { useModalFocus } from "../composables/useModalFocus";
 import { tr } from "../i18n";
 import type { ModelQuotaResult } from "../services/modelconfig";
+import { vSpin } from "../utils/spin";
 
 const props = defineProps<{
   providerName: string;
@@ -44,7 +45,7 @@ useModalFocus(dialog, close, { canClose: () => !props.loading });
 
         <div class="dialog-body model-quota-body" :class="ui.dialogBody" aria-live="polite">
           <div v-if="props.loading" class="model-quota-loading" role="status">
-            <LoaderCircle :size="18" class="is-spinning" aria-hidden="true" />
+            <LoaderCircle v-spin :size="18" class="is-spinning" aria-hidden="true" />
             <span>{{ tr("settings.loadingAccountQuota") }}</span>
           </div>
           <template v-else-if="props.result?.ok">

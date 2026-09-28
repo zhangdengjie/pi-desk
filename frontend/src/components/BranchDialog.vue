@@ -6,6 +6,7 @@ import { useModalFocus } from "../composables/useModalFocus";
 import type { SessionBranchEntry } from "../services/agent";
 import { useAppStore } from "../stores/app";
 import { tr } from "../i18n";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const maxVisibleNodes = 500;
@@ -100,7 +101,7 @@ function fork(node: VisibleNode) {
           </div>
         </div>
         <div v-else-if="!appStore.activeSessionBranches" class="panel-empty" :class="ui.empty">
-          <LoaderCircle :size="20" class="is-spinning" />
+          <LoaderCircle v-spin :size="20" class="is-spinning" />
           <strong>{{ tr("branches.loading") }}</strong>
         </div>
         <div v-else-if="visibleNodes.length === 0" class="panel-empty" :class="ui.empty">
@@ -137,7 +138,7 @@ function fork(node: VisibleNode) {
           <button class="text-button primary" :class="ui.buttonPrimary" type="button" @click="appStore.closeBranchPanel()">{{ tr("common.close") }}</button>
         </template>
         <template v-else>
-          <span v-if="appStore.activeSessionOperation" class="operation-label"><LoaderCircle :size="13" class="is-spinning" /> {{ appStore.activeSessionOperation }}</span>
+          <span v-if="appStore.activeSessionOperation" class="operation-label"><LoaderCircle v-spin :size="13" class="is-spinning" /> {{ appStore.activeSessionOperation }}</span>
           <button class="text-button" :class="ui.button" type="button" :disabled="Boolean(appStore.activeSessionOperation)" @click="void appStore.cloneActiveSession()">{{ tr("branches.clone") }}</button>
         </template>
       </footer>

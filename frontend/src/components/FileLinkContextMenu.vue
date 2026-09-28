@@ -6,6 +6,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { tr } from "../i18n";
 import { repositoryService } from "../services/repository";
 import type { WorkspaceFileLink } from "../utils/fileLinks";
+import { vSpin } from "../utils/spin";
 
 const props = defineProps<{
   file: WorkspaceFileLink;
@@ -94,24 +95,24 @@ onBeforeUnmount(() => {
     <div ref="menu" class="file-link-context-menu" :class="ui.menu" role="menu" :style="menuStyle" :aria-label="tr('files.actions')">
       <div class="file-link-context-path" :title="file.absolutePath">{{ file.absolutePath }}</div>
       <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="void run('open')">
-        <LoaderCircle v-if="busy === 'open'" :size="15" class="is-spinning" /><ExternalLink v-else :size="15" />
+        <LoaderCircle v-spin v-if="busy === 'open'" :size="15" class="is-spinning" /><ExternalLink v-else :size="15" />
         <span>{{ tr("files.open") }}</span>
       </button>
       <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="void run('openWith')">
-        <LoaderCircle v-if="busy === 'openWith'" :size="15" class="is-spinning" /><AppWindow v-else :size="15" />
+        <LoaderCircle v-spin v-if="busy === 'openWith'" :size="15" class="is-spinning" /><AppWindow v-else :size="15" />
         <span>{{ tr("files.openWith") }}</span>
       </button>
       <div class="file-link-context-separator" />
       <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="void run('save')">
-        <LoaderCircle v-if="busy === 'save'" :size="15" class="is-spinning" /><Save v-else :size="15" />
+        <LoaderCircle v-spin v-if="busy === 'save'" :size="15" class="is-spinning" /><Save v-else :size="15" />
         <span>{{ tr("files.saveAs") }}</span>
       </button>
       <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="void run('copy')">
-        <LoaderCircle v-if="busy === 'copy'" :size="15" class="is-spinning" /><Check v-else-if="copied" :size="15" /><Copy v-else :size="15" />
+        <LoaderCircle v-spin v-if="busy === 'copy'" :size="15" class="is-spinning" /><Check v-else-if="copied" :size="15" /><Copy v-else :size="15" />
         <span>{{ tr("files.copyPath") }}</span>
       </button>
       <button type="button" role="menuitem" :disabled="Boolean(busy)" @click="void run('reveal')">
-        <LoaderCircle v-if="busy === 'reveal'" :size="15" class="is-spinning" /><FolderOpen v-else :size="15" />
+        <LoaderCircle v-spin v-if="busy === 'reveal'" :size="15" class="is-spinning" /><FolderOpen v-else :size="15" />
         <span>{{ tr("files.reveal") }}</span>
       </button>
       <p v-if="error" class="file-link-context-error" role="alert">{{ error }}</p>

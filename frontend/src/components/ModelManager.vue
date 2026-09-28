@@ -18,6 +18,7 @@ import { modelConfigService, type DiscoveredModel, type ManagedModel, type Manag
 import { useAppStore } from "../stores/app";
 import ModelQuotaDialog from "./ModelQuotaDialog.vue";
 import ModelTestDialog from "./ModelTestDialog.vue";
+import { vSpin } from "../utils/spin";
 
 const apiOptions = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"] as const;
 const providerPresetPrefix = "preset:";
@@ -646,7 +647,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="settings-content model-config-content" :class="ui.settingsContent">
-    <div v-if="loading" class="settings-empty" :class="ui.empty"><RefreshCw :size="18" class="is-spinning" /><span>{{ tr("settings.loadingModelsConfig") }}</span></div>
+    <div v-if="loading" class="settings-empty" :class="ui.empty"><RefreshCw v-spin :size="18" class="is-spinning" /><span>{{ tr("settings.loadingModelsConfig") }}</span></div>
     <div v-else-if="loadError" class="settings-empty is-error" :class="ui.empty"><XCircle :size="18" /><span>{{ loadError }}</span></div>
     <div v-else class="model-manager-layout" :class="ui.managerLayout">
       <aside class="model-config-list" :class="ui.managerList" :aria-label="tr('settings.configuredModels')">

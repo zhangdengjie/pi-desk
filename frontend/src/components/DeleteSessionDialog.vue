@@ -5,6 +5,7 @@ import { ref } from "vue";
 import { useModalFocus } from "../composables/useModalFocus";
 import { useAppStore } from "../stores/app";
 import { tr } from "../i18n";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const dialog = ref<HTMLElement | null>(null);
@@ -41,7 +42,7 @@ useModalFocus(dialog, () => appStore.closeDeleteDialog(), { canClose: () => !app
         <template v-else>
           <button class="text-button" :class="ui.button" type="button" :disabled="Boolean(appStore.activeSessionOperation)" @click="appStore.closeDeleteDialog()">{{ tr("common.cancel") }}</button>
           <button class="text-button danger-button" :class="ui.buttonDanger" type="button" :disabled="Boolean(appStore.activeSessionOperation)" @click="void appStore.confirmDeleteSession()">
-            <LoaderCircle v-if="appStore.activeSessionOperation" :size="14" class="is-spinning" />
+            <LoaderCircle v-spin v-if="appStore.activeSessionOperation" :size="14" class="is-spinning" />
             {{ appStore.activeSessionOperation ? tr("deletion.deleting") : appStore.deleteHasSession ? tr("deletion.deleteSession") : tr("deletion.deleteTask") }}
           </button>
         </template>

@@ -4,6 +4,7 @@ import { ref } from "vue";
 import { useModalFocus } from "../composables/useModalFocus";
 import { tr } from "../i18n";
 import { ui } from "../ui/classes";
+import { vSpin } from "../utils/spin";
 
 const props = defineProps<{ workspaceName: string; busy: boolean; error?: string }>();
 const emit = defineEmits<{ cancel: []; remove: []; delete: [] }>();
@@ -31,7 +32,7 @@ useModalFocus(dialog, () => emit("cancel"), { canClose: () => !props.busy });
         <button class="text-button" :class="ui.button" type="button" :disabled="busy" @click="emit('cancel')">{{ tr("common.cancel") }}</button>
         <button class="text-button" :class="ui.button" type="button" :disabled="busy" @click="emit('remove')">{{ tr("workspaceRemoval.removeOnly") }}</button>
         <button class="text-button danger-button" :class="ui.buttonDanger" type="button" :disabled="busy" @click="emit('delete')">
-          <LoaderCircle v-if="busy" :size="14" class="is-spinning" />
+          <LoaderCircle v-spin v-if="busy" :size="14" class="is-spinning" />
           {{ tr("workspaceRemoval.deletePermanently") }}
         </button>
       </footer>

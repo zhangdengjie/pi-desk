@@ -8,6 +8,7 @@ import { LoaderCircle, Play, Plus, Square, Trash2 } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { onTerminalEvent, terminalService, type TerminalEvent } from "../services/terminal";
 import { useAppStore } from "../stores/app";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const props = defineProps<{ sessionId?: string }>();
@@ -398,7 +399,7 @@ onBeforeUnmount(() => {
       <strong :title="shell">{{ activeThread ? shellName : tr('inspector.terminal') }}</strong>
       <span v-if="activeThread" class="terminal-cwd" :title="workspaceLabel">{{ workspaceLabel }}</span>
       <div class="terminal-actions">
-        <LoaderCircle v-if="loading" :size="14" class="is-spinning" />
+        <LoaderCircle v-spin v-if="loading" :size="14" class="is-spinning" />
         <button v-else-if="!running && activeThread" class="icon-button" :class="ui.iconButton" type="button" :title="tr('terminal.start')" @click="void startTerminal()"><Play :size="14" /></button>
         <button v-else-if="running" class="icon-button" :class="ui.iconButton" type="button" :title="tr('terminal.stop')" @click="void stopTerminal()"><Square :size="13" /></button>
         <button class="icon-button" :class="ui.iconButton" type="button" :title="isRemoteThread ? tr('terminal.newTerminalUnsupported') : tr('terminal.newTerminal')" :disabled="!activeThread || isRemoteThread" @click="void appStore.openTerminalTab(activeThread?.id)"><Plus :size="14" /></button>

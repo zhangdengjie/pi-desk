@@ -19,6 +19,7 @@ import MarkdownOutlineNav from "./MarkdownOutlineNav.vue";
 import { markdownHasHeadings, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import ToolCallPanel from "./ToolCallPanel.vue";
 import { tr } from "../i18n";
+import { vSpin } from "../utils/spin";
 
 const props = defineProps<{
   message: TimelineMessage;
@@ -471,7 +472,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
         <summary>
           <ChevronRight class="disclosure-icon" :size="13" aria-hidden="true" />
           <span>{{ executionSummary }}</span>
-          <LoaderCircle v-if="message.streaming" :size="12" class="is-spinning" aria-hidden="true" />
+          <LoaderCircle v-spin v-if="message.streaming" :size="12" class="is-spinning" aria-hidden="true" />
         </summary>
         <div ref="executionDetails" class="execution-process-details">
           <template v-for="step in executionSteps" :key="step.id">
@@ -558,7 +559,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
               @click="openChangedFile(file)"
             >
               <span class="min-w-0 flex-1 truncate"><span class="text-[var(--text-activity)]">{{ file.relativePath.slice(0, -file.name.length) }}</span>{{ file.name }}</span>
-              <LoaderCircle v-if="appStore.activePanelTab?.source === message.id && appStore.activeRepositoryDiffPath === file.relativePath && appStore.activeRepositoryDiffLoading" class="is-spinning shrink-0" :size="13" aria-hidden="true" />
+              <LoaderCircle v-spin v-if="appStore.activePanelTab?.source === message.id && appStore.activeRepositoryDiffPath === file.relativePath && appStore.activeRepositoryDiffLoading" class="is-spinning shrink-0" :size="13" aria-hidden="true" />
               <span v-else class="flex shrink-0 items-center gap-1 font-mono text-xs" :aria-label="tr('conversation.changeTotals', { additions: file.additions, deletions: file.deletions })">
                 <span class="text-[var(--diff-add-text)]">+{{ file.additions }}</span>
                 <span class="text-[var(--diff-delete-text)]">-{{ file.deletions }}</span>
@@ -585,7 +586,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
         :role="runNotice.status === 'failed' ? 'alert' : 'status'"
         :aria-live="runNotice.status === 'failed' ? 'assertive' : 'polite'"
       >
-        <RefreshCw v-if="runNotice.status === 'retrying'" :size="14" class="is-spinning" aria-hidden="true" />
+        <RefreshCw v-spin v-if="runNotice.status === 'retrying'" :size="14" class="is-spinning" aria-hidden="true" />
         <RefreshCw v-else-if="runNotice.status === 'retried'" :size="14" aria-hidden="true" />
         <CheckCircle2 v-else-if="runNotice.status === 'recovered'" :size="14" aria-hidden="true" />
         <TriangleAlert v-else :size="14" aria-hidden="true" />

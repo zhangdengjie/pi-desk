@@ -16,6 +16,7 @@ import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 import DraftInput from "./DraftInput.vue";
 import PiDeskTodoPanel from "./PiDeskTodoPanel.vue";
 import PiDeskGoalPanel from "./PiDeskGoalPanel.vue";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const markdownEditor = ref<{ focus(): void; replaceMarkdown(value: string): void; handleEnter(event: KeyboardEvent): boolean; captureTextInsertion(): (text: string, separate?: boolean) => boolean }>();
@@ -661,7 +662,7 @@ onBeforeUnmount(() => {
     </div>
     <!-- Automatic compaction emits no timeline entry until it succeeds, so the only signal is this banner. -->
     <div v-else-if="appStore.activeSessionIsCompacting" class="retry-banner" :class="ui.status" role="status" aria-live="polite">
-      <LoaderCircle :size="14" class="is-spinning" aria-hidden="true" />
+      <LoaderCircle v-spin :size="14" class="is-spinning" aria-hidden="true" />
       <span>{{ tr("topbar.compacting") }}</span>
     </div>
     <div class="composer-input-stack" :class="{ 'has-todo': Boolean(piDeskTodo), 'has-queue': queuedMessages.length > 0 }">
@@ -796,7 +797,7 @@ onBeforeUnmount(() => {
             <FilePlus2 :size="15" />
           </button>
           <span v-if="piStarting" class="composer-starting" role="status" :title="tr('composer.modelsStarting')">
-            <LoaderCircle :size="13" class="is-spinning" />
+            <LoaderCircle v-spin :size="13" class="is-spinning" />
             <span>{{ tr("composer.modelsStarting") }}</span>
           </span>
           <div ref="modelMenu" class="menu-anchor">
@@ -808,7 +809,7 @@ onBeforeUnmount(() => {
             <div v-if="modelMenuOpen" class="model-menu !fixed" :class="ui.menuSurface" :style="modelMenuStyle" role="menu" @pointerdown.stop>
               <div class="menu-section-label">
                 {{ tr("composer.model") }}
-                <LoaderCircle v-if="modelCatalogRefreshing" :size="11" class="is-spinning" />
+                <LoaderCircle v-spin v-if="modelCatalogRefreshing" :size="11" class="is-spinning" />
               </div>
               <div class="model-menu-options">
                 <button
@@ -828,11 +829,11 @@ onBeforeUnmount(() => {
               <template v-if="modelChanging || appStore.activeThinkingLevels.length">
                 <div class="menu-section-label">
                   {{ tr("composer.reasoning") }}
-                  <LoaderCircle v-if="modelChanging" :size="11" class="is-spinning" />
+                  <LoaderCircle v-spin v-if="modelChanging" :size="11" class="is-spinning" />
                 </div>
                 <div class="thinking-level-grid" :class="{ 'is-loading': modelChanging }" :aria-busy="modelChanging">
                   <div v-if="modelChanging" class="thinking-level-loading" role="status">
-                    <LoaderCircle :size="14" class="is-spinning" />
+                    <LoaderCircle v-spin :size="14" class="is-spinning" />
                   </div>
                   <button
                     v-for="level in modelChanging ? [] : appStore.activeThinkingLevels"

@@ -134,15 +134,9 @@ textarea {
   }
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.is-spinning {
-  animation: spin 0.9s linear infinite;
-}
+/* `.is-spinning` 不再带 CSS `animation`（也不再有 @keyframes spin）：行重排序 / DOM 重新插入会让
+   CSS animation 从 0 重播。它现在只是 v-spin 指令的标记类，旋转由 utils/spin.ts 驱动。
+   真机对照见 .pi/bin/hitprobe/reorder-spin.html 与 spin-parity.html。 */
 
 @media (prefers-reduced-motion: reduce) {
   *,

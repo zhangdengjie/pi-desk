@@ -6,6 +6,7 @@ import { SkillScope, type ManagedSkillSummary } from "../../bindings/pi-desk/int
 import { tr } from "../i18n";
 import { managedSkillService, type ManagedSkillSnapshot } from "../services/skills";
 import { useAppStore } from "../stores/app";
+import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const snapshot = ref<ManagedSkillSnapshot>();
@@ -191,7 +192,7 @@ onMounted(() => { void loadSkills(); });
 
 <template>
   <div class="settings-content model-config-content skill-config-content" :class="ui.settingsContent">
-    <div v-if="loading" class="settings-empty" :class="ui.empty"><RefreshCw :size="18" class="is-spinning" /><span>{{ tr("settings.loadingSkills") }}</span></div>
+    <div v-if="loading" class="settings-empty" :class="ui.empty"><RefreshCw v-spin :size="18" class="is-spinning" /><span>{{ tr("settings.loadingSkills") }}</span></div>
     <div v-else-if="loadError" class="settings-empty is-error" :class="ui.empty"><XCircle :size="18" /><span>{{ loadError }}</span></div>
     <div v-else class="prompt-manager-layout" :class="ui.managerLayout">
       <aside class="prompt-config-list skill-list" :class="ui.managerList" :aria-label="tr('settings.skills')">
