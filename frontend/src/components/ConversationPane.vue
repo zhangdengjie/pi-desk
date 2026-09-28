@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
 import { useVirtualizer } from "@tanstack/vue-virtual";
-import { ArrowDown, CircleDot, History, LoaderCircle } from "lucide-vue-next";
+import { ArrowDown, CircleDot, History } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from "vue";
 import ComposerBar from "./ComposerBar.vue";
 import ConversationMessage from "./ConversationMessage.vue";
@@ -12,7 +12,7 @@ import { isNearBottom, createSettleSnap, nestedScrollerCanGoUp, nextTailScroll, 
 import { streamTuning } from "../utils/streamTuning";
 import { groupConversationTurns } from "../utils/conversationGrouping";
 import { tr } from "../i18n";
-import { vSpin } from "../utils/spin";
+import LoadingRing from "./LoadingRing.vue";
 
 const appStore = useAppStore();
 const timeline = ref<HTMLElement>();
@@ -559,13 +559,13 @@ onBeforeUnmount(() => {
       </nav>
       <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--composer-overlay-reserve': `${composerHeight}px` }" @scroll="onTimelineScroll" @wheel="onTimelineWheel" @pointerdown="markReaderInput" @keydown="markReaderInput">
       <div v-if="appStore.activeSessionOperation === 'Compacting'" class="conversation-operation-banner mb-4 inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-xs text-[var(--text-secondary)] shadow-sm" role="status" aria-live="polite">
-        <LoaderCircle v-spin :size="14" class="is-spinning" aria-hidden="true" />
+        <LoadingRing :size="14" />
         <span>{{ tr("topbar.compacting") }}</span>
       </div>
       <div v-if="!appStore.activeThread" class="empty-workspace h-full" aria-hidden="true" />
 
       <div v-else-if="messages.length === 0" class="empty-thread mx-auto grid min-h-80 max-w-xl content-center justify-items-start gap-3 text-left text-[var(--text-secondary)]">
-        <LoaderCircle v-spin v-if="appStore.transcriptStateByThread[appStore.activeThread.id] === 'loading'" :size="22" class="is-spinning" />
+        <LoadingRing v-if="appStore.transcriptStateByThread[appStore.activeThread.id] === 'loading'" :size="22" />
         <History v-else-if="appStore.activeThread.sessionFile" :size="22" />
         <CircleDot v-else :size="22" />
         <strong class="font-display text-lg font-semibold tracking-[-0.02em] text-[var(--text)]">{{ appStore.activeThread.sessionFile ? tr("conversation.previous") : tr("conversation.startIn", { workspace: appStore.activeThread.workspace }) }}</strong>
@@ -606,7 +606,7 @@ onBeforeUnmount(() => {
         aria-live="polite"
         :aria-label="tr('conversation.waitingForOutput')"
       >
-        <LoaderCircle v-spin :size="14" class="is-spinning" aria-hidden="true" />
+        <LoadingRing :size="14" />
       </div>
       </div>
       <button

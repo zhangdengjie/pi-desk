@@ -317,6 +317,24 @@
      改由 utils/spin.ts 的 v-spin（Web Animations API）驱动，实测见 .pi/bin/hitprobe/reorder-spin.html */
 }
 
+/* 统一的"进行中"圈（components/LoadingRing.vue）：整圈轨道 + 一段高亮，任何角度的外轮廓
+   都是完整圆，所以视觉重心不绕圈。对比 lucide 的 LoaderCircle：它是一条 288° 开口弧，
+   弧的重心离圆心 2.09 个 viewBox 单位 = 12px 下 1.05px 的绕圈半径，转起来看着像偏心。
+   实测 .pi/bin/hitprobe/spin-wobble.html。旋转由 utils/spin.ts 的 v-spin 驱动，这里不写 animation。 */
+.loading-ring {
+  --loading-ring-size: 12px;
+  display: inline-block;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: var(--loading-ring-size);
+  height: var(--loading-ring-size);
+  border: calc(var(--loading-ring-size) / 6) solid var(--border-strong);
+  border-top-color: var(--text-secondary);
+  border-radius: 50%;
+  background: transparent;
+  vertical-align: middle;
+}
+
 .thread-unread {
   width: 8px;
   height: 8px;

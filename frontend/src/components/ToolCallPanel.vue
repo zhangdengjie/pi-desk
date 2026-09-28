@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { Bot, Check, ChevronRight, CircleCheck, CircleX, Copy, LoaderCircle, SquareTerminal, Wrench } from "lucide-vue-next";
+import { Bot, Check, ChevronRight, CircleCheck, CircleX, Copy, SquareTerminal, Wrench } from "lucide-vue-next";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import type { StreamPanelMode, ToolExecution } from "../stores/app";
 import type { SubagentTaskState } from "../utils/subagentTasks";
@@ -10,7 +10,7 @@ import { attachInnerTail, type InnerTail } from "../utils/innerTail";
 import { useRevealedText } from "../composables/useRevealedText";
 import { streamTuning } from "../utils/streamTuning";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
-import { vSpin } from "../utils/spin";
+import LoadingRing from "./LoadingRing.vue";
 
 // Vue casts an absent Boolean prop to false, so the live allowance needs an
 // explicit default or a standalone call would never open.
@@ -236,7 +236,7 @@ onBeforeUnmount(() => {
         <span v-if="durationLabel" class="tool-duration">{{ durationLabel }}</span>
         <span v-if="tool.diff" class="tool-diff-badge">diff</span>
         <span class="tool-status">
-          <LoaderCircle v-spin v-if="tool.status === 'running'" :size="12" class="is-spinning" aria-hidden="true" />
+          <LoadingRing v-if="tool.status === 'running'" :size="12" />
           <CircleCheck v-else-if="tool.status === 'complete'" :size="12" aria-hidden="true" />
           <CircleX v-else :size="12" aria-hidden="true" />
           {{ statusLabel }}
@@ -254,7 +254,7 @@ onBeforeUnmount(() => {
           <span class="tool-subagent-dot" aria-hidden="true" />
           <span class="tool-subagent-name">{{ task.step ? `${task.step}. ` : "" }}{{ task.agent || tr("tools.subagentUnnamed") }}</span>
           <span v-if="task.model" class="tool-subagent-model" :title="task.model">{{ task.model }}</span>
-          <LoaderCircle v-spin v-if="task.status === 'running'" :size="12" class="is-spinning" aria-hidden="true" />
+          <LoadingRing v-if="task.status === 'running'" :size="12" />
           <span v-if="subagentUsageLabel(task)" class="tool-subagent-meta">{{ subagentUsageLabel(task) }}</span>
         </div>
       </div>

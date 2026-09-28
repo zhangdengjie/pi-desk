@@ -524,7 +524,7 @@ describe("ConversationPane", () => {
     const status = wrapper.get(".waiting-for-output");
     expect(status.text()).toBe("");
     expect(status.attributes("aria-label")).toBe("Thinking");
-    expect(status.find("svg.is-spinning").exists()).toBe(true);
+    expect(status.find("span.loading-ring").exists()).toBe(true);
     expect(wrapper.get(".timeline").element.lastElementChild?.classList.contains("waiting-for-output")).toBe(true);
 
     store.retryByThread["thread-1"] = { attempt: 1, maxAttempts: 3, delayMs: 4000 };

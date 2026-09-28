@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { ChevronDown, CirclePause, CirclePlay, Goal, LoaderCircle, Trash2 } from "lucide-vue-next";
+import { ChevronDown, CirclePause, CirclePlay, Goal, Trash2 } from "lucide-vue-next";
 import { computed, ref } from "vue";
 import { tr } from "../i18n";
 import type { GoalWidgetProjection } from "../utils/goalWidget";
-import { vSpin } from "../utils/spin";
+import LoadingRing from "./LoadingRing.vue";
 
 const props = defineProps<{
   goal: GoalWidgetProjection;
@@ -47,7 +47,7 @@ function armClear() {
         <strong>{{ tr("composer.goalTitle") }}</strong>
         <em class="pi-desk-goal-status">{{ statusLabel }}</em>
         <span>{{ tr("composer.goalIteration", { iteration: goal.iteration }) }}</span>
-        <LoaderCircle v-spin v-if="running && goal.status === 'active'" :size="12" class="is-spinning" aria-hidden="true" />
+        <LoadingRing v-if="running && goal.status === 'active'" :size="12" />
       </div>
       <div class="pi-desk-goal-actions">
         <button
