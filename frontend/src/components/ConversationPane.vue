@@ -506,7 +506,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="conversation-pane relative grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden bg-[var(--bg-workspace)]" :class="ui.root" :aria-label="tr('conversation.label')">
-    <div v-if="searchOpen" class="conversation-search absolute right-4 top-3 z-20 w-[min(360px,calc(100%_-_32px))] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-raised)] shadow-lg" role="search" :aria-label="tr('conversation.search')">
+    <div v-if="searchOpen" class="conversation-search absolute top-3 z-20 w-[min(360px,calc(100%_-_32px))] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-raised)] shadow-lg" :style="{ '--inspector-width': `${appStore.inspectorWidth}px` }" role="search" :aria-label="tr('conversation.search')">
       <div class="conversation-search-main flex min-h-10 items-center gap-2 px-2 text-[var(--text-muted)]">
         <Search :size="17" aria-hidden="true" />
         <input :class="ui.input"

@@ -207,6 +207,20 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.file-markdown-preview :is\(blockquote, li\) > :last-child\s*{[^}]*margin-bottom:\s*0/s);
   });
 
+  it("moves the conversation search popover clear of the inspector overlay", async () => {
+    const css = await workbenchText();
+    const pane = await vueText("src/components/ConversationPane.vue");
+    // The inspector is `position: absolute; right: 0`, and the pane keeps the full workspace width
+    // (.timeline compensates with padding-right), so a popover pinned to the pane's right edge sat
+    // under the inspector (z 20 vs 30) and did not follow the divider.
+    expect(css).toMatch(/\.app-shell\.is-inspector-open \.conversation-search\s*{[^}]*right:\s*calc\(var\(--inspector-width\) \+ 16px\)/s);
+    // --inspector-width is registered `inherits: false`, so the popover element has to be handed it.
+    expect(pane).toMatch(/class="conversation-search[^"]*"\s*\n?\s*:style="\{ '--inspector-width'/s);
+    // And `right` must stay out of the template: `.right-4` compiles to `right: … !important`, and an
+    // important utility beats this unlayered rule - verified against the built sheet (16px won).
+    expect(pane).not.toMatch(/class="conversation-search[^"]*\b(right|left)-[\w.]+/);
+  });
+
   it("separates transcript markdown levels by a size step and a rule, not by hue", async () => {
     const css = await workbenchText();
     // Typora's contract: headings are ink, and the level is carried by size + a hairline under

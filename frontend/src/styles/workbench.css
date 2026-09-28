@@ -756,6 +756,17 @@
   padding-right: calc(var(--inspector-width) + var(--conversation-inline-space));
 }
 
+/* The search popover has to know the same width. `.conversation-pane` keeps the full workspace
+   width when the inspector opens - the inspector is an overlay (`.inspector { position: absolute;
+   right: 0 }`) and `.timeline` compensates with padding instead of the pane shrinking - so a popover
+   pinned to the pane's right edge sat *under* the inspector (z 20 vs 30) and did not move when the
+   divider was dragged. `--inspector-width` is declared `inherits: false`, so it has to be written
+   onto this element by hand, exactly as `.timeline` / `.composer-wrap` / `.inspector` do.
+   `right` also had to leave the template: the `right-4` utility is `!important` (tailwind.css:9) and
+   an important utility beats an unlayered rule even with higher specificity (AGENTS.md §4.3). */
+.app-shell.is-inspector-open .conversation-search {
+  right: calc(var(--inspector-width) + 16px);
+}
 
 .message-row {
   padding: 10px 0;
