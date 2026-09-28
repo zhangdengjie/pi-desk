@@ -1184,6 +1184,16 @@ export const useAppStore = defineStore("app", {
     activeRepositoryFilePreviewLine(): number | undefined { return this.activePanelTab?.line; },
     activeRepositoryFilePreviewLoading(): boolean { return this.activePanelTab?.kind === "file" && !!this.activePanelTab.loading; },
     activeRepositoryFilePreviewError(): string { return this.activePanelTab?.kind === "file" ? this.activePanelTab.error ?? "" : ""; },
+    /** A rendered Markdown document is on screen in the inspector. `Cmd-F` ownership hinges on this:
+     *  the transcript gives up the shortcut while it is true, instead of the two panes racing on
+     *  which capture listener was registered first. */
+    activeMarkdownPreviewVisible(): boolean {
+      const tab = this.activePanelTab;
+      return this.inspectorOpen
+        && tab?.kind === "file"
+        && tab.markdownRendered !== false
+        && this.activeRepositoryFilePreview?.mediaType === "text/markdown";
+    },
     activeSessionChanges(state): SessionFileChange[] {
       return state.sessionChangesByThread[state.activeThreadId] ?? [];
     },

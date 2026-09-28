@@ -922,7 +922,7 @@
   box-shadow: var(--shadow-menu);
 }
 
-.conversation-search-main {
+.search-popover-main {
   display: flex;
   min-height: 38px;
   align-items: center;
@@ -930,12 +930,12 @@
   padding: 0 6px 0 10px;
 }
 
-.conversation-search-main > svg {
+.search-popover-main > svg {
   flex: 0 0 auto;
   color: var(--text);
 }
 
-.conversation-search-input {
+.search-popover-input {
   min-width: 0;
   flex: 1;
   padding: 0;
@@ -948,16 +948,16 @@
   line-height: 1.3;
 }
 
-.conversation-search-input::placeholder {
+.search-popover-input::placeholder {
   color: var(--text-muted);
 }
 
-.conversation-search-input::-webkit-search-cancel-button {
+.search-popover-input::-webkit-search-cancel-button {
   display: none;
 }
 
-.conversation-search-close,
-.conversation-search-control {
+.search-popover-close,
+.search-popover-control {
   display: grid;
   flex: 0 0 auto;
   place-items: center;
@@ -968,34 +968,34 @@
   cursor: pointer;
 }
 
-.conversation-search-close {
+.search-popover-close {
   width: 26px;
   height: 26px;
   border-radius: 5px;
 }
 
-.conversation-search-control {
+.search-popover-control {
   width: 25px;
   height: 25px;
   border-radius: 5px;
   color: var(--text-secondary);
 }
 
-.conversation-search-close:hover,
-.conversation-search-close:focus-visible,
-.conversation-search-control:hover:not(:disabled),
-.conversation-search-control:focus-visible:not(:disabled) {
+.search-popover-close:hover,
+.search-popover-close:focus-visible,
+.search-popover-control:hover:not(:disabled),
+.search-popover-control:focus-visible:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text);
 }
 
-.conversation-search-control:disabled {
+.search-popover-control:disabled {
   color: var(--text-muted);
   cursor: default;
   opacity: 0.55;
 }
 
-.conversation-search-result {
+.search-popover-count {
   margin-left: auto;
   color: var(--text-secondary);
   font-size: calc(11px + var(--font-size-delta));
@@ -3945,6 +3945,20 @@
 .markdown-preview-bar .markdown-preview-toggle {
   padding: 0;
   border-bottom: 0;
+}
+
+/* The shared search box (components/SearchPopover.vue) owns only its surface; placement is the
+   host's. `.conversation-search` gets the transcript's, this gets the preview's - and it is anchored
+   to `.markdown-preview-host`, which is already `position: relative`, NOT to `.conversation-pane`.
+   That is what keeps it clear of the inspector overlay by construction: the popover lives inside the
+   inspector, so nothing has to know `--inspector-width` here.
+   Reached by Cmd-F alone: the preview bar has no search chip, because every chip added there competes
+   with 大纲 / 返回 for the same row (the reader asked for the shortcut, not the button). */
+.markdown-search {
+  top: 8px;
+  right: 8px;
+  z-index: 20;
+  width: min(300px, calc(100% - 16px));
 }
 
 .markdown-outline-toggle,

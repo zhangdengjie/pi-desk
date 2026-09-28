@@ -233,6 +233,24 @@ describe("MarkdownBody", () => {
     wrapper.unmount();
   });
 
+  it("lights one hit when the caller names which one it is", async () => {
+    const { wrapper } = mountMarkdown("**Done** and done");
+    await wrapper.setProps({ searchQuery: "done", searchActive: true });
+    // The transcript has no index to give (its counter points at a message), so the prop is optional
+    // and the behaviour above is unchanged. A single-document search does have one - the file
+    // preview - and needs exactly one mark lit out of the two.
+    await wrapper.setProps({ searchActiveIndex: 1 });
+
+    const hits = wrapper.findAll("mark.markdown-search-hit");
+    expect(hits).toHaveLength(2);
+    expect(hits[0].classes()).not.toContain("is-active");
+    expect(hits[1].classes()).toContain("is-active");
+    // Ordinals are document order, so an out-of-range index lights nothing rather than the wrong one.
+    await wrapper.setProps({ searchActiveIndex: 9 });
+    expect(wrapper.findAll("mark.is-active")).toHaveLength(0);
+    wrapper.unmount();
+  });
+
   // Provider chunks arrive as whole clauses, so a raw render lands a block at a time.
   // While an answer streams, the text is revealed one animation frame at a time instead.
   it("reveals a streamed burst over the next frames instead of landing it whole", async () => {

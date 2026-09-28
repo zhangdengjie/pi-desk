@@ -878,6 +878,68 @@ describe("InspectorPanel", () => {
     wrapper.unmount();
   });
 
+  it("searches a rendered Markdown preview and keeps exactly one hit active", async () => {
+    const scrolled: Element[] = [];
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn(function (this: Element) { scrolled.push(this); }) as typeof original;
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-find", title: "Find", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-find",
+      ...panelState("thread-find", { kind: "file", path: "notes/find.md", markdownRendered: true, preview: {
+        path: "notes/find.md", absolutePath: "D:\\repo\\notes\\find.md", mediaType: "text/markdown",
+        content: "# Alpha\n\nfirst alpha\n\nsecond ALPHA\n\nnothing here\n", size: 44, binary: false, truncated: false,
+      } }),
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    // No chip in the preview bar: the reader asked for the shortcut, not for another control
+    // competing with 大纲 / 返回 for that row.
+    expect(wrapper.find(".markdown-search-toggle").exists()).toBe(false);
+    expect(wrapper.find(".markdown-search").exists()).toBe(false);
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", metaKey: true }));
+    await nextTick();
+    await wrapper.get(".search-popover-input").setValue("alpha");
+    await nextTick();
+
+    // Three hits, one of them inside the heading - counting comes from the rendered document, so the
+    // number cannot disagree with what the reader can see.
+    expect(wrapper.findAll(".markdown-search-hit")).toHaveLength(3);
+    const active = () => wrapper.findAll(".markdown-search-hit.is-active");
+    expect(active()).toHaveLength(1);
+    expect(active()[0].element).toBe(wrapper.findAll(".markdown-search-hit")[0].element);
+    expect(wrapper.get(".search-popover-count").text()).toBe("1 / 3");
+
+    const next = wrapper.findAll(".search-popover-control")[1];
+    // Hit 0 is the one inside the `<h1>` - document order, not paragraph order.
+    await next.trigger("click");
+    expect(active()[0].text()).toBe("alpha");
+    expect(wrapper.get(".search-popover-count").text()).toBe("2 / 3");
+    expect(scrolled.length).toBeGreaterThan(0);
+
+    await next.trigger("click");
+    expect(active()[0].text()).toBe("ALPHA");
+    // The list wraps instead of dead-ending at the last hit.
+    await next.trigger("click");
+    expect(wrapper.get(".search-popover-count").text()).toBe("1 / 3");
+    expect(active()[0].text()).toBe("Alpha");
+
+    // Escape with the caret outside the field still dismisses the box - and takes the marks with it.
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await nextTick();
+    expect(wrapper.find(".markdown-search").exists()).toBe(false);
+    expect(wrapper.findAll(".markdown-search-hit")).toHaveLength(0);
+    HTMLElement.prototype.scrollIntoView = original;
+    wrapper.unmount();
+  });
+
   it("follows a Markdown link into a second document, then goes back to the first", async () => {
     const scrolled: string[] = [];
     const original = HTMLElement.prototype.scrollIntoView;

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
 import { useVirtualizer } from "@tanstack/vue-virtual";
-import { ArrowDown, ChevronDown, ChevronUp, CircleDot, History, LoaderCircle, Search, X } from "lucide-vue-next";
+import { ArrowDown, CircleDot, History, LoaderCircle } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from "vue";
 import ComposerBar from "./ComposerBar.vue";
 import ConversationMessage from "./ConversationMessage.vue";
+import SearchPopover from "./SearchPopover.vue";
 import { useAppStore } from "../stores/app";
 import { CONVERSATION_VIRTUALIZATION_THRESHOLD, estimateMessageSize, shouldVirtualizeMessages } from "../utils/conversationVirtualization";
 import { isNearBottom, createSettleSnap, nestedScrollerCanGoUp, nextTailScroll } from "../utils/scroll";
@@ -16,7 +17,7 @@ const appStore = useAppStore();
 const timeline = ref<HTMLElement>();
 const composerBar = ref<ComponentPublicInstance>();
 const composerHeight = ref(0);
-const searchInput = ref<HTMLInputElement>();
+const searchPopover = ref<InstanceType<typeof SearchPopover>>();
 const searchOpen = ref(false);
 const searchQuery = ref("");
 const activeSearchMatch = ref(0);
@@ -339,8 +340,7 @@ function updateActiveNavigation() {
 
 async function focusSearch() {
   await nextTick();
-  searchInput.value?.focus();
-  searchInput.value?.select();
+  searchPopover.value?.focus();
 }
 
 async function openSearch() {
@@ -413,6 +413,9 @@ function moveSearchMatch(direction: 1 | -1) {
 function onDocumentKeydown(event: KeyboardEvent) {
   if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "f") {
     if (!appStore.activeThread) return;
+    // A rendered Markdown document in the inspector owns the shortcut: the reader is looking at that
+    // document, and InspectorPanel's own handler is waiting for exactly this case.
+    if (appStore.activeMarkdownPreviewVisible) return;
     event.preventDefault();
     void openSearch();
     return;
@@ -506,32 +509,18 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="conversation-pane relative grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden bg-[var(--bg-workspace)]" :class="ui.root" :aria-label="tr('conversation.label')">
-    <div v-if="searchOpen" class="conversation-search absolute top-3 z-20 w-[min(360px,calc(100%_-_32px))] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-raised)] shadow-lg" :style="{ '--inspector-width': `${appStore.inspectorWidth}px` }" role="search" :aria-label="tr('conversation.search')">
-      <div class="conversation-search-main flex min-h-10 items-center gap-2 px-2 text-[var(--text-muted)]">
-        <Search :size="17" aria-hidden="true" />
-        <input :class="ui.input"
-          ref="searchInput"
-          v-model="searchQuery"
-          class="conversation-search-input min-w-0 flex-1 border-0 bg-transparent text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
-          type="search"
-          autocomplete="off"
-          :placeholder="tr('conversation.searchPlaceholder')"
-          :aria-label="tr('conversation.searchPlaceholder')"
-          @keydown.enter.prevent="moveSearchMatch($event.shiftKey ? -1 : 1)"
-          @keydown.esc.prevent.stop="closeSearch"
-        />
-        <span class="conversation-search-result shrink-0 font-mono text-[calc(10px+var(--font-size-delta))] text-[var(--text-muted)]" aria-live="polite">{{ searchResultLabel }}</span>
-        <button class="conversation-search-control inline-grid size-7 place-items-center rounded-md border-0 bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] disabled:cursor-not-allowed disabled:opacity-40" type="button" :title="tr('conversation.previousSearchResult')" :aria-label="tr('conversation.previousSearchResult')" :disabled="!searchMatches.length" @click="moveSearchMatch(-1)">
-          <ChevronUp :size="15" aria-hidden="true" />
-        </button>
-        <button class="conversation-search-control inline-grid size-7 place-items-center rounded-md border-0 bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] disabled:cursor-not-allowed disabled:opacity-40" type="button" :title="tr('conversation.nextSearchResult')" :aria-label="tr('conversation.nextSearchResult')" :disabled="!searchMatches.length" @click="moveSearchMatch(1)">
-          <ChevronDown :size="15" aria-hidden="true" />
-        </button>
-        <button class="conversation-search-close inline-grid size-7 place-items-center rounded-md border-0 bg-transparent text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)]" type="button" :title="tr('conversation.closeSearch')" :aria-label="tr('conversation.closeSearch')" @click="closeSearch">
-          <X :size="17" aria-hidden="true" />
-        </button>
-      </div>
-    </div>
+    <SearchPopover
+      v-if="searchOpen"
+      ref="searchPopover"
+      v-model:query="searchQuery"
+      class="conversation-search absolute top-3 z-20 w-[min(360px,calc(100%_-_32px))]"
+      :style="{ '--inspector-width': `${appStore.inspectorWidth}px` }"
+      :has-matches="searchMatches.length > 0"
+      :result-label="searchResultLabel"
+      @next="moveSearchMatch(1)"
+      @previous="moveSearchMatch(-1)"
+      @close="closeSearch"
+    />
     <div class="conversation-scroll-region relative min-h-0 min-w-0 overflow-hidden">
       <nav v-if="navigationItems.length" class="conversation-outline" :aria-label="tr('conversation.navigation')">
         <div class="conversation-outline-scroll" @scroll="hideHoveredNavigation">

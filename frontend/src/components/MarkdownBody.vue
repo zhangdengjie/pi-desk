@@ -14,6 +14,11 @@ const props = defineProps<{
   streaming?: boolean;
   searchQuery?: string;
   searchActive?: boolean;
+  /** Which hit *inside this block* is the current one, 0-based, in document order. Without it every
+   *  hit in an active block is painted `is-active` - fine for the transcript, where the counter
+   *  points at a message, but a single-document search (the file preview) has one global hit list
+   *  and needs exactly one mark lit. */
+  searchActiveIndex?: number;
   /** Workspace-relative path of the document being previewed. A relative Markdown link resolves
    *  against this file's own directory, exactly as it would on GitHub. Absent (chat messages,
    *  reasoning blocks) means "the reader is at the repository", so links stay root-relative. */
@@ -141,9 +146,10 @@ markdown.renderer.rules.td_close = (tokens, index, options, _env, self) =>
 const shownText = useRevealedText(() => props.text, () => props.streaming === true);
 const renderMarkdown = computed(() => shownText.value.length <= MAX_MARKDOWN_CHARS);
 
-function highlightRenderedHtml(html: string, query: string, active: boolean): string {
+function highlightRenderedHtml(html: string, query: string, active: boolean, activeIndex: number | null = null): string {
   const needle = query.trim();
   if (!needle || typeof document === "undefined") return html;
+  let ordinal = -1;
 
   const template = document.createElement("template");
   template.innerHTML = html;
@@ -164,7 +170,9 @@ function highlightRenderedHtml(html: string, query: string, active: boolean): st
     while (matchIndex >= 0) {
       if (matchIndex > cursor) fragment.append(document.createTextNode(text.slice(cursor, matchIndex)));
       const mark = document.createElement("mark");
-      mark.className = `markdown-search-hit${active ? " is-active" : ""}`;
+      ordinal += 1;
+      const current = active && (activeIndex === null || ordinal === activeIndex);
+      mark.className = `markdown-search-hit${current ? " is-active" : ""}`;
       mark.textContent = text.slice(matchIndex, matchIndex + needle.length);
       fragment.append(mark);
       cursor = matchIndex + needle.length;
@@ -186,7 +194,8 @@ const rendered = computed(() => {
     workspacePath: workspacePath.value,
     baseDir: linkBaseDir.value,
   });
-  return highlightRenderedHtml(html, props.searchQuery ?? "", props.searchActive ?? false);
+  return highlightRenderedHtml(html, props.searchQuery ?? "", props.searchActive ?? false,
+    props.searchActiveIndex ?? null);
 });
 
 const bodyElement = ref<HTMLElement>();

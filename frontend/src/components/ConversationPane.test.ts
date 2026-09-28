@@ -537,12 +537,12 @@ describe("ConversationPane", () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.find(".conversation-search").exists()).toBe(true);
-    const input = wrapper.get(".conversation-search-input");
+    const input = wrapper.get(".search-popover-input");
     await input.setValue("Message");
-    expect(wrapper.get(".conversation-search-result").text()).toBe("1 / 3");
+    expect(wrapper.get(".search-popover-count").text()).toBe("1 / 3");
 
-    await wrapper.findAll(".conversation-search-control")[1].trigger("click");
-    expect(wrapper.get(".conversation-search-result").text()).toBe("2 / 3");
+    await wrapper.findAll(".search-popover-control")[1].trigger("click");
+    expect(wrapper.get(".search-popover-count").text()).toBe("2 / 3");
 
     await input.trigger("keydown", { key: "Escape" });
     expect(wrapper.find(".conversation-search").exists()).toBe(false);
@@ -552,7 +552,7 @@ describe("ConversationPane", () => {
     const wrapper = mountTranscript(4);
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));
     await wrapper.vm.$nextTick();
-    await wrapper.get(".conversation-search-input").setValue("Message 0");
+    await wrapper.get(".search-popover-input").setValue("Message 0");
     await flushPromises();
 
     const scrollIntoView = vi.fn();

@@ -10,6 +10,7 @@ import CodePreview from "./CodePreview.vue";
 import FileTreeNode from "./FileTreeNode.vue";
 import MarkdownBody from "./MarkdownBody.vue";
 import MarkdownOutlineNav from "./MarkdownOutlineNav.vue";
+import SearchPopover from "./SearchPopover.vue";
 import { collectMarkdownOutline, markdownHasHeadings, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import { tr } from "../i18n";
 
@@ -101,7 +102,14 @@ function onDocumentPointerDown(event: PointerEvent) {
   if (outlineOpen.value && !outlineIsRail.value && !target?.closest(".markdown-outline")) outlineChoice.value = false;
 }
 function onDocumentKeydown(event: KeyboardEvent) {
+  onPreviewSearchKeydown(event);
   if (event.key !== "Escape") return;
+  if (previewSearchOpen.value && !(event.target instanceof HTMLInputElement)) {
+    // The popover closes itself while the field has focus; this is the path for Escape with the caret
+    // elsewhere in the document, which would otherwise leave the box open with no way out.
+    closePreviewSearch();
+    return;
+  }
   if (panelMenu.value) panelMenu.value = undefined;
   else if (outlineOpen.value && !outlineIsRail.value) outlineChoice.value = false;
 }
@@ -367,6 +375,81 @@ watch(
   { flush: "post" },
 );
 
+// ---- search inside a rendered Markdown preview --------------------------------
+// The box is the transcript's (components/SearchPopover.vue); what is deliberately *not* reused is
+// how the transcript finds its hits. That one reads the store's per-message text and passes
+// `search-active` down as a boolean, so every hit in the active message lights up. A single document
+// has one global hit list, so the ordinal goes to MarkdownBody per mark (`search-active-index`) and
+// the list is read back from the rendered DOM - the only place that knows what the reader can see.
+const previewSearchOpen = ref(false);
+const previewSearchQuery = ref("");
+const previewSearchHit = ref(0);
+const previewSearchCount = ref(0);
+const previewSearchPopover = ref<InstanceType<typeof SearchPopover>>();
+const previewSearchLabel = computed(() => previewSearchCount.value
+  ? `${previewSearchHit.value + 1} / ${previewSearchCount.value}`
+  : tr("conversation.searchResults", { count: 0 }));
+
+function previewSearchHits(): HTMLElement[] {
+  return Array.from(markdownHost.value?.querySelectorAll<HTMLElement>(".markdown-search-hit") ?? []);
+}
+
+function closePreviewSearch() {
+  previewSearchOpen.value = false;
+  previewSearchQuery.value = "";
+  previewSearchHit.value = 0;
+  previewSearchCount.value = 0;
+}
+
+async function openPreviewSearch() {
+  previewSearchOpen.value = true;
+  await nextTick();
+  previewSearchPopover.value?.focus();
+}
+
+// Marks only exist one tick after the query prop reaches MarkdownBody and the v-html patch lands.
+async function recountPreviewHits(scrollToActive: boolean) {
+  await nextTick();
+  const hits = previewSearchHits();
+  previewSearchCount.value = hits.length;
+  if (!hits.length) {
+    previewSearchHit.value = 0;
+    return;
+  }
+  // Editing the query can only shrink the list; keep the index inside it instead of showing "7 / 3".
+  if (previewSearchHit.value >= hits.length) previewSearchHit.value = 0;
+  if (scrollToActive) {
+    const hit = hits[previewSearchHit.value];
+    // Same guard `scrollToAnchor` uses: an environment without scrollIntoView must not throw out of
+    // a watcher.
+    if (hit && typeof hit.scrollIntoView === "function") hit.scrollIntoView({ block: "center" });
+  }
+}
+
+async function movePreviewSearch(direction: 1 | -1) {
+  const total = previewSearchCount.value;
+  if (!total) return;
+  previewSearchHit.value = (previewSearchHit.value + direction + total) % total;
+  await recountPreviewHits(true);
+}
+
+watch(previewSearchQuery, () => {
+  previewSearchHit.value = 0;
+  void recountPreviewHits(true);
+});
+// Search is a property of one rendered document: switching files, or dropping to the source view,
+// must not leave a stale counter pointing at hits that are no longer on screen.
+watch(() => [currentTab.value?.id, markdownRendered.value], () => closePreviewSearch());
+
+function onPreviewSearchKeydown(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "f") {
+    // ConversationPane defers to `activeMarkdownPreviewVisible` rather than racing this listener,
+    // so whichever order the two are mounted in, exactly one of them can open a search box.
+    if (!appStore.activeMarkdownPreviewVisible) return;
+    event.preventDefault();
+    void openPreviewSearch();
+  }
+}
 const sessionChanges = computed(() => appStore.activeSessionChanges);
 const sessionChangesError = computed(() => appStore.activeSessionChangesError);
 const rollbackArmed = ref<Record<string, boolean>>({});
@@ -683,7 +766,19 @@ watch(() => currentTab.value?.id, async () => {
               <button type="button" :class="{ 'is-active': !markdownRendered }" @click="markdownRendered = false">{{ tr("files.source") }}</button>
             </div>
           </div>
-          <div v-if="markdownRendered" class="file-markdown-preview"><MarkdownBody ref="markdownBody" :text="filePreview.content ?? ''" :base-path="filePreview.path" /></div>
+          <SearchPopover
+            v-if="previewSearchOpen"
+            ref="previewSearchPopover"
+            v-model:query="previewSearchQuery"
+            class="markdown-search absolute"
+            :has-matches="previewSearchCount > 0"
+            :placeholder="tr('files.searchPlaceholder')"
+            :result-label="previewSearchLabel"
+            @close="closePreviewSearch"
+            @next="movePreviewSearch(1)"
+            @previous="movePreviewSearch(-1)"
+          />
+          <div v-if="markdownRendered" class="file-markdown-preview"><MarkdownBody ref="markdownBody" :text="filePreview.content ?? ''" :base-path="filePreview.path" :search-query="previewSearchQuery" :search-active="previewSearchOpen" :search-active-index="previewSearchHit" /></div>
           <CodePreview v-else flush :path="filePreview.path" :content="filePreview.content ?? ''" :label="tr('files.previewContent')" />
           <MarkdownOutlineNav
             v-if="outlineOpen"
