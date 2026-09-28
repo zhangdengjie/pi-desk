@@ -302,3 +302,26 @@ it("renders one newline as a single <br> inside one paragraph", async () => {
   expect(html.trim()).toBe('<p>你好<br>\n都说了封建时代</p>');
   wrapper.unmount();
 });
+
+it("renders a large settled document instead of dumping raw text", () => {
+  // The 100k ceiling used to apply to every block. A 119,423-char AGENTS.md - a size the
+  // file preview reaches routinely, since internal/repository/repository.go:33 caps a
+  // preview at 1MiB - therefore rendered as one `<pre>` with an empty outline, while
+  // Typora showed the same file formatted. Parsing that document costs 12-15ms.
+  const section = "## Heading\n\nA paragraph with **bold**, `code` and a [link](https://example.com).\n\n";
+  const text = section.repeat(Math.ceil(119_423 / section.length));
+  expect(text.length).toBeGreaterThan(100_000);
+
+  const { wrapper } = mountMarkdown(text);
+  expect(document.querySelector(".oversized-message")).toBeNull();
+  expect(document.querySelectorAll("h2").length).toBeGreaterThan(100);
+  wrapper.unmount();
+});
+
+it("keeps the ceiling for a block that is still arriving", () => {
+  // A streaming block re-parses on every revealed frame, so past 100k chars it stays raw
+  // until the run settles - at which point the test above applies.
+  const { wrapper } = mountMarkdown("x".repeat(100_001), { streaming: true });
+  expect(document.querySelector("pre.oversized-message")).not.toBeNull();
+  wrapper.unmount();
+});

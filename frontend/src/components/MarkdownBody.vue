@@ -28,7 +28,18 @@ const props = defineProps<{
 // 必须自己绑到内容根节点上，否则调用方的布局类（如 .file-markdown-preview 的 overflow）会静默丢失。
 defineOptions({ inheritAttrs: false });
 const appStore = useAppStore();
-const MAX_MARKDOWN_CHARS = 100_000;
+// Parsing is cheap and one-off for a block that has finished arriving: a 119k-char
+// document costs 12-15ms, 358k costs 34ms, and a full 1MiB of ASCII costs 131ms
+// (markdown-it, measured with the app's own options). A *streaming* block is the
+// opposite: `useRevealedText` reveals it a frame at a time and every frame re-parses
+// what has come so far, so the ceiling there protects the frame budget, not correctness.
+// One number for both cases silently turned any large file into a wall of raw text - a
+// 119,423-char AGENTS.md previewed as one `<pre>` with an empty outline.
+const STREAMING_MARKDOWN_CHARS = 100_000;
+// Sized to the ceiling the Go side hands out: `maxFileBytes = 1 << 20`
+// (internal/repository/repository.go:33) truncates every file preview at 1MiB, so a
+// settled block can never legitimately exceed this and the file preview always renders.
+const SETTLED_MARKDOWN_CHARS = 1_100_000;
 const workspacePath = computed(() => appStore.activeThread?.workspacePath || "");
 const linkBaseDir = computed(() => {
   const path = (props.basePath ?? "").replaceAll("\\", "/");
@@ -144,7 +155,8 @@ markdown.renderer.rules.td_close = (tokens, index, options, _env, self) =>
 // first delta, so a raw render lands each provider chunk as a block - which is what
 // reads as typing in clauses with stalls between them.
 const shownText = useRevealedText(() => props.text, () => props.streaming === true);
-const renderMarkdown = computed(() => shownText.value.length <= MAX_MARKDOWN_CHARS);
+const renderMarkdown = computed(() => shownText.value.length
+  <= (props.streaming === true ? STREAMING_MARKDOWN_CHARS : SETTLED_MARKDOWN_CHARS));
 
 function highlightRenderedHtml(html: string, query: string, active: boolean, activeIndex: number | null = null): string {
   const needle = query.trim();

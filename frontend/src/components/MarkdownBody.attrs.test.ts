@@ -21,7 +21,9 @@ describe("MarkdownBody attribute fallthrough", () => {
 
   it("lands the external class on the oversized fallback <pre>", () => {
     const wrapper = mount(MarkdownBody, {
-      props: { text: "x".repeat(100_001) },
+      // Only a *streaming* block falls back this early; a settled one renders up to the
+      // 1MiB the Go side previews (see MarkdownBody.test.ts).
+      props: { text: "x".repeat(100_001), streaming: true },
       attrs: { class: "file-markdown-preview" },
       global: { plugins: [createPinia()] },
       attachTo: document.body,
