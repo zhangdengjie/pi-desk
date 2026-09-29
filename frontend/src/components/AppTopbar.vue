@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { CalendarClock, Check, ChevronDown, ChevronRight, Info, PanelLeftClose, PanelRightOpen } from "lucide-vue-next";
+import { CalendarClock, Check, ChevronDown, ChevronRight, FolderGit2, Info, PanelLeftClose, PanelRightOpen } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { type AppPage, useAppStore } from "../stores/app";
 import { tr } from "../i18n";
