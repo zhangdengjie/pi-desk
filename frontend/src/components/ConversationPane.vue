@@ -122,6 +122,18 @@ const searchResultLabel = computed(() => searchMatches.value.length
   ? `${activeSearchMatch.value + 1} / ${searchMatches.value.length}`
   : tr("conversation.searchResults", { count: 0 }));
 const activeSearchMessageId = computed(() => currentSearchMatch.value?.messageId ?? "");
+// The conversation counter walks *occurrences inside one message*, so the current hit also knows
+// which occurrence it is. It goes to the answer body only (see ConversationMessage): the hit list
+// counts `message.text`, and an ordinal for a thinking/tool block would name a mark the counter
+// never counted. A message that is not the active one gets `search-active="false"`, so MarkdownBody
+// leaves every mark dim no matter what ordinal it is handed.
+const activeSearchHitIndex = computed(() => {
+  const match = currentSearchMatch.value;
+  if (!match) return undefined;
+  return searchMatches.value
+    .slice(0, activeSearchMatch.value)
+    .filter((item) => item.messageId === match.messageId).length;
+});
 
 function measureVirtualRow(element: Element | ComponentPublicInstance | null) {
   if (!(element instanceof Element)) return;
@@ -599,11 +611,11 @@ onBeforeUnmount(() => {
           :data-index="row.index"
           :style="{ transform: `translateY(${row.start}px)` }"
         >
-          <ConversationMessage :message="messages[row.index]" :search-query="searchQuery" :search-active="messages[row.index]?.id === activeSearchMessageId" />
+          <ConversationMessage :message="messages[row.index]" :search-query="searchQuery" :search-active="messages[row.index]?.id === activeSearchMessageId" :search-active-index="activeSearchHitIndex" />
         </div>
       </div>
 
-      <ConversationMessage v-else v-for="message in messages" :key="message.turnKey ?? message.id" :ref="observeTranscriptRow" :message="message" :search-query="searchQuery" :search-active="message.id === activeSearchMessageId" />
+      <ConversationMessage v-else v-for="message in messages" :key="message.turnKey ?? message.id" :ref="observeTranscriptRow" :message="message" :search-query="searchQuery" :search-active="message.id === activeSearchMessageId" :search-active-index="activeSearchHitIndex" />
       <div
         v-if="appStore.activeWaitingForOutput && !appStore.activeRetry"
         class="waiting-for-output mt-3 inline-flex size-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-raised)] text-[var(--text-secondary)] shadow-sm"

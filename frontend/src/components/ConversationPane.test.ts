@@ -570,6 +570,31 @@ describe("ConversationPane", () => {
     expect(wrapper.find(".conversation-search").exists()).toBe(false);
   });
 
+  it("points the highlight at the current occurrence inside one message", async () => {
+    const wrapper = mountTranscript(3);
+    const store = useAppStore();
+    // One answer carrying the query twice gives the counter somewhere to move without leaving the
+    // row. Without an ordinal both occurrences light up together and 下一页 looks dead.
+    store.messagesByThread["thread-1"][1].text = "dup first and dup second";
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));
+    await wrapper.vm.$nextTick();
+    await wrapper.get(".search-popover-input").setValue("dup");
+    await flushPromises();
+
+    expect(wrapper.get(".search-popover-count").text()).toBe("1 / 2");
+    const row = () => wrapper.findAll(".stub-message")[1];
+    expect(row().attributes("search-active")).toBe("true");
+    expect(row().attributes("search-active-index")).toBe("0");
+    // A row that is not the active hit must not be handed an ordinal it cannot mean.
+    expect(wrapper.findAll(".stub-message")[0].attributes("search-active")).toBe("false");
+
+    await wrapper.findAll(".search-popover-control")[1].trigger("click");
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.get(".search-popover-count").text()).toBe("2 / 2");
+    expect(row().attributes("search-active-index")).toBe("1");
+  });
+
   it("does not jump back to a search result when streaming output changes", async () => {
     const wrapper = mountTranscript(4);
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));

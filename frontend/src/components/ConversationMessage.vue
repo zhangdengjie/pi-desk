@@ -25,6 +25,8 @@ const props = defineProps<{
   message: TimelineMessage;
   searchQuery?: string;
   searchActive?: boolean;
+  /** Which occurrence of the query inside this answer is the one the counter is on. Omitted = light them all. */
+  searchActiveIndex?: number;
 }>();
 const appStore = useAppStore();
 const editing = ref(false);
@@ -526,7 +528,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
         <p v-if="editError" class="error-text" role="alert">{{ tr("conversation.editFailed") }} {{ editError === tr("conversation.editFailed") ? '' : editError }}</p>
       </div>
       <p v-else-if="message.text && message.role === 'system'" :class="{ 'error-text': message.error }">{{ message.text }}</p>
-      <MarkdownBody v-else-if="visibleMessageText" ref="answerBody" :text="visibleMessageText" :streaming="message.streaming" :search-query="searchQuery" :search-active="searchActive" />
+      <MarkdownBody v-else-if="visibleMessageText" ref="answerBody" :text="visibleMessageText" :streaming="message.streaming" :search-query="searchQuery" :search-active="searchActive" :search-active-index="searchActiveIndex" />
       <MarkdownOutlineNav
         v-if="answerOutlineOpen"
         class="message-outline"

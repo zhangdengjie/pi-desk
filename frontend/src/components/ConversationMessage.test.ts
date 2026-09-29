@@ -35,6 +35,22 @@ describe("ConversationMessage", () => {
     wrapper.unmount();
   });
 
+  it("lights only the occurrence the transcript counter is on", async () => {
+    // Proves the ordinal actually reaches MarkdownBody: an undeclared prop would drop to the
+    // component's attribute list and every occurrence would stay lit together.
+    const wrapper = mount(ConversationMessage, { props: { message: {
+      id: "answer-hits", role: "assistant", text: "dup one and dup two and dup three", thinking: "",
+      timestamp: "10:00", streaming: false, tools: [],
+    }, searchQuery: "dup", searchActive: true, searchActiveIndex: 1 } });
+    await flushPromises();
+
+    const hits = wrapper.findAll("mark.markdown-search-hit");
+    expect(hits).toHaveLength(3);
+    expect(wrapper.findAll("mark.is-active")).toHaveLength(1);
+    expect(hits[1].classes()).toContain("is-active");
+    wrapper.unmount();
+  });
+
   it("offers an outline for a long finished answer and jumps to the heading picked", async () => {
     const wrapper = mount(ConversationMessage, { props: { message: {
       id: "answer-outline", role: "assistant", text: "# A\n\n## B\n\n## C\n\n### D\n", thinking: "",
