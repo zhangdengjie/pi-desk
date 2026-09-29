@@ -13,6 +13,7 @@ const terminalHarness = vi.hoisted(() => ({
   reset: vi.fn(),
   clear: vi.fn(),
   focus: vi.fn(),
+  refresh: vi.fn(),
   dispose: vi.fn(),
   fit: vi.fn(),
   options: {} as Record<string, unknown>,
@@ -38,6 +39,7 @@ vi.mock("@xterm/xterm", () => ({
     reset = terminalHarness.reset;
     clear = terminalHarness.clear;
     focus = terminalHarness.focus;
+    refresh = terminalHarness.refresh;
     dispose = terminalHarness.dispose;
     hasSelection() { return false; }
     getSelection() { return ""; }
@@ -100,6 +102,40 @@ describe("TerminalPane", () => {
     terminalMocks.write.mockResolvedValue(undefined);
     terminalMocks.resize.mockResolvedValue(undefined);
     terminalMocks.stop.mockResolvedValue(undefined);
+  });
+
+  it("stands down from layout and PTY work while it sits hidden in the pool", async () => {
+    // The inspector keeps up to two terminal panes mounted behind the active tab. Hidden, the host
+    // has no size: fitting it reports 0x0 and the pseudo-terminal would follow that, and focusing
+    // would steal input from the tab the reader is actually looking at.
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-1", title: "Pooled", workspace: "repo", workspacePath: "/repo", trust: "approve",
+        status: "idle", started: true, generation: 0,
+      }],
+      activeThreadId: "thread-1",
+    });
+    terminalMocks.snapshot.mockResolvedValue({
+      threadId: "thread-1", running: true, sequence: 3, columns: 132, rows: 43, outputB64: btoa("ready\r\n"),
+    });
+
+    const wrapper = mount(TerminalPane, { props: { active: false }, global: { plugins: [pinia] } });
+    await flushPromises();
+
+    expect(terminalHarness.fit).not.toHaveBeenCalled();
+    terminalHarness.resizeHandler?.({ cols: 100, rows: 30 });
+    await vi.waitFor(() => expect(terminalHarness.write).toHaveBeenCalled());
+    expect(terminalMocks.resize).not.toHaveBeenCalled();
+    expect(terminalHarness.focus).not.toHaveBeenCalled();
+
+    await wrapper.setProps({ active: true });
+    await flushPromises();
+    expect(terminalHarness.fit).toHaveBeenCalled();
+    expect(terminalHarness.refresh).toHaveBeenCalled();
+    wrapper.unmount();
   });
 
   it("updates the terminal font size with the interface preference", async () => {

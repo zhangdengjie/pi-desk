@@ -11,7 +11,11 @@ import { useAppStore } from "../stores/app";
 import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
-const props = defineProps<{ sessionId?: string }>();
+// `active` = this tab is the one on screen. The inspector keeps a small pool of terminal panes
+// mounted while they sit behind another tab (InspectorPanel.vue), so a switch back is a `v-show`
+// flip instead of a rebuild: measured on a fresh session, rebuilding cost 65ms (xterm `open` 21ms,
+// two `reset`, a snapshot RPC, and a blank frame before the replay lands).
+const props = withDefaults(defineProps<{ sessionId?: string; active?: boolean }>(), { active: true });
 const host = ref<HTMLElement>();
 const loading = ref(false);
 const running = ref(false);
@@ -200,9 +204,11 @@ async function hydrate(load: () => ReturnType<typeof terminalService.snapshot>) 
     await drainOutput();
     if (token !== loadToken) return;
     await nextTick();
-    fitAddon?.fit();
-    sendResize();
-    if (running.value) terminal?.focus();
+    if (props.active) {
+      fitAddon?.fit();
+      sendResize();
+      if (running.value) terminal?.focus();
+    }
   } catch (cause) {
     replaying = false;
     if (token === loadToken) {
@@ -271,6 +277,7 @@ async function stopTerminal() {
 }
 
 function scheduleResize(columns: number, rows: number) {
+  if (!props.active) return; // a hidden host fits to nothing useful, and the PTY must not follow it
   wantedGeometry = { columns, rows };
   if (resizeTimer) clearTimeout(resizeTimer);
   // Coalesce, but never drop: a resize that arrives while the pane does not know it is running yet
@@ -283,6 +290,7 @@ function scheduleResize(columns: number, rows: number) {
 function sendResize() {
   const threadID = activeThread.value?.id;
   const { columns, rows } = wantedGeometry;
+  if (!props.active) return;
   if (!threadID || !running.value || !columns) return;
   if (columns === ptyGeometry.columns && rows === ptyGeometry.rows) return;
   void terminalService.resize(threadID, props.sessionId, columns, rows).then(() => {
@@ -339,15 +347,25 @@ onMounted(() => {
   resizeObserver = new ResizeObserver(() => {
     // A pane drag resizes the host on every frame; fit() reads and writes layout and would
     // otherwise run each of those frames. Stand down and let the watcher catch up on release.
-    if (appStore.paneResizing) return;
+    if (appStore.paneResizing || !props.active) return;
     fitAddon?.fit();
   });
   if (host.value) resizeObserver.observe(host.value);
   watch(() => appStore.paneResizing, (resizing) => {
-    if (!resizing) fitAddon?.fit();
+    if (!resizing && props.active) fitAddon?.fit();
   });
-  fitAddon.fit();
+  if (props.active) fitAddon.fit();
   void loadActiveTerminal();
+
+  // Coming back from the pool: the host has a size again, so re-fit (the PTY follows through
+  // sendResize) and repaint - xterm's renderer skips rows while the element is `display:none`.
+  watch(() => props.active, async (active) => {
+    if (!active) return;
+    await nextTick();
+    fitAddon?.fit();
+    terminal?.refresh(0, Math.max(0, (terminal.rows ?? 24) - 1));
+    if (running.value) terminal?.focus();
+  });
 });
 
 watch(() => activeThread.value?.id, (threadID) => {
@@ -356,7 +374,7 @@ watch(() => activeThread.value?.id, (threadID) => {
 });
 watch(() => appStore.interfaceFontSize, (size) => {
   if (terminal) terminal.options.fontSize = terminalFontSize(size);
-  fitAddon?.fit();
+  if (props.active) fitAddon?.fit();
 });
 watch(() => [activeThread.value?.id, activeThread.value?.started, activeThread.value?.status] as const, ([threadID, started, status]) => {
   if (!threadID || pendingRemoteStartThreadID !== threadID) return;

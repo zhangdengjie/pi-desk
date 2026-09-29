@@ -2,6 +2,7 @@
 import { ui } from "../ui/classes";
 import { Binary, ChevronRight, FileCode2, FileDiff, LoaderCircle, PanelRightClose, FolderOpen, Globe, Terminal, Plus, X, Maximize2, Minimize2, Search, ChevronDown, ExternalLink, List, ArrowLeft } from "lucide-vue-next";
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { pruneTerminalIds, promoteTerminalId } from "../utils/terminalPool";
 import { type PanelTab, useAppStore } from "../stores/app";
 import { buildRepositoryTree, type RepositoryTreeEntry } from "../utils/fileMentions";
 import { fuzzyScore } from "../utils/fuzzySearch";
@@ -34,6 +35,25 @@ function breadcrumbs(path: string) {
   return [workspaceName.value, ...parts];
 }
 const currentTab = computed(() => appStore.activePanelTab);
+
+// A terminal tab used to be destroyed the moment another tab came forward, so switching back
+// rebuilt the whole xterm - `open` 21ms, two `reset`, a snapshot RPC and a replay, 65ms in total
+// with a blank frame in between (`.pi/bin/hitprobe/devTerminalProbe.ts.keep`, 2026-09-30). The
+// last couple of terminal panes now stay mounted and are hidden instead; `active` tells a pane to
+// stand down from layout fitting and PTY resizing while it is not the one on screen.
+const keptTerminalIds = ref<string[]>([]);
+const terminalTabs = computed(() => (appStore.activePanel?.tabs ?? []).filter((tab) => tab.kind === "terminal"));
+watch(currentTab, (tab) => {
+  if (tab?.kind === "terminal") keptTerminalIds.value = promoteTerminalId(keptTerminalIds.value, tab.id);
+}, { immediate: true });
+watch(terminalTabs, (tabs) => {
+  keptTerminalIds.value = pruneTerminalIds(keptTerminalIds.value, tabs.map((tab) => tab.id));
+});
+const mountedTerminalTabs = computed(() => {
+  const ids = new Set(keptTerminalIds.value);
+  if (currentTab.value?.kind === "terminal") ids.add(currentTab.value.id);
+  return terminalTabs.value.filter((tab) => ids.has(tab.id));
+});
 const markdownRendered = computed({ get: () => currentTab.value?.markdownRendered !== false, set: (value) => { if (currentTab.value) currentTab.value.markdownRendered = value; appStore.scheduleDesktopStateSave(); } });
 const activeSpreadsheetSheet = computed({ get: () => currentTab.value?.sheet ?? 0, set: (value) => { if (currentTab.value) currentTab.value.sheet = value; appStore.scheduleDesktopStateSave(); } });
 const filter = computed({ get: () => currentTab.value?.filter ?? "", set: (value) => { if (currentTab.value) currentTab.value.filter = value; appStore.scheduleDesktopStateSave(); } });
@@ -841,8 +861,8 @@ watch(() => currentTab.value?.id, async () => {
       </div>
     </div>
 
-    <TerminalPane v-else-if="currentTab?.kind === 'terminal'" :key="currentTab.id" :session-id="currentTab.terminalId" />
     <BrowserPane v-else-if="currentTab?.kind === 'browser'" :key="currentTab.id" :tab="currentTab" />
+    <TerminalPane v-for="tab in mountedTerminalTabs" v-show="tab.id === currentTab?.id" :key="tab.id" :session-id="tab.terminalId" :active="tab.id === currentTab?.id" />
     <div v-if="currentTab?.kind === 'files' || ((currentTab?.kind === 'file' || currentTab?.kind === 'diff') && currentTab.treeOpen)" key="directory" class="panel-directory">
       <label class="panel-file-filter"><Search :size="16" /><input v-model="filter" type="search" :placeholder="tr('inspector.filterFiles')" :aria-label="tr('inspector.filterFiles')" /></label>
       <label v-if="fileEntries.length" class="file-ignored-toggle panel-file-ignored" :title="tr('inspector.showIgnoredHint')">
