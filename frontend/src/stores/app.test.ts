@@ -4268,4 +4268,78 @@ describe("app store", () => {
     expect(store.streamPanels).toBe("auto");
     expect(store.userConfigError).toContain("binding unavailable");
   });
+
+describe("session images by reference", () => {
+  function snapshotWithReferencedImage() {
+    mocks.listSessions.mockResolvedValueOnce([{
+      id: "session-1", path: "C:\\sessions\\one.jsonl", cwd: "D:\\work\\repo", title: "Runtime audit",
+      firstMessage: "Inspect runtime", createdAt: "2026-08-10T08:00:00Z", modifiedAt: "2026-08-10T09:00:00Z",
+      messageCount: 2,
+    }]);
+    mocks.getSessionSnapshot.mockResolvedValueOnce({
+      messageCount: 2,
+      messages: [
+        { role: "assistant", content: [
+          { type: "text", text: "Captured it." },
+          { type: "toolCall", id: "tool-1", name: "screenshot", arguments: {} },
+        ], timestamp: 1786348860000 },
+        { role: "toolResult", toolCallId: "tool-1", isError: false, content: [
+          { type: "text", text: "shot" },
+          // What the Go side sends now: no base64, just a signed reference and the decoded size.
+          { type: "image", mimeType: "image/png", bytes: 1234, ref: "cGF5bG9hZA.c2ln" },
+        ] },
+      ],
+    });
+  }
+
+  it("keeps the base64 out of the store and points the thumbnail at the asset server", async () => {
+    snapshotWithReferencedImage();
+    const store = useAppStore();
+    await store.initialize();
+    await store.loadThreadTranscript("session-session-1");
+
+    const tool = store.activeMessages.flatMap((message) => message.tools)[0];
+    expect(tool.images).toHaveLength(1);
+    expect(tool.images![0]).toMatchObject({
+      data: "",
+      bytes: 1234,
+      ref: "cGF5bG9hZA.c2ln",
+      mimeType: "image/png",
+      previewUrl: "/session-image?ref=cGF5bG9hZA.c2ln",
+    });
+    // The whole point of the reference: nothing in the store carries the image's bytes.
+    expect(JSON.stringify(tool.images![0])).not.toContain("data:image");
+  });
+
+  it("fetches a referenced image back into base64 only when it is about to be sent", async () => {
+    snapshotWithReferencedImage();
+    const store = useAppStore();
+    await store.initialize();
+    await store.loadThreadTranscript("session-session-1");
+    const thread = store.activeThread!;
+    mocks.startSession.mockResolvedValueOnce({
+      threadId: thread.id,
+      generation: 7,
+      stateJson: JSON.stringify({ sessionId: "session-image", isStreaming: false }),
+    });
+    const bytes = Uint8Array.from(atob("aW1hZ2U="), (char) => char.charCodeAt(0));
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob([bytes], { type: "image/png" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      store.addActiveAttachments([{
+        id: "image-1", name: "Image 1", data: "", ref: "cGF5bG9hZA.c2ln",
+        mimeType: "image/png", previewUrl: "/session-image?ref=cGF5bG9hZA.c2ln",
+      }]);
+
+      await store.sendActivePrompt();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(fetchMock).toHaveBeenCalledWith("/session-image?ref=cGF5bG9hZA.c2ln");
+    expect(mocks.sendPrompt).toHaveBeenCalledWith(expect.objectContaining({
+      images: [{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" }],
+    }));
+  });
+});
 });

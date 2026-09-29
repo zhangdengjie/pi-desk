@@ -11,7 +11,8 @@ import { modelConfigService } from "../services/modelconfig";
 import { applyStreamTuning } from "../utils/streamTuning";
 import { BATCH_ASK_PLACEHOLDER, parseBatchAskEnvelope, type BatchAskQuestion } from "../utils/batchAsk";
 import { formatFileMention } from "../utils/fileMentions";
-import { MAX_ATTACHED_IMAGES, MAX_SOURCE_IMAGE_BYTES, type PreparedImage } from "../utils/imageAttachments";
+import { MAX_ATTACHED_IMAGES, MAX_SOURCE_IMAGE_BYTES, parseImageDataURL, type PreparedImage } from "../utils/imageAttachments";
+import { sessionImageUrl } from "../utils/sessionImages";
 import { skillInvocationCommandText, skillInvocationTitleText } from "../utils/skillInvocation";
 import { runtimeErrorText } from "../utils/runtimeError";
 import { subagentSummaryFromResult, type SubagentTaskSummary } from "../utils/subagentTasks";
@@ -644,7 +645,21 @@ function contentImages(content: unknown): PreparedImage[] {
   return content.flatMap((part, index) => {
     if (!part || typeof part !== "object") return [];
     const value = part as Record<string, unknown>;
-    if (value.type !== "image" || typeof value.data !== "string" || typeof value.mimeType !== "string") return [];
+    if (value.type !== "image" || typeof value.mimeType !== "string") return [];
+    // A snapshot image carries a reference instead of bytes (see utils/sessionImages.ts). Its
+    // payload is the URL itself - one string, no base64 copy, and no `data:` URL built here.
+    if (typeof value.ref === "string" && value.ref) {
+      return [{
+        id: createID(`history-image-${index}`),
+        name: `Image ${index + 1}`,
+        data: "",
+        bytes: typeof value.bytes === "number" ? value.bytes : undefined,
+        ref: value.ref,
+        mimeType: value.mimeType,
+        previewUrl: sessionImageUrl(value.ref),
+      }];
+    }
+    if (typeof value.data !== "string" || !value.data) return [];
     return [{
       id: createID(`history-image-${index}`),
       name: `Image ${index + 1}`,
@@ -652,6 +667,28 @@ function contentImages(content: unknown): PreparedImage[] {
       mimeType: value.mimeType,
       previewUrl: `data:${value.mimeType};base64,${value.data}`,
     }];
+  });
+}
+
+/**
+ * The one path that still needs an image's bytes: sending it. A fork of a user message carries that
+ * message's images into the composer, and those may be reference-only, so they are fetched back and
+ * encoded at the RPC boundary instead of being kept in memory for the whole session.
+ */
+async function imageAttachmentContent(image: PreparedImage): Promise<{ type: "image"; data: string; mimeType: string }> {
+  if (image.data || !image.ref) return { type: "image", data: image.data, mimeType: image.mimeType };
+  const response = await fetch(sessionImageUrl(image.ref));
+  if (!response.ok) throw new Error("Unable to read the attached image");
+  const parsed = parseImageDataURL(await readBlobDataURL(await response.blob()), image.mimeType);
+  return { type: "image", data: parsed.data, mimeType: parsed.mimeType };
+}
+
+function readBlobDataURL(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("Unable to read the attached image"));
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsDataURL(blob);
   });
 }
 
@@ -2286,7 +2323,7 @@ export const useAppStore = defineStore("app", {
           message,
           streamingBehavior,
           ...(attachments.length ? {
-            images: attachments.map((image) => ({ type: "image", data: image.data, mimeType: image.mimeType })),
+            images: await Promise.all(attachments.map(imageAttachmentContent)),
           } : {}),
         });
         if (!wasRunning && !message.trimStart().startsWith("/")) {

@@ -287,6 +287,9 @@ func main() {
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
+			// Session images are served straight out of the session file instead of travelling in the
+			// transcript snapshot (see internal/sessionindex/imagerefs.go).
+			Middleware: appservice.SessionImageMiddleware(sessionIndex),
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,

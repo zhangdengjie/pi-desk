@@ -7,7 +7,12 @@ const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "
 export interface PreparedImage {
   id: string;
   name: string;
+  /** Base64 payload, empty when the image only has a `ref` (a session history image). */
   data: string;
+  /** Decoded size in bytes, when the source knew it (session snapshots do). */
+  bytes?: number;
+  /** Asset-server reference for a history image whose bytes never left the Go side. */
+  ref?: string;
   mimeType: string;
   previewUrl: string;
 }
