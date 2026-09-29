@@ -748,6 +748,13 @@
   width: 100%;
   max-width: none;
   padding: 24px var(--conversation-inline-space) calc(var(--composer-overlay-reserve) + 20px);
+  /* The topbar lives in grid row 1, whose track is `--app-menu-height` and resolves to 0px, so its
+   * 44px of height overflows into row 2 and paints over the top of the transcript (z-40). Without
+   * this inset, a start-aligned scrollIntoView parks its target under the session title - which is
+   * how a search hit looked "not scrolled out" on 2026-09-29. The bottom reserve already existed for
+   * the composer; the top was simply never given one. Keep this comment free of a closing brace -
+   * the sibling contract test matches the whole block with a no-brace pattern. */
+  scroll-padding-top: calc(var(--topbar-height) + 8px);
   scroll-padding-bottom: var(--composer-overlay-reserve);
 }
 

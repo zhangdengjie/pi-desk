@@ -1209,9 +1209,9 @@
   box-shadow: 0 0 0 1px var(--amber);
 }
 
-.message-row--search-active {
-  scroll-margin-block: 100px;
-}
+/* The search hit is scrolled as the `<mark>` itself (ConversationPane `scrollToSearchMatch`), and
+   every row alignment clears the topbar through `.timeline`'s `scroll-padding-top` - so this is
+   where a `.message-row--search-active` rule used to sit, and nothing needs to sit here now. */
 
 .timeline-history-status {
   display: grid;

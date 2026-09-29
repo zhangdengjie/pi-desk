@@ -148,6 +148,22 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.message-row\[data-role="assistant"\] \.message-content,[^}]*max-width:\s*100%/s);
   });
 
+  it("keeps the scrollport clear of the topbar band it scrolls under", async () => {
+    // `.topbar` sits in grid row 1, whose track is `--app-menu-height: 0px`, so its 44px overflows
+    // into row 2 and paints over the first lines of the transcript. Any `scrollIntoView({ block:
+    // "start" })` therefore parks its target under the session title unless the scroll container
+    // declares the inset. Measured 2026-09-29 from a user screenshot: a search hit looked like it
+    // "never scrolled out" - it was centred, just inside that covered band.
+    const css = (await workbenchText()).replace(/\/\*[\s\S]*?\*\//g, "");
+    const timeline = css.slice(css.indexOf(".timeline {"));
+    expect(timeline.slice(0, timeline.indexOf("}")))
+      .toMatch(/scroll-padding-top:\s*calc\(var\(--topbar-height\) \+ 8px\)/);
+    // The token has to resolve in this same file: `workbench.css` loads after `layout.css`, and the
+    // inset is worthless if the height it reads is never declared.
+    expect(css).toMatch(/--topbar-height:\s*(\d+)px/);
+    expect(Number(css.match(/--topbar-height:\s*(\d+)px/)![1])).toBeGreaterThan(0);
+  });
+
   it("keeps the conversation scrollbar at the workspace edge when the inspector opens", async () => {
     const css = await workbenchText();
     expect(css).toMatch(/\.app-shell\.is-inspector-open \.workspace-shell\s*{[^}]*padding-right:\s*0/s);

@@ -59,7 +59,16 @@ describe("ConversationPane", () => {
       global: {
         stubs: {
           ComposerBar: true,
-          ConversationMessage: { props: ["message"], template: '<article class="stub-message" :data-message-id="message.id" :data-role="message.role">{{ message.text }}</article>' },
+          // `search-*` stay undeclared on purpose: they fall through to attributes, which is how the
+          // ordinal contract is read below. The lit mark renders only on an active row whose text
+          // carries the query twice - that is how the second case below gets a row with no mark to
+          // scroll to, the same way markdown syntax eats an occurrence in the real body.
+          ConversationMessage: {
+            props: ["message"],
+            template: '<article class="stub-message" :data-message-id="message.id" :data-role="message.role">'
+              + '<mark v-if="$attrs[\'search-active\'] && message.text.includes(\'dup\')" class="markdown-search-hit is-active">hit</mark>'
+              + '{{ message.text }}</article>',
+          },
         },
       },
     });
@@ -593,6 +602,53 @@ describe("ConversationPane", () => {
 
     expect(wrapper.get(".search-popover-count").text()).toBe("2 / 2");
     expect(row().attributes("search-active-index")).toBe("1");
+  });
+
+  it("scrolls the lit hit itself, not the row that contains it", async () => {
+    // A merged turn is one row that can be thousands of pixels tall. Centring the row is what used
+    // to happen, and the amber mark ended up in the band the topbar paints over.
+    const wrapper = mountTranscript(3);
+    const store = useAppStore();
+    store.messagesByThread["thread-1"][1].text = "dup first and dup second";
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));
+    await wrapper.vm.$nextTick();
+    await wrapper.get(".search-popover-input").setValue("dup");
+    await flushPromises();
+
+    const row = wrapper.findAll(".stub-message")[1];
+    const mark = row.get("mark.markdown-search-hit.is-active");
+    const rowScroll = vi.fn();
+    const markScroll = vi.fn();
+    row.element.scrollIntoView = rowScroll;
+    mark.element.scrollIntoView = markScroll;
+
+    await wrapper.findAll(".search-popover-control")[1].trigger("click");
+    await flushPromises();
+
+    expect(markScroll).toHaveBeenCalledWith({ behavior: "smooth", block: "center" });
+    // The row is only the fallback: it must not also get scrolled, or the two animations fight and
+    // the last one wins at an arbitrary position.
+    expect(rowScroll).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the row when the ordinal matched nothing rendered", async () => {
+    // Markdown syntax can eat occurrences, so an ordinal the counter produced may have no <mark>.
+    // Landing on the row beats not moving at all.
+    const wrapper = mountTranscript(3);
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));
+    await wrapper.vm.$nextTick();
+    await wrapper.get(".search-popover-input").setValue("Message");
+    await flushPromises();
+
+    const row = wrapper.findAll(".stub-message")[1];
+    expect(row.find("mark").exists()).toBe(false);
+    const rowScroll = vi.fn();
+    row.element.scrollIntoView = rowScroll;
+
+    await wrapper.findAll(".search-popover-control")[1].trigger("click");
+    await flushPromises();
+
+    expect(rowScroll).toHaveBeenCalledWith({ behavior: "smooth", block: "center" });
   });
 
   it("does not jump back to a search result when streaming output changes", async () => {

@@ -375,18 +375,24 @@ function closeSearch() {
   activeSearchMatch.value = 0;
 }
 
-async function scrollToMessage(messageIndex: number, messageId: string, block: ScrollLogicalPosition) {
+async function scrollToMessage(messageIndex: number, messageId: string, block: ScrollLogicalPosition, inner?: string) {
   if (shouldVirtualize.value) virtualizer.value.scrollToIndex(messageIndex, { align: block === "start" ? "start" : "center" });
   await nextTick();
   const row = Array.from(timeline.value?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])
     .find((element) => element.dataset.messageId === messageId);
-  if (row && typeof row.scrollIntoView === "function") row.scrollIntoView({ behavior: "smooth", block });
+  // A merged turn is a single row that can run to thousands of pixels, so centring *the row* leaves
+  // the thing the user asked for anywhere from under the topbar to behind the composer. When the
+  // caller names a node inside it - the lit search hit - scroll that node; the row stays the
+  // fallback for when the ordinal matched nothing rendered.
+  const hit = row && inner ? row.querySelector<HTMLElement>(inner) : null;
+  const target = hit ?? row;
+  if (target && typeof target.scrollIntoView === "function") target.scrollIntoView({ behavior: "smooth", block });
   updateActiveNavigation();
 }
 
 async function scrollToSearchMatch() {
   const match = currentSearchMatch.value;
-  if (match) await scrollToMessage(match.messageIndex, match.messageId, "center");
+  if (match) await scrollToMessage(match.messageIndex, match.messageId, "center", "mark.markdown-search-hit.is-active");
 }
 
 async function scrollToNavigation(item: ConversationNavigationItem) {

@@ -145,6 +145,14 @@ describe("conversation scroll rail", () => {
     expect(tickWidths.length).toBeGreaterThanOrEqual(3);
     expect(Math.max(...tickWidths)).toBeLessThanOrEqual(gutter - railLeft);
   });
+
+  it("keeps a single inset on the transcript's scroll axis", async () => {
+    // The topbar band is handled once, by `.timeline`'s scroll-padding-top (workbench.css). A
+    // per-row `scroll-margin` used to sit here as a guessed 100px; two insets on the same axis mean
+    // nobody can say which one a future scroll target is clearing.
+    const layout = await layoutText();
+    expect(layout).not.toMatch(/\.message-row--search-active\s*{[^}]*scroll-margin/);
+  });
 });
 
 describe("reasoning window and tail control", () => {
