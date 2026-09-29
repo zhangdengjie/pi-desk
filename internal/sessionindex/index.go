@@ -509,7 +509,10 @@ func (index *Index) Snapshot(path string) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	entries, err := readTranscriptEntries(canonical)
+	// Blanking each image's base64 before the line is parsed is what makes the first open of an
+	// image-heavy session cheap: the bytes are dropped here and only referenced, so nothing ever
+	// scans them (see blankImageData - 154ms -> 32ms on the 12.3MB session).
+	entries, err := readTranscriptEntriesWith(canonical, blankImageData)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -1152,6 +1155,10 @@ func readSummary(path string) (Summary, bool) {
 			}
 			continue
 		}
+		// A summary needs the message envelope only, never an image's bytes: blanking first keeps
+		// every Resolve/List path from scanning them. Unblanked, this loop over the 12.3MB session
+		// costs 130ms; blanked it is 21ms. GetSessionSnapshot pays this read before its Snapshot.
+		line = blankImageData(line)
 		var entry rawEntry
 		if err := json.Unmarshal(line, &entry); err != nil {
 			if lineNumber == 1 {
@@ -1220,6 +1227,15 @@ func readSummary(path string) (Summary, bool) {
 }
 
 func readTranscriptEntries(path string) ([]rawEntry, error) {
+	return readTranscriptEntriesWith(path, nil)
+}
+
+// readTranscriptEntriesWith reads the transcript, optionally rewriting each line's bytes before it
+// is parsed. The rewrite exists for one caller: a snapshot drops image bytes on the way in, and
+// doing that before the JSON parse is the difference between scanning 12MB and scanning 1.5MB.
+// Mutations read through `readTranscriptEntries` and must keep seeing the real bytes, because they
+// write those messages back.
+func readTranscriptEntriesWith(path string, rewrite func([]byte) []byte) ([]rawEntry, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("inspect session transcript: %w", err)
@@ -1245,6 +1261,9 @@ func readTranscriptEntries(path string) ([]rawEntry, error) {
 				return nil, errors.New("session transcript header is malformed")
 			}
 			continue
+		}
+		if rewrite != nil {
+			line = rewrite(line)
 		}
 		var entry rawEntry
 		if json.Unmarshal(line, &entry) != nil {

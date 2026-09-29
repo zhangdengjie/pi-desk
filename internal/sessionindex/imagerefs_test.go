@@ -138,9 +138,11 @@ func TestImageReferenceCannotBeForgedOrReusedAcrossProcesses(t *testing.T) {
 		t.Fatal("a reference from another index was accepted")
 	}
 
-	// A tampered signature is refused too, even though the payload is untouched.
+	// A tampered signature is refused too, even though the payload is untouched. Flip a character in
+	// the middle: the last base64 character of a 32-byte HMAC carries two unused bits, so flipping
+	// its low bit decodes to the same signature and the test only passed by luck.
 	refPayload, refSignature, _ := strings.Cut(ref, ".")
-	flipped := refSignature[:len(refSignature)-1] + string(refSignature[len(refSignature)-1]^0x01)
+	flipped := string(refSignature[0]^0x01) + refSignature[1:]
 	if _, err := index.Image(refPayload + "." + flipped); err == nil {
 		t.Fatal("a reference with a rewritten signature was accepted")
 	}
@@ -177,5 +179,83 @@ func TestImageReferenceOutsideTheSessionsRootIsRefused(t *testing.T) {
 	}
 	if _, err := index.Image(index.imageRefFor(path, "m1", 1)); err != nil {
 		t.Fatalf("reference to a session image failed: %v", err)
+	}
+}
+func TestBlankImageDataOnlyTouchesImagePayloads(t *testing.T) {
+	unchanged := []string{
+		// A text-only line is returned as the very same bytes.
+		`{"type":"message","id":"m1","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}`,
+		// "type":"image" inside escaped text is not a marker: the raw bytes carry `\"`.
+		`{"type":"message","id":"m2","message":{"role":"user","content":[{"type":"text","text":"escaped \"type\":\"image\" and \"data\":\"AAAA\""}]}}`,
+		// The value was escaped, so it is not a base64 payload and is left alone.
+		`{"type":"message","id":"m3","message":{"role":"user","content":[{"type":"image","data":"a\"b","mimeType":"image/png"}]}}`,
+	}
+	for _, line := range unchanged {
+		if got := string(blankImageData([]byte(line))); got != line {
+			t.Fatalf("line was rewritten:\n got %s\nwant %s", got, line)
+		}
+	}
+
+	rewritten := `{"type":"message","id":"m4","message":{"role":"user","content":[{"type":"text","text":"look"},{"type":"image","data":"aW1hZ2U=","mimeType":"image/png"},{"type":"image","data":"c2hvdA==","mimeType":"image/jpeg"},{"type":"other","data":"keep-me"}]}}`
+	blanked := string(blankImageData([]byte(rewritten)))
+	if strings.Contains(blanked, "aW1hZ2U=") || strings.Contains(blanked, "c2hvdA==") {
+		t.Fatalf("image bytes survived blanking: %s", blanked)
+	}
+	if !strings.Contains(blanked, `{"type":"other","data":"keep-me"}`) {
+		t.Fatalf("a non-image block was changed: %s", blanked)
+	}
+	var envelope struct {
+		Message struct {
+			Content []map[string]any `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(blanked), &envelope); err != nil {
+		t.Fatalf("blanked line is not valid JSON: %v %s", err, blanked)
+	}
+	blocks := envelope.Message.Content
+	if blocks[1]["bytes"] != float64(5) || blocks[2]["bytes"] != float64(4) {
+		t.Fatalf("wrong sizes: %#v", blocks)
+	}
+}
+
+// The blanking is a pre-parse optimisation, so it must not change what a snapshot says: the same
+// session, read both ways, has to produce byte-identical messages.
+func TestSnapshotWithBlankedBytesMatchesTheUnblankedPath(t *testing.T) {
+	index, path := imageSession(t, imageSessionLines()...)
+
+	blanked, err := index.Snapshot(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := readTranscriptEntries(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, count, model := index.transcriptSnapshot(addCompactionEstimates(activeTranscriptPath(entries)), path)
+
+	if count != blanked.MessageCount || model == nil || blanked.Model == nil || *model != *blanked.Model {
+		t.Fatalf("summary differs: %#v vs %#v", count, blanked.MessageCount)
+	}
+	for position := range messages {
+		if string(messages[position]) != string(blanked.Messages[position]) {
+			t.Fatalf("message %d differs:\n blanked %s\n   plain %s", position, blanked.Messages[position], messages[position])
+		}
+	}
+}
+
+// A summary only ever needs the message envelope, so blanking image bytes on the way in must not
+// change a single field it reports.
+func TestSummaryIsUnchangedByBlankedImageBytes(t *testing.T) {
+	_, path := imageSession(t, imageSessionLines()...)
+
+	summary, ok := readSummary(path)
+	if !ok {
+		t.Fatal("summary rejected")
+	}
+	if summary.FirstMessage != "look" || summary.MessageCount != 3 {
+		t.Fatalf("unexpected summary: %#v", summary)
+	}
+	if summary.ModifiedAt.IsZero() || summary.CreatedAt.IsZero() {
+		t.Fatalf("timestamps were dropped: %#v", summary)
 	}
 }

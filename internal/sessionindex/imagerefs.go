@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -223,7 +224,10 @@ func base64ByteLength(raw json.RawMessage) int {
 	if len(encoded) < 2 || encoded[0] != '"' || encoded[len(encoded)-1] != '"' {
 		return 0
 	}
-	encoded = encoded[1 : len(encoded)-1]
+	return base64CharsByteLength(encoded[1 : len(encoded)-1])
+}
+
+func base64CharsByteLength(encoded []byte) int {
 	if len(encoded) == 0 {
 		return 0
 	}
@@ -235,4 +239,74 @@ func base64ByteLength(raw json.RawMessage) int {
 		}
 	}
 	return len(encoded)/4*3 - padding
+}
+
+var (
+	imageTypeMarker = []byte(`"type":"image"`)
+	imageDataMarker = []byte(`"data":"`)
+)
+
+// blankImageData rewrites every image block's base64 value in a raw transcript line into
+// `"data":"","bytes":<n>` before the line is parsed.
+//
+// The snapshot never sends those bytes - it sends a reference - so parsing them was pure cost: on
+// the 12.3MB session this is 10.7MB of base64, and it used to be scanned three times over (line,
+// message envelope, content array). Measured with the same pipeline, on that session: reading the
+// transcript drops 76ms -> 9ms, and the whole first-open Snapshot drops 154ms -> 32ms.
+//
+// It only touches bytes that are structurally an image block's `data` value:
+//   - the line has to contain `"type":"image"` at all (a memchr, ~2ms over the whole session);
+//   - the value has to sit inside that block, i.e. before the block's closing `}`;
+//   - base64 cannot contain a quote or a backslash, so a backslash in the value means the string
+//     was escaped and is not an image payload - the line is left exactly as it was.
+//
+// Anything it cannot recognise is passed through untouched, which is why a line it skips is slow
+// rather than wrong.
+func blankImageData(line []byte) []byte {
+	if !bytes.Contains(line, imageTypeMarker) {
+		return line
+	}
+	out := make([]byte, 0, len(line))
+	cursor := 0
+	changed := false
+	for {
+		markerAt := bytes.Index(line[cursor:], imageTypeMarker)
+		if markerAt < 0 {
+			break
+		}
+		markerAt += cursor
+		// Base64 holds no `}`, so the first one after the marker closes the image block.
+		blockEnd := bytes.IndexByte(line[markerAt:], '}')
+		if blockEnd < 0 {
+			break
+		}
+		blockEnd += markerAt
+		dataAt := bytes.Index(line[markerAt:blockEnd], imageDataMarker)
+		if dataAt < 0 {
+			cursor = blockEnd
+			continue
+		}
+		dataAt += markerAt
+		valueStart := dataAt + len(imageDataMarker)
+		valueEnd := bytes.IndexByte(line[valueStart:blockEnd], '"')
+		if valueEnd < 0 {
+			cursor = blockEnd
+			continue
+		}
+		valueEnd += valueStart
+		value := line[valueStart:valueEnd]
+		if bytes.IndexByte(value, '\\') >= 0 {
+			cursor = blockEnd
+			continue
+		}
+		out = append(out, line[cursor:dataAt]...)
+		out = append(out, `"data":"","bytes":`...)
+		out = strconv.AppendInt(out, int64(base64CharsByteLength(value)), 10)
+		cursor = valueEnd + 1
+		changed = true
+	}
+	if !changed {
+		return line
+	}
+	return append(out, line[cursor:]...)
 }
