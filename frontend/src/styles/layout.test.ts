@@ -244,6 +244,24 @@ describe("message editor theme colors", () => {
   });
 });
 
+describe("markdown outline list", () => {
+  it("keeps items at their natural height so a long outline scrolls instead of squashing", async () => {
+    const layout = await layoutText();
+    // The nav is a flex column with a height cap (62%, or the rail's grid row). A flex item defaults
+    // to `flex-shrink: 1`, so the items absorbed the overflow instead of the nav: 42 headings were
+    // squeezed from 23px to 10.5px each, `scrollHeight` stayed equal to `clientHeight`, `scrollTop`
+    // stayed 0, and the rows overlapped their own 17px line box. Measured in a real WKWebView.
+    expect(firstRuleBody(layout, ".markdown-outline-item")).toMatch(/flex:\s*0\s+0\s+auto/);
+    // One line per entry, clipped with an ellipsis - the row grows sideways, never downwards.
+    expect(firstRuleBody(layout, ".markdown-outline-item")).toMatch(/white-space:\s*nowrap/);
+    // The cap plus `overflow: auto` is what turns the overflow into a scrollport.
+    const nav = firstRuleBody(layout, ".markdown-outline");
+    expect(nav).toMatch(/overflow:\s*auto/);
+    expect(nav).toMatch(/max-height:\s*62%/);
+    expect(firstRuleBody(layout, ".markdown-outline.is-rail")).not.toMatch(/overflow/);
+  });
+});
+
 describe("settings management surfaces", () => {
   it("keeps the MCP page on the shared settings background", async () => {
     const layout = await layoutText();

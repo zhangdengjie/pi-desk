@@ -4248,8 +4248,15 @@
   padding: 8px 6px;
 }
 
+/* `flex: 0 0 auto` is what makes this list scrollable at all. The nav is a flex column with a
+   height cap (62%, or the rail's grid row), and a flex item defaults to `flex-shrink: 1`: 42 headings
+   were each squeezed from 23px to 10.5px so the column always fit, `scrollHeight` stayed equal to
+   `clientHeight`, and the rows overlapped their own 17px line box - which reads as a squashed outline
+   that refuses to scroll. Measured in a real WKWebView (mdshot fixture, 900x800 host): before, the nav
+   reported clientHeight 494 / scrollHeight 494 and `scrollTop = 400` stayed 0. */
 .markdown-outline-item {
   display: block;
+  flex: 0 0 auto;
   width: 100%;
   padding: 3px 6px;
   border: 0;
