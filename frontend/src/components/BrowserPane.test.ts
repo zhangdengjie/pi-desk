@@ -9,7 +9,8 @@ const browser = vi.hoisted(() => ({
   openUrl: vi.fn().mockResolvedValue(undefined),
   bounds: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("../stores/app", () => ({ useAppStore: () => ({ activeThreadId: "thread" }) }));
+const storeState = vi.hoisted(() => ({ activeThreadId: "thread", paneResizing: false }));
+vi.mock("../stores/app", () => ({ useAppStore: () => storeState }));
 vi.mock("../services/browser", () => ({ browserService: browser, onBrowserEvent: () => () => undefined }));
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
@@ -52,6 +53,46 @@ it("opens DevTools for this exact tab without a handback control", async () => {
     await wrapper.get("form").trigger("submit");
     expect(browser.openUrl).toHaveBeenCalledWith("https://example.test/path", "page");
   } finally { wrapper.unmount(); }
+});
+
+it("skips the whole-document overlay query while a divider drag is in flight, and re-reads on release", async () => {
+  let scheduled: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => { scheduled.push(callback); return scheduled.length; });
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 80, 600, 400));
+  const query = vi.spyOn(document, "querySelector");
+  const update = async () => {
+    await flushPromises();
+    const callbacks = scheduled; scheduled = [];
+    callbacks.forEach(callback => callback(0));
+    await flushPromises();
+  };
+  const wrapper = mount(BrowserPane, { attachTo: document.body, props: { tab: { id: "page", kind: "browser", title: "Browser" } } });
+  const menu = document.createElement("div");
+  menu.className = "command-menu";
+  menu.setAttribute("role", "menu");
+  try {
+    await update();
+    expect(browser.bounds.mock.lastCall?.[2]).toBe(true);
+
+    // A drag rewrites the shell every frame; the overlay question cannot change while the button is
+    // down, so the frame must not pay for a full-document querySelector.
+    storeState.paneResizing = true;
+    query.mockClear();
+    document.body.append(menu);
+    await update();
+    expect(query.mock.calls.filter(([selector]) => String(selector).includes("aria-modal"))).toHaveLength(0);
+    expect(browser.bounds.mock.lastCall?.[2]).toBe(true);
+
+    // Release re-asks, so a native view can never stay visible under an open overlay. The re-ask is
+    // driven by the DOM patch the release's commit causes, exactly as in a real drag.
+    storeState.paneResizing = false;
+    document.body.classList.add("after-divider-drag");
+    await update();
+    expect(query.mock.calls.filter(([selector]) => String(selector).includes("aria-modal")).length).toBeGreaterThan(0);
+    expect(browser.bounds.mock.lastCall?.[2]).toBe(false);
+  } finally { menu.remove(); storeState.paneResizing = false; wrapper.unmount(); }
 });
 
 it("shows the blank-page prompt without letting the native surface cover it", async () => {

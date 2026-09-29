@@ -257,9 +257,14 @@ const OUTLINE_RAIL_MIN_WIDTH = 620;
 const markdownPreviewWidth = ref(0);
 let outlineResize: ResizeObserver | undefined;
 let outlineResizeTarget: HTMLElement | undefined;
+// Set when a divider drag changed this box but the observer stood down. ResizeObserver does not
+// fire again once the drag stops - the box has settled - so the skipped sample has to be paid for
+// by a direct read when `paneResizing` clears (see `setPaneResizing` in stores/app.ts).
+let outlineWidthStale = false;
 function watchMarkdownPreviewWidth(host?: HTMLElement) {
   if (host === outlineResizeTarget) return;
   outlineResizeTarget = host;
+  outlineWidthStale = false;
   if (!host) {
     outlineResize?.disconnect();
     outlineResize = undefined;
@@ -273,6 +278,11 @@ function watchMarkdownPreviewWidth(host?: HTMLElement) {
     return;
   }
   outlineResize ??= new ResizeObserver((entries) => {
+    // A drag of either divider rewrites this box every frame, and the only thing the answer drives
+    // is rail-vs-floating on the *next* paint. Writing the ref at drag cadence re-renders the whole
+    // inspector per frame - that is the stutter. It stands down for the duration and catches up on
+    // release, exactly like the transcript and terminal observers.
+    if (appStore.paneResizing) { outlineWidthStale = true; return; }
     const width = entries[entries.length - 1]?.contentRect.width;
     // An environment with no layout reports 0 for everything; collapsing to "narrow" there would be a
     // wrong answer, not an absent one, so only a real measurement overrides the panel width.
@@ -282,6 +292,15 @@ function watchMarkdownPreviewWidth(host?: HTMLElement) {
   markdownPreviewWidth.value = host.clientWidth || appStore.inspectorWidth;
 }
 const outlineIsRail = computed(() => markdownPreviewWidth.value >= OUTLINE_RAIL_MIN_WIDTH);
+
+watch(() => appStore.paneResizing, (resizing) => {
+  if (resizing || !outlineWidthStale) return;
+  outlineWidthStale = false;
+  // A layout-less environment reports 0; keeping the last real width there is a stale answer, not a
+  // wrong one, and the next genuine resize event corrects it.
+  const width = outlineResizeTarget?.clientWidth ?? 0;
+  if (width > 0) markdownPreviewWidth.value = width;
+});
 
 /**
  * Undecided means "follow the width": a wide pane shows the column on its own, a narrow one keeps the

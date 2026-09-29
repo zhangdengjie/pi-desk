@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ChevronLeft, ChevronRight, Globe, RefreshCw, Square, PanelsTopLeft, Bookmark } from "lucide-vue-next";
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { browserService, onBrowserEvent } from "../services/browser";
 import { useAppStore, type PanelTab } from "../stores/app";
 import { tr } from "../i18n";
@@ -29,14 +29,29 @@ let updateAgain = false;
 function blocked() {
   return !!document.querySelector(':popover-open, dialog[open], [aria-modal="true"], .modal-backdrop, .dialog-backdrop, .context-menu, .command-menu, [role="menu"]');
 }
+
+// While a divider drag is in flight, every frame rewrites the shell's inline style and the
+// MutationObserver reports each patch - so `blocked()` would answer a question that cannot change
+// (nobody opens a dialog with the button held down on a separator) with a full-document
+// querySelector over a transcript of thousands of nodes. The bounds still go across every frame:
+// the native view has to follow the pane or it visibly spills past the edge.
+let overlayOpen = false;
+function overlayBlocks() {
+  if (!store.paneResizing) overlayOpen = blocked();
+  return overlayOpen;
+}
 function scheduleBounds() {
   if (!frame) frame = requestAnimationFrame(() => { frame = 0; void syncBounds(); });
 }
+// The overlay cache above needs a guaranteed re-read when a drag ends: the DOM patches that a
+// release causes usually wake the MutationObserver, but a drag that changed nothing in the DOM
+// would not, and a native view left under an open dialog is worse than one extra frame.
+watch(() => store.paneResizing, (resizing) => { if (!resizing) scheduleBounds(); });
 async function syncBounds() {
   if (updating) { updateAgain = true; return; }
   if (!status.value?.attached || !viewport.value || disposed) return;
   const box = viewport.value.getBoundingClientRect(), scale = window.devicePixelRatio || 1;
-  const visible = !empty.value && !document.hidden && box.width > 0 && box.height > 0 && !blocked();
+  const visible = !empty.value && !document.hidden && box.width > 0 && box.height > 0 && !overlayBlocks();
   const rect = {
     x: Math.max(0, Math.round(box.x * scale)), y: Math.max(0, Math.round(box.y * scale)),
     width: Math.max(0, Math.round(box.width * scale)), height: Math.max(0, Math.round(box.height * scale)),

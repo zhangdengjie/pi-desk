@@ -752,6 +752,73 @@ describe("InspectorPanel", () => {
     wrapper.unmount();
   });
 
+  it("holds the outline column steady through a divider drag and catches up on release", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    // What the engine reports for the preview box, and what a direct read answers.
+    let measured = 400;
+    const clientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, get: () => measured });
+    type Captured = { cb: ResizeObserverCallback; host?: Element };
+    const captured: Captured[] = [];
+    class TestResizeObserver {
+      private record: Captured;
+      constructor(callback: ResizeObserverCallback) { this.record = { cb: callback }; captured.push(this.record); }
+      observe(element: Element) { this.record.host = element; }
+      unobserve() {}
+      disconnect() { this.record.host = undefined; }
+    }
+    vi.stubGlobal("ResizeObserver", TestResizeObserver);
+    const fire = (width: number) => {
+      const record = captured.find((item) => item.host?.classList.contains("markdown-preview-host"));
+      if (!record) throw new Error("the markdown preview host is not observed");
+      record.cb([{ contentRect: { width } } as unknown as ResizeObserverEntry], {} as ResizeObserver);
+    };
+    store.$patch({
+      threads: [{
+        id: "thread-drag", title: "Drag", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }],
+      activeThreadId: "thread-drag",
+      ...panelState("thread-drag", { kind: "file", path: "plan.md", markdownRendered: true, preview: {
+        path: "plan.md", absolutePath: "D:\\repo\\plan.md", mediaType: "text/markdown",
+        content: "# Plan\n\n## Intro\n\n### Setup\n\n## Ship\n", size: 40, binary: false, truncated: false,
+      } }),
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    await flushPromises();
+    try {
+      // Narrow: the reader gets no column, and a real measurement keeps it that way.
+      expect(wrapper.get(".markdown-preview-host").classes()).not.toContain("has-outline-rail");
+      measured = 700;
+      fire(700);
+      await nextTick();
+      expect(wrapper.get(".markdown-preview-host").classes()).toContain("has-outline-rail");
+
+      // The drag: every frame reports a new box, and re-deciding the rail per frame is the stutter.
+      // Nothing about the rail is needed until the pointer is released.
+      store.setPaneResizing(true);
+      measured = 400;
+      fire(700);
+      fire(400);
+      await nextTick();
+      expect(wrapper.get(".markdown-preview-host").classes()).toContain("has-outline-rail");
+
+      // Release: the skipped samples are paid for by one direct read, because the box has settled
+      // and ResizeObserver will not fire again on its own.
+      store.setPaneResizing(false);
+      await nextTick();
+      expect(wrapper.get(".markdown-preview-host").classes()).not.toContain("has-outline-rail");
+      wrapper.unmount();
+    } finally {
+      vi.unstubAllGlobals();
+      if (clientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", clientWidth);
+      else Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+    }
+  });
+
   it("stands the outline up as a column when the pane is wide enough to spare one", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
