@@ -54,13 +54,64 @@ const streamSignal = computed(() => {
   return [appStore.activeThreadId, message.id, message.text.length, thinkingLength, toolCount, toolOutput, message.runNotice?.status ?? "", appStore.activeWaitingForOutput] as const;
 });
 
+/**
+ * The virtualizer keeps its own copy of the scroll offset and only learns of a raw
+ * `scrollTop` write from the scroll event, one task later. So the first range after a switch -
+ * or after a cold transcript lands - is computed from offset 0: a block of rows from the
+ * *top* of the list, which the tail pin then throws away. Measured on the 2112-entry session
+ * (`.pi/bin/hitprobe/devSwitchProbe.ts.keep`, 2026-09-30): wave one mounted 27 rows, the whole
+ * switch 55 mounts for the 7 rows that survive.
+ *
+ * Narrowing overscan to nothing while that pin is in flight keeps the throwaway block to the
+ * couple of rows the estimate puts in the viewport. Two frames is the hand-off; if the window
+ * is occluded and rAF stalls, the worst case is a narrow overscan until the next scroll event.
+ */
+const pinWindow = ref(false);
+let pinFrames = 0;
+function openPinWindow() {
+  pinWindow.value = true;
+  cancelAnimationFrame(pinFrames);
+  pinFrames = requestAnimationFrame(() => {
+    pinFrames = requestAnimationFrame(() => {
+      pinWindow.value = false;
+    });
+  });
+}
+
+// A cold transcript arriving is the same race as a thread change: the rows appear before the
+// virtualizer has seen the pin.
+watch(() => appStore.transcriptStateByThread[appStore.activeThreadId ?? ""], (state, previous) => {
+  if (previous === "loading" && state === "loaded") openPinWindow();
+});
+
+// `overscan` counts *rows*. One merged turn measures 1439-1874px against an 856px viewport, so
+// six of them put six whole rows off screen (probe: 完全屏外=6/7). Ask for a pixel band instead:
+// one screen of slack above and below, never more than the six rows the old constant gave.
+const viewportHeight = ref(0);
+const virtualOverscan = computed(() => {
+  const list = messages.value;
+  const height = viewportHeight.value;
+  if (!list.length || height <= 0) return 6;
+  let total = 0;
+  for (const message of list) total += estimateMessageSize(message);
+  const average = Math.max(60, total / list.length);
+  return Math.max(1, Math.min(6, Math.round((1.2 * height) / average)));
+});
+
+function noteViewportHeight() {
+  const element = timeline.value;
+  if (element && element.clientHeight > 0) viewportHeight.value = element.clientHeight;
+}
+
 const virtualizer = useVirtualizer(computed(() => ({
   count: shouldVirtualize.value ? messages.value.length : 0,
   getScrollElement: () => timeline.value ?? null,
   getItemKey: (index: number) => messages.value[index]?.turnKey ?? messages.value[index]?.id ?? index,
   estimateSize: (index: number) => estimateMessageSize(messages.value[index]),
-  overscan: 6,
+  overscan: pinWindow.value ? 0 : virtualOverscan.value,
 })));
+
+
 const virtualRows = computed(() => virtualizer.value.getVirtualItems());
 const virtualTotalSize = computed(() => virtualizer.value.getTotalSize());
 
@@ -221,7 +272,9 @@ watch(streamLive, (live, wasLive) => {
 // The row observer stands down during a pane drag; this is where the tail catches up once the
 // width has settled.
 watch(() => appStore.paneResizing, (resizing) => {
-  if (!resizing && stickToBottom.value) followTail();
+  if (resizing) return;
+  noteViewportHeight();
+  if (stickToBottom.value) followTail();
 });
 
 
@@ -302,6 +355,7 @@ function noteSelfGrowth() {
 function onTimelineScroll() {
   const element = timeline.value;
   if (!element) return;
+  noteViewportHeight();
   // One of our own steps (in flight, or being written right now): the reader has not
   // moved, so the follow stays armed.
   if (applyingTail || tailFrame) {
@@ -529,6 +583,7 @@ watch(() => composerBar.value?.$el, (element, _previous, onCleanup) => {
 watch(() => appStore.activeThreadId, async () => {
   activeNavigationId.value = navigationItems.value[0]?.messageId ?? "";
   stickToBottom.value = true;
+  openPinWindow();
   await nextTick();
   virtualizer.value.measure();
   scrollToBottom();
@@ -563,10 +618,12 @@ watch(searchMatches, (matches) => {
 onMounted(async () => {
   document.addEventListener("keydown", onDocumentKeydown, true);
   await nextTick();
+  noteViewportHeight();
   updateActiveNavigation();
 });
 onBeforeUnmount(() => {
   stopFollowingTail();
+  cancelAnimationFrame(pinFrames);
   rowObserver?.disconnect();
   observedRows.clear();
   document.removeEventListener("keydown", onDocumentKeydown, true);
