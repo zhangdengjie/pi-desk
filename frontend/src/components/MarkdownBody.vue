@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import MarkdownIt from "markdown-it";
 import { computed, getCurrentInstance, ref } from "vue";
 import { useAppStore } from "../stores/app";
 import { useRevealedText } from "../composables/useRevealedText";
-import { resolveWorkspaceFileLink, type WorkspaceFileLink } from "../utils/fileLinks";
-import { normalizeMarkdownBreakTags, slugifyHeading, uniqueHeadingSlug } from "../utils/markdown";
+import type { WorkspaceFileLink } from "../utils/fileLinks";
+import { slugifyHeading } from "../utils/markdown";
+import { renderMarkdownDocument } from "../utils/markdownRenderer";
 import { collectMarkdownOutline, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import FileLinkContextMenu from "./FileLinkContextMenu.vue";
 
@@ -53,102 +53,6 @@ const contextMenu = ref<{ file: WorkspaceFileLink; x: number; y: number }>();
 // by picking whichever comes first in the DOM - usually not the one the reader was looking at.
 const instanceUid = `md${getCurrentInstance()?.uid ?? 0}`;
 const slugCounts = new Map<string, number>();
-const markdown = new MarkdownIt({ html: false, breaks: true, linkify: true, typographer: false });
-const defaultValidateLink = markdown.validateLink.bind(markdown);
-const originalLinkOpen = markdown.renderer.rules.link_open;
-
-markdown.renderer.rules.heading_open = (tokens, index, options, _env, self) => {
-  const inline = tokens[index + 1];
-  tokens[index].attrSet("id", `${instanceUid}-${uniqueHeadingSlug(slugCounts, inline?.type === "inline" ? inline.content : "")}`);
-  return self.renderToken(tokens, index, options);
-};
-
-markdown.validateLink = (url) => /^file:/i.test(url) || defaultValidateLink(url);
-markdown.renderer.rules.link_open = (tokens, index, options, environment, renderer) => {
-  const rawHref = tokens[index].attrGet("href");
-  const href = typeof rawHref === "string" ? rawHref : String(rawHref ?? "");
-  const linkEnvironment = (environment ?? {}) as { workspacePath?: string; baseDir?: string };
-  const file = resolveWorkspaceFileLink(href, String(linkEnvironment.workspacePath ?? ""), String(linkEnvironment.baseDir ?? ""));
-  if (file) {
-    tokens[index].attrSet("href", "#");
-    tokens[index].attrSet("class", "markdown-file-link");
-    tokens[index].attrSet("title", file.absolutePath);
-    tokens[index].attrSet("data-file-path", file.relativePath);
-    tokens[index].attrSet("data-file-absolute", file.absolutePath);
-    tokens[index].attrSet("data-file-name", file.name);
-    if (file.line) tokens[index].attrSet("data-file-line", String(file.line));
-    if (file.anchor) tokens[index].attrSet("data-file-anchor", file.anchor);
-  } else if (/^(https?:)\/\//i.test(href)) {
-    // Web links route to the managed browser panel; the click handler below
-    // prevents default and falls back to the system browser on failure.
-    tokens[index].attrSet("class", "markdown-web-link");
-  } else if (/^(mailto:|tel:)/i.test(href)) {
-    tokens[index].attrSet("target", "_blank");
-    tokens[index].attrSet("rel", "noopener noreferrer");
-  } else if (!href.startsWith("#")) {
-    tokens[index].attrSet("href", "#");
-  }
-  return originalLinkOpen
-    ? originalLinkOpen(tokens, index, options, environment, renderer)
-    : renderer.renderToken(tokens, index, options);
-};
-
-// markdown-it emits bare <table>. A table can only scroll sideways if some box
-// around it owns the overflow, and a <table> cannot be that box without losing
-// its own table layout (see .markdown-table-scroll in layout.css). So every
-// rendered table gets a scroll wrapper here, in the one place markdown becomes
-// HTML, which also keeps streamed reasoning and file previews on the same shape.
-// The column count travels with the table because the cell floor in layout.css has
-// to divide the pane by it: an absolute floor on every prose cell summed past the
-// reading axis on wide tables (8 columns × 200px in a 880px pane), so the table
-// overflowed and the label columns were left with one glyph per line.
-function tableColumnCount(tokens: CellTokens, index: number): number {
-  let columns = 0;
-  for (let i = index + 1; i < tokens.length && tokens[i].type !== "tr_close"; i++) {
-    if (tokens[i].type === "th_open" || tokens[i].type === "td_open") columns++;
-  }
-  return Math.max(columns, 1);
-}
-
-markdown.renderer.rules.table_open = (tokens, index, options, _env, self) =>
-  `<div class="markdown-table-scroll" style="--markdown-table-cols:${tableColumnCount(tokens, index)}">${self.renderToken(tokens, index, options)}`;
-markdown.renderer.rules.table_close = (tokens, index, options, _env, self) =>
-  `${self.renderToken(tokens, index, options)}</div>`;
-
-// Measured in both engines (WebKit = the one this app renders with, plus Blink as
-// control): a bare text cell ignores max-width on <th>/<td> — WebKit laid the column
-// out at 490px for a 340px cap. A block child inside the cell fixes it (340px in both
-// engines). So every cell gets one wrapper and the ceiling lives on that wrapper.
-// A column floor is only useful on cells that actually hold prose: applied to "Go" or
-// "1.26.1" it inflates a two-column value table to hundreds of pixels of dead space.
-// CSS cannot express "floor, but never above the content" — min(340px, max-content)
-// computes to 0px in both engines (re-measured 2026-09-25: min(max-content, 100cqi/cols)
-// leaves a label column at 41px), so the renderer decides from the cell's own text.
-const WIDE_CELL_MIN_CHARS = 24;
-// Short labels ("持仓", "科大讯飞", "❌ 第三次点名") have no soft-wrap opportunity either,
-// and auto table layout squeezes them to one glyph per line as soon as the prose
-// columns need the room. Under this many codepoints the cell is cheap enough to keep
-// on a single line unconditionally, so it never has to be floored by a percentage.
-const NOWRAP_MAX_CHARS = 8;
-
-type CellTokens = Parameters<NonNullable<typeof markdown.renderer.rules.td_open>>[0];
-
-function cellFitClass(tokens: CellTokens, index: number): string {
-  const inline = tokens[index + 1];
-  if (!inline || inline.type !== "inline") return "";
-  const chars = Array.from(inline.content ?? "").length;
-  if (chars >= WIDE_CELL_MIN_CHARS) return " is-wide";
-  return chars <= NOWRAP_MAX_CHARS ? " is-nowrap" : "";
-}
-
-markdown.renderer.rules.th_open = (tokens, index, options, _env, self) =>
-  `${self.renderToken(tokens, index, options)}<div class="markdown-cell${cellFitClass(tokens, index)}">`;
-markdown.renderer.rules.td_open = (tokens, index, options, _env, self) =>
-  `${self.renderToken(tokens, index, options)}<div class="markdown-cell${cellFitClass(tokens, index)}">`;
-markdown.renderer.rules.th_close = (tokens, index, options, _env, self) =>
-  `</div>${self.renderToken(tokens, index, options)}`;
-markdown.renderer.rules.td_close = (tokens, index, options, _env, self) =>
-  `</div>${self.renderToken(tokens, index, options)}`;
 
 // While the source is still growing (an answer streaming, a reasoning block live)
 // the text is revealed a frame at a time. The store has the whole string from the
@@ -218,13 +122,16 @@ function highlightRenderedHtml(html: string, query: string, active: boolean, act
 
 const rendered = computed(() => {
   if (!renderMarkdown.value) return "";
-  // Reset per pass: slugs are deduplicated by occurrence, and re-rendering the same document must
-  // produce the same ids, otherwise an open outline would point at headings that no longer exist.
-  slugCounts.clear();
-  const html = markdown.render(normalizeMarkdownBreakTags(shownText.value), {
+  const env = {
     workspacePath: workspacePath.value,
     baseDir: linkBaseDir.value,
-  });
+    // Reset per pass: slugs are deduplicated by occurrence, and re-rendering the same document must
+    // produce the same ids, otherwise an open outline would point at headings that no longer exist.
+    slugCounts,
+  };
+  // A settled block is the one a virtualized scroll unmounts and remounts, so it is the one worth a
+  // lookup; a streaming block changes every frame and must not enter the cache at all.
+  const html = renderMarkdownDocument(shownText.value, env, instanceUid, props.streaming !== true);
   return highlightRenderedHtml(html, props.searchQuery ?? "", props.searchActive ?? false,
     props.searchActiveIndex ?? null);
 });

@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
 import MarkdownBody from "./MarkdownBody.vue";
+import { markdownRenderCache } from "../utils/markdownRenderer";
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -340,4 +341,27 @@ it("keeps the ceiling for a block that is still arriving", () => {
   const { wrapper } = mountMarkdown("x".repeat(100_001), { streaming: true });
   expect(document.querySelector("pre.oversized-message")).not.toBeNull();
   wrapper.unmount();
+});
+
+describe("MarkdownBody remount cost", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    markdownRenderCache.clear();
+  });
+
+  it("does not re-parse the same long block when a virtualized row comes back", async () => {
+    // 40k+ chars is where a parse (~5ms) is worth a lookup; a transcript scroll unmounts and
+    // remounts rows, so a per-instance renderer paid that again every pass.
+    const text = `## 结论\n${"- `wear IS NULL` 788 条，需要复核。\n".repeat(2000)}`;
+    const first = mountMarkdown(text).wrapper;
+    await flushPromises();
+    const second = mountMarkdown(text).wrapper;
+    await flushPromises();
+
+    // Same HTML apart from the per-instance heading prefix, but only one parse.
+    const withoutUid = (html: string) => html.replace(/md\d+/g, "MD");
+    expect(first.html()).toContain("id=\"md");
+    expect(withoutUid(second.html())).toBe(withoutUid(first.html()));
+    expect(markdownRenderCache.stats).toMatchObject({ misses: 1, hits: 1 });
+  });
 });
