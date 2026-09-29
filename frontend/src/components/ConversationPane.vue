@@ -24,8 +24,13 @@ const searchQuery = ref("");
 const activeSearchMatch = ref(0);
 const stickToBottom = ref(true);
 const messages = computed(() => groupConversationTurns(appStore.activeMessages));
+// The gate has to read the transcript that is actually on screen. It used to fall back to
+// `thread.messageCount`, which is only ever written when a transcript is re-read from disk
+// (`stores/app.ts` loadThreadTranscript) - so a long session grew inside this process without ever
+// crossing the threshold, dragged like mud, and went smooth again after a restart on the *same*
+// history. Grouped turns are also the wrong unit: one run of a few huge answers stays far under 80.
 const shouldVirtualize = computed(() => shouldVirtualizeMessages(messages.value)
-  || (appStore.activeThread?.messageCount ?? 0) > CONVERSATION_VIRTUALIZATION_THRESHOLD);
+  || appStore.activeMessages.length > CONVERSATION_VIRTUALIZATION_THRESHOLD);
 const lastMessage = computed(() => messages.value.at(-1));
 // The run's own liveness, not `waitingForOutput`: that flag also drops for the gap
 // between a tool call and its answer, and a snap there would yank the tail to the

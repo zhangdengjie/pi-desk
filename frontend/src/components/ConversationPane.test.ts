@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore, type TimelineMessage } from "../stores/app";
+import { groupConversationTurns } from "../utils/conversationGrouping";
 import ConversationPane from "./ConversationPane.vue";
 import { TAIL_PIN_OFFSET } from "../utils/scroll";
 
@@ -18,6 +19,22 @@ function transcript(length: number): TimelineMessage[] {
   return Array.from({ length }, (_, index) => ({
     id: `message-${index}`,
     role: index % 2 ? "assistant" : "user",
+    text: `Message ${index}`,
+    thinking: "",
+    timestamp: "10:00",
+    streaming: false,
+    tools: [],
+  }));
+}
+
+/**
+ * 40 user prompts, each answered by a run of three assistant messages: 160 raw rows that group
+ * back down to exactly 80 turns. This is the shape a long live session actually takes.
+ */
+function groupedTranscript(): TimelineMessage[] {
+  return Array.from({ length: 160 }, (_, index) => ({
+    id: `message-${index}`,
+    role: index % 4 === 0 ? "user" : "assistant",
     text: `Message ${index}`,
     thinking: "",
     timestamp: "10:00",
@@ -630,14 +647,32 @@ describe("ConversationPane", () => {
     expect(rows[1].find(".stub-notice").exists()).toBe(false);
   });
 
-  it("virtualizes a long transcript", async () => {
+  it("virtualizes a live session whose grouped turns stay under the threshold", async () => {
+    // The drag-lag shape: 160 raw messages, 80 turns. Grouping keeps the turn count off the
+    // threshold, and `thread.messageCount` - the other gate - is only ever written when a
+    // transcript is re-read from disk, so a session that grew inside this process never moves it.
     const wrapper = mountTranscript(2);
     const store = useAppStore();
-    store.activeThread!.messageCount = 200;
+    store.messagesByThread["thread-1"] = groupedTranscript();
 
     await wrapper.vm.$nextTick();
 
+    expect(groupConversationTurns(store.activeMessages)).toHaveLength(80);
+    expect(store.activeThread?.messageCount).toBeUndefined();
     expect(wrapper.get("[data-virtualized]").attributes("data-virtualized")).toBe("true");
+  });
+
+  it("does not virtualize on a persisted count the live transcript does not match", async () => {
+    // The mirror image of the bug: the same 2-row transcript used to render two different ways -
+    // plain before a restart, virtualized after - because the gate read a snapshot number.
+    const wrapper = mountTranscript(2);
+    const store = useAppStore();
+    store.activeThread!.messageCount = 5000;
+
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find("[data-virtualized]").exists()).toBe(false);
+    expect(wrapper.findAll(".stub-message")).toHaveLength(2);
   });
 
   it("switches every long transcript to the virtualized path", () => {
