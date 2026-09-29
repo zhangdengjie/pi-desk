@@ -570,6 +570,7 @@ describe("ConversationPane", () => {
     expect(wrapper.find(".conversation-search").exists()).toBe(true);
     const input = wrapper.get(".search-popover-input");
     await input.setValue("Message");
+    await input.trigger("keydown", { key: "Enter" });
     expect(wrapper.get(".search-popover-count").text()).toBe("1 / 3");
 
     await wrapper.findAll(".search-popover-control")[1].trigger("click");
@@ -588,6 +589,7 @@ describe("ConversationPane", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));
     await wrapper.vm.$nextTick();
     await wrapper.get(".search-popover-input").setValue("dup");
+    await wrapper.get(".search-popover-input").trigger("keydown", { key: "Enter" });
     await flushPromises();
 
     expect(wrapper.get(".search-popover-count").text()).toBe("1 / 2");
@@ -614,6 +616,7 @@ describe("ConversationPane", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));
     await wrapper.vm.$nextTick();
     await wrapper.get(".search-popover-input").setValue("dup");
+    await wrapper.get(".search-popover-input").trigger("keydown", { key: "Enter" });
     await flushPromises();
 
     const timeline = wrapper.get(".timeline").element;
@@ -640,6 +643,7 @@ describe("ConversationPane", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));
     await wrapper.vm.$nextTick();
     await wrapper.get(".search-popover-input").setValue("dup");
+    await wrapper.get(".search-popover-input").trigger("keydown", { key: "Enter" });
     await flushPromises();
 
     const timeline = wrapper.get(".timeline").element;
@@ -662,6 +666,7 @@ describe("ConversationPane", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));
     await wrapper.vm.$nextTick();
     await wrapper.get(".search-popover-input").setValue("Message 0");
+    await wrapper.get(".search-popover-input").trigger("keydown", { key: "Enter" });
     await flushPromises();
 
     const scrollIntoView = vi.fn();

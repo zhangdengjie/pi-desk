@@ -907,6 +907,7 @@ describe("InspectorPanel", () => {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", metaKey: true }));
     await nextTick();
     await wrapper.get(".search-popover-input").setValue("alpha");
+    await wrapper.get(".search-popover-input").trigger("keydown", { key: "Enter" });
     await nextTick();
 
     // Three hits, one of them inside the heading - counting comes from the rendered document, so the
