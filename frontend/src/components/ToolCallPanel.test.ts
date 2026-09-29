@@ -2,9 +2,20 @@ import { mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ToolCallPanel from "./ToolCallPanel.vue";
-import { forgetPanelOpenStates } from "../utils/detailsOpenState";
+import { forgetPanelOpenStates, pinPanelOpen } from "../utils/detailsOpenState";
 
 describe("ToolCallPanel", () => {
+  // jsdom sets details.open on a summary click but does not deliver the toggle event to Vue in the
+// same tick, so the cases that care about the body drive it the way the browser would.
+async function openPanel(wrapper: ReturnType<typeof mount>) {
+  await wrapper.get("summary").trigger("click");
+  const details = wrapper.get("details").element as HTMLDetailsElement;
+  details.open = true;
+  details.dispatchEvent(new Event("toggle"));
+  await nextTick();
+}
+
+
   // The expansion memory is module-scoped, so a click in one case must not decide
   // the next one.
   beforeEach(() => forgetPanelOpenStates());
@@ -12,6 +23,8 @@ describe("ToolCallPanel", () => {
   it("summarizes commands and exposes input and output copy actions", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    // The body only exists once the reader opened the panel (see the closed-panel case below).
+    pinPanelOpen("tool-1", true);
     const wrapper = mount(ToolCallPanel, {
       props: { tool: { id: "tool-1", name: "bash", arguments: { command: "npm test" }, output: "all passed", status: "complete" } },
     });
@@ -32,9 +45,29 @@ describe("ToolCallPanel", () => {
 
     expect(wrapper.get("details").attributes("open")).toBeUndefined();
     expect(wrapper.text()).toContain("Failed");
-    await wrapper.get("summary").trigger("click");
-    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    await openPanel(wrapper);
     expect(wrapper.text()).toContain("Truncated in view");
+  });
+
+  it("builds no body nodes for a call nobody opened, and builds them on the first open", async () => {
+    const tool = {
+      id: "tool-lazy", name: "edit", arguments: { path: "main.go" }, output: "ok\n".repeat(40), status: "complete" as const,
+      diff: { path: "main.go", text: "- 1 old\n+ 1 new" },
+      images: [{ id: "img-lazy", name: "Image 1", data: "abc", mimeType: "image/jpeg", previewUrl: "data:image/jpeg;base64,abc" }],
+    };
+    const wrapper = mount(ToolCallPanel, { props: { tool } });
+
+    // A closed <details> hides its body but used to build all of it - one <span> per diff line,
+    // the whole output <pre>, the image thumbs, and their icons.
+    expect(wrapper.find("summary").text()).toContain("edit main.go");
+    expect(wrapper.findAll(".tool-section")).toHaveLength(0);
+    expect(wrapper.findAll(".diff-line")).toHaveLength(0);
+    expect(wrapper.find(".tool-output").exists()).toBe(false);
+
+    await openPanel(wrapper);
+    expect(wrapper.findAll(".diff-line")).toHaveLength(2);
+    expect(wrapper.find(".tool-output").text()).toContain("ok");
+    expect(wrapper.findAll(".tool-image-open")).toHaveLength(1);
   });
 
   it("keeps a call closed while it runs after the answer already started", async () => {
@@ -199,6 +232,7 @@ describe("ToolCallPanel", () => {
       configurable: true,
       value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
     });
+    pinPanelOpen("tool-3", true);
     const wrapper = mount(ToolCallPanel, {
       props: { tool: { id: "tool-3", name: "read", output: "content", status: "complete" } },
     });
@@ -207,6 +241,7 @@ describe("ToolCallPanel", () => {
   });
 
   it("shows duration and a colored inline diff for edit and write tools", () => {
+    pinPanelOpen("tool-4", true);
     const wrapper = mount(ToolCallPanel, {
       props: {
         tool: {
@@ -224,6 +259,7 @@ describe("ToolCallPanel", () => {
   });
 
   it("renders result images with a fullscreen preview", async () => {
+    pinPanelOpen("tool-5", true);
     const wrapper = mount(ToolCallPanel, {
       props: {
         tool: {

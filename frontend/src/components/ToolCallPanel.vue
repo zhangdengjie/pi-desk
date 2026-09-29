@@ -101,7 +101,17 @@ watch(() => [panelOpen.value, props.tool.status, shownOutput.value.length] as co
 }, { immediate: true, flush: "post" });
 
 const resultImages = computed(() => props.tool.images ?? []);
-
+// A closed `<details>` only hides its body - Vue still builds every node of it. Measured on
+// the 2112-entry session (frontend/src/utils/devSwitchProbe.ts, 2026-09-30 06:45): one
+// transcript switch mounted 471 panels and ~3300 icon components, and a diff is one `<span>`
+// per line. So the body now exists only when it can actually be seen: the panel is open, was
+// opened by the reader, or belongs to a live run (the delayed live window and its inner tail
+// need the `<pre>` in the DOM to follow output as it arrives).
+const everOpened = ref(false);
+watch(panelOpen, (open) => {
+  if (open) everOpened.value = true;
+}, { immediate: true });
+const bodyMounted = computed(() => panelOpen.value || belongsToLiveRun.value || everOpened.value);
 const inputText = computed(() => {
   if (props.tool.arguments === undefined) return "";
   if (typeof props.tool.arguments === "string") return props.tool.arguments;
@@ -188,6 +198,9 @@ const durationLabel = computed(() => {
 
 function syncOpen(event: Event) {
   const details = event.currentTarget as HTMLDetailsElement;
+  // The expansion registry is a plain Map on purpose (it has to survive a remount), so a
+  // reader's click cannot wake `panelOpen` through it. This ref is the reactive half.
+  if (details.open) everOpened.value = true;
   // Ignore the toggle that our own prop write causes; only the reader's choice
   // belongs in the memory, which is what survives a row being re-created.
   if (details.open === panelOpen.value) return;
@@ -243,6 +256,7 @@ onBeforeUnmount(() => {
         </span>
       </span>
     </summary>
+    <template v-if="bodyMounted">
     <div v-if="tool.diff" class="tool-section tool-diff-section">
       <div class="tool-section-header"><span>{{ tool.diff.path }}</span></div>
       <pre class="tool-diff"><code><span v-for="(line, index) in tool.diff.text.split('\n')" :key="index" class="diff-line" :class="diffLineClass(line)">{{ `${line}\n` }}</span></code></pre>
@@ -295,5 +309,6 @@ onBeforeUnmount(() => {
       <pre ref="outputPanel" class="tool-output">{{ shownOutput }}</pre>
     </div>
     <ImagePreviewDialog v-if="previewImage" :image="previewImage" @close="previewImage = undefined" />
+    </template>
   </details>
 </template>
