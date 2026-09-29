@@ -51,6 +51,25 @@ describe("ConversationMessage", () => {
     wrapper.unmount();
   });
 
+  it("keeps reasoning text dim - the counter only counts the answer", async () => {
+    // Measured in the running app on a merged turn: 4-7 marks lit at once, because every block of the
+    // row was told "this message is the active one". The ordinal is only meaningful for the text the
+    // hit list counted, so the other blocks stay dim.
+    const wrapper = mount(ConversationMessage, { props: { message: {
+      id: "thinking-hits", role: "assistant", text: "dup answer", thinking: "",
+      timestamp: "10:00", streaming: false, tools: [],
+      executionSteps: [{ id: "step-1", kind: "thinking" as const, text: "dup reasoning and dup again" }],
+    }, searchQuery: "dup", searchActive: true, searchActiveIndex: 0 } });
+    await flushPromises();
+
+    const hits = wrapper.findAll("mark.markdown-search-hit");
+    expect(hits.length).toBeGreaterThanOrEqual(3);
+    const lit = wrapper.findAll("mark.is-active");
+    expect(lit).toHaveLength(1);
+    expect(lit[0].text()).toBe("dup");
+    wrapper.unmount();
+  });
+
   it("offers an outline for a long finished answer and jumps to the heading picked", async () => {
     const wrapper = mount(ConversationMessage, { props: { message: {
       id: "answer-outline", role: "assistant", text: "# A\n\n## B\n\n## C\n\n### D\n", thinking: "",

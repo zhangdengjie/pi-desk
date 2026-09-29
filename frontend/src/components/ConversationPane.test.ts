@@ -60,13 +60,13 @@ describe("ConversationPane", () => {
         stubs: {
           ComposerBar: true,
           // `search-*` stay undeclared on purpose: they fall through to attributes, which is how the
-          // ordinal contract is read below. The lit mark renders only on an active row whose text
-          // carries the query twice - that is how the second case below gets a row with no mark to
-          // scroll to, the same way markdown syntax eats an occurrence in the real body.
+          // ordinal contract is read below. The stub paints a lit mark for a "dup" row unless the
+          // text also says "nomark" - that second case is how a test gets an active row whose
+          // rendered body has no mark, the way markdown syntax eats an occurrence in the real body.
           ConversationMessage: {
             props: ["message"],
             template: '<article class="stub-message" :data-message-id="message.id" :data-role="message.role">'
-              + '<mark v-if="$attrs[\'search-active\'] && message.text.includes(\'dup\')" class="markdown-search-hit is-active">hit</mark>'
+              + '<mark v-if="$attrs[\'search-active\'] && message.text.includes(\'dup\') && !message.text.includes(\'nomark\')" class="markdown-search-hit is-active">hit</mark>'
               + '{{ message.text }}</article>',
           },
         },
@@ -604,9 +604,10 @@ describe("ConversationPane", () => {
     expect(row().attributes("search-active-index")).toBe("1");
   });
 
-  it("scrolls the lit hit itself, not the row that contains it", async () => {
-    // A merged turn is one row that can be thousands of pixels tall. Centring the row is what used
-    // to happen, and the amber mark ended up in the band the topbar paints over.
+  it("centres the lit hit inside the scrollport", async () => {
+    // The band maths (title bar above, live composer height below) is verified in the real engine by
+    // the dev probe - jsdom reports zero rects, so faking them proves nothing about the arithmetic.
+    // What this pins is *which node* gets aimed at: the mark, not the row that can be 1800px tall.
     const wrapper = mountTranscript(3);
     const store = useAppStore();
     store.messagesByThread["thread-1"][1].text = "dup first and dup second";
@@ -615,40 +616,45 @@ describe("ConversationPane", () => {
     await wrapper.get(".search-popover-input").setValue("dup");
     await flushPromises();
 
-    const row = wrapper.findAll(".stub-message")[1];
-    const mark = row.get("mark.markdown-search-hit.is-active");
-    const rowScroll = vi.fn();
-    const markScroll = vi.fn();
-    row.element.scrollIntoView = rowScroll;
-    mark.element.scrollIntoView = markScroll;
+    const timeline = wrapper.get(".timeline").element;
+    const row = wrapper.findAll(".stub-message")[1].element;
+    const mark = wrapper.findAll(".stub-message")[1].get("mark").element;
+    const band = timeline.clientHeight
+      - (Number.parseFloat(getComputedStyle(timeline).scrollPaddingTop) || 0)
+      - (Number.parseFloat(getComputedStyle(timeline).scrollPaddingBottom) || 0);
+    // Rects that track the scroll, the way a real engine's do.
+    timeline.getBoundingClientRect = () => ({ top: 0, bottom: 800 } as DOMRect);
+    row.getBoundingClientRect = () => ({ top: 1400 - timeline.scrollTop, bottom: 3200 - timeline.scrollTop } as DOMRect);
+    mark.getBoundingClientRect = () => ({ top: 1500 - timeline.scrollTop, bottom: 1520 - timeline.scrollTop } as DOMRect);
 
     await wrapper.findAll(".search-popover-control")[1].trigger("click");
-    await flushPromises();
+    await new Promise((resolve) => { setTimeout(resolve, 60); });
 
-    expect(markScroll).toHaveBeenCalledWith({ behavior: "smooth", block: "center" });
-    // The row is only the fallback: it must not also get scrolled, or the two animations fight and
-    // the last one wins at an arbitrary position.
-    expect(rowScroll).not.toHaveBeenCalled();
+    expect(timeline.scrollTop).toBe(Math.max(0, 1500 - Math.max(120, band) / 2));
   });
 
-  it("falls back to the row when the ordinal matched nothing rendered", async () => {
-    // Markdown syntax can eat occurrences, so an ordinal the counter produced may have no <mark>.
-    // Landing on the row beats not moving at all.
+  it("aims at the row's own edge when the row renders no mark", async () => {
     const wrapper = mountTranscript(3);
+    const store = useAppStore();
+    store.messagesByThread["thread-1"][1].text = "dup nomark - counted in the source, eaten by the render";
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, bubbles: true, cancelable: true }));
     await wrapper.vm.$nextTick();
-    await wrapper.get(".search-popover-input").setValue("Message");
+    await wrapper.get(".search-popover-input").setValue("dup");
     await flushPromises();
 
-    const row = wrapper.findAll(".stub-message")[1];
-    expect(row.find("mark").exists()).toBe(false);
-    const rowScroll = vi.fn();
-    row.element.scrollIntoView = rowScroll;
+    const timeline = wrapper.get(".timeline").element;
+    const row = wrapper.findAll(".stub-message")[1].element;
+    expect(row.querySelector("mark")).toBeNull();
+    const band = timeline.clientHeight
+      - (Number.parseFloat(getComputedStyle(timeline).scrollPaddingTop) || 0)
+      - (Number.parseFloat(getComputedStyle(timeline).scrollPaddingBottom) || 0);
+    timeline.getBoundingClientRect = () => ({ top: 0, bottom: 800 } as DOMRect);
+    row.getBoundingClientRect = () => ({ top: 1400 - timeline.scrollTop, bottom: 1600 - timeline.scrollTop } as DOMRect);
 
     await wrapper.findAll(".search-popover-control")[1].trigger("click");
-    await flushPromises();
+    await new Promise((resolve) => { setTimeout(resolve, 60); });
 
-    expect(rowScroll).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+    expect(timeline.scrollTop).toBe(Math.max(0, 1400 - Math.max(120, band) / 2));
   });
 
   it("does not jump back to a search result when streaming output changes", async () => {

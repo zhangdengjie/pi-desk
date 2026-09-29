@@ -25,7 +25,13 @@ const props = defineProps<{
   message: TimelineMessage;
   searchQuery?: string;
   searchActive?: boolean;
-  /** Which occurrence of the query inside this answer is the one the counter is on. Omitted = light them all. */
+  /**
+   * Which occurrence of the query inside this answer is the one the counter is on. Omitted = light
+   * them all. Only the answer body is handed one: the transcript's hit list counts occurrences in
+   * `message.text`, which is exactly what that block renders. Thinking, tool and compaction blocks
+   * stay dim on purpose - measured 2026-09-29 they were lighting 4-7 marks at once, so "the current
+   * hit" was ambiguous and the scroller aimed at whichever node came first in the DOM.
+   */
   searchActiveIndex?: number;
 }>();
 const appStore = useAppStore();
@@ -451,7 +457,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
         <span class="compaction-line" aria-hidden="true" />
       </summary>
       <div class="compaction-summary">
-        <MarkdownBody :text="message.compaction.summary" :streaming="false" :search-query="searchQuery" :search-active="searchActive" />
+        <MarkdownBody :text="message.compaction.summary" :streaming="false" :search-query="searchQuery" />
       </div>
     </details>
     <div v-else class="message-content">
@@ -490,13 +496,12 @@ watch(() => props.message.id, () => closeAnswerOutline());
                 :text="stepThinking(step)"
                 :streaming="liveReasoningWindow(step)"
                 :search-query="searchQuery"
-                :search-active="searchActive"
               />
             </details>
             <template v-else-if="step.kind === 'tools'">
               <ToolCallPanel v-for="tool in step.tools" :key="tool.id" :tool="tool" :allow-live="livePanelsAllowed" :panel-mode="panelMode" :run-is-live="everLive" />
             </template>
-            <MarkdownBody v-else-if="step.text" :text="step.text" :streaming="false" :search-query="searchQuery" :search-active="searchActive" />
+            <MarkdownBody v-else-if="step.text" :text="step.text" :streaming="false" :search-query="searchQuery" />
           </template>
         </div>
       </details>

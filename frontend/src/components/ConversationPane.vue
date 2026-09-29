@@ -391,19 +391,48 @@ async function scrollToMessage(messageIndex: number, messageId: string, block: S
 // row's top edge (`.timeline`'s scroll-padding-top keeps that below the title bar).
 const searchHitSelectors = ["mark.markdown-search-hit.is-active", "mark.markdown-search-hit"];
 
+function findSearchRow(scope: HTMLElement, messageId: string): HTMLElement | undefined {
+  return Array.from(scope.querySelectorAll<HTMLElement>("[data-message-id]"))
+    .find((candidate) => candidate.dataset.messageId === messageId);
+}
+
+// `scrollIntoView` is not enough on a virtualized transcript. Measured in the running dev instance
+// (frontend/src/utils/devSearchProbe.ts, 2026-09-29 10:30): the virtualizer re-measures rows after
+// we scroll, which moves the node we just aimed at - three consecutive "next" presses left
+// `scrollTop` frozen at the same 26686, and another landed 21px above the scrollport. So the offset
+// is computed here, and re-applied one frame later once the measurement pass has settled.
 async function scrollToSearchMatch() {
   const match = currentSearchMatch.value;
-  if (!match) return;
-  if (shouldVirtualize.value) virtualizer.value.scrollToIndex(match.messageIndex, { align: "center" });
+  const element = timeline.value;
+  if (!match || !element) return;
+  if (shouldVirtualize.value) virtualizer.value.scrollToIndex(match.messageIndex, { align: "start" });
   await nextTick();
-  const row = Array.from(timeline.value?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])
-    .find((element) => element.dataset.messageId === match.messageId);
+  let row = findSearchRow(element, match.messageId);
+  // The virtualizer needs a frame or three to actually mount the row we just asked for. Without the
+  // retry the first hit after typing was measured before it existed and nothing moved (probe:
+  // scrollTop stayed 0 while the target sat 3113px down the document).
+  for (let attempt = 0; !row && attempt < 4; attempt += 1) {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    if (shouldVirtualize.value) virtualizer.value.scrollToIndex(match.messageIndex, { align: "start" });
+    await nextTick();
+    row = findSearchRow(element, match.messageId);
+  }
   if (!row) return;
-  const hit = searchHitSelectors
+  const target = searchHitSelectors
     .map((selector) => row.querySelector<HTMLElement>(selector))
-    .find((element): element is HTMLElement => element !== null);
-  const target = hit ?? row;
-  if (typeof target.scrollIntoView === "function") target.scrollIntoView({ behavior: "smooth", block: hit ? "center" : "start" });
+    .find((candidate): candidate is HTMLElement => candidate !== null) ?? row;
+  const style = getComputedStyle(element);
+  // The two overlays the visible band is bounded by: the composer reserve is live (`composerHeight`
+  // feeds it every time the input grows a line), and the top inset tracks the title bar.
+  const insetTop = Number.parseFloat(style.scrollPaddingTop) || 0;
+  const insetBottom = Number.parseFloat(style.scrollPaddingBottom) || 0;
+  const band = Math.max(120, element.clientHeight - insetTop - insetBottom);
+  const place = () => {
+    const offset = element.scrollTop + (target.getBoundingClientRect().top - element.getBoundingClientRect().top);
+    element.scrollTop = Math.max(0, offset - band / 2);
+  };
+  place();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => { place(); resolve(); })));
   updateActiveNavigation();
 }
 
