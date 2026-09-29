@@ -267,22 +267,112 @@ describe("AppSidebar", () => {
     expect(title.classes()).toContain("is-started");
     expect(wrapper.find(".thread-status").exists()).toBe(false);
     expect(wrapper.find(".thread-unread").exists()).toBe(false);
+    // "激活" now has its own mark: a hollow green ring, distinct from 未读. Before this the row had
+    // exactly one dot and it meant unread, which is why it read as a selection marker.
+    expect(wrapper.get(".thread-marks .thread-mark").attributes("data-state")).toBe("live");
 
     store.threads[0].status = "running";
     await wrapper.vm.$nextTick();
     expect(wrapper.get(".thread-status").attributes("data-state")).toBe("running");
     expect(wrapper.get(".thread-status").attributes("aria-label")).toBe("Model output in progress");
     expect(wrapper.find(".thread-unread").exists()).toBe(false);
+    // No second mark while the ring spins: "输出中" and "等你处理" cannot both be true.
+    expect(wrapper.find(".thread-mark").exists()).toBe(false);
+
+    store.threads[0].status = "attention";
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get(".thread-marks .thread-mark").attributes("data-state")).toBe("attention");
+    expect(wrapper.get(".thread-marks .thread-mark").attributes("aria-label"))
+      .toBe("Needs attention - Pi exited or the session failed to load");
 
     store.threads[0].status = "idle";
     store.threads[0].unread = true;
     await wrapper.vm.$nextTick();
     expect(wrapper.find(".thread-status").exists()).toBe(false);
     expect(wrapper.get(".thread-unread").attributes("aria-label")).toBe("Unread output");
+    // 未读 and 进程存活 are different questions, so they render side by side.
+    expect(wrapper.get(".workspace-threads .thread-marks").findAll("*")).toHaveLength(2);
 
-    await wrapper.get(".thread-row").trigger("click");
+    await wrapper.get(".workspace-threads .thread-row").trigger("click");
     expect(store.threads[0].unread).toBe(false);
     expect(wrapper.find(".thread-unread").exists()).toBe(false);
+  });
+
+  it("lists live and unread sessions above every workspace group", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
+    store.$patch({
+      catalogLoading: false,
+      activeThreadId: "t-quiet",
+      workspaces: [
+        { id: "ws-a", name: "alpha", path: "/repo/a", kind: "local", trust: "approve" },
+        { id: "ws-b", name: "beta", path: "/repo/b", kind: "local", trust: "approve" },
+      ],
+      threads: [
+        { id: "t-quiet", title: "Quiet session", workspace: "alpha", workspacePath: "/repo/a", trust: "approve", status: "idle", started: false, generation: 0, modifiedAt: hoursAgo(1) },
+        { id: "t-stale", title: "Interrupted long ago", workspace: "alpha", workspacePath: "/repo/a", trust: "approve", status: "attention", started: false, generation: 0, modifiedAt: hoursAgo(0.5) },
+        { id: "t-live", title: "Live in beta", workspace: "beta", workspacePath: "/repo/b", trust: "approve", status: "idle", started: true, generation: 3, modifiedAt: hoursAgo(2) },
+        { id: "t-unread", title: "Finished while away", workspace: "alpha", workspacePath: "/repo/a", trust: "approve", status: "idle", started: false, generation: 0, unread: true, modifiedAt: hoursAgo(3) },
+      ],
+    });
+
+    const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
+    const rows = wrapper.findAll(".active-session-row");
+
+    // The whole point of the list: two projects, one click, no expanding groups to hunt for them.
+    expect(rows.map((row) => row.get(".thread-title").text())).toEqual(["Live in beta", "Finished while away"]);
+    expect(rows.map((row) => row.get(".active-session-workspace").text())).toEqual(["beta", "alpha"]);
+    expect(wrapper.get(".active-session-count").text()).toBe("2");
+    expect(wrapper.get(".active-session-toggle").attributes("title")).toBe("Sessions across all projects whose Pi process is live, or that have unread output.");
+    // `attention` survives a restart (a thread that was mid-run comes back as attention + started:
+    // false), so treating it as "active" filled 5 of 7 rows with dead sessions in the sandbox at 11:21.
+    expect(rows.map((row) => row.text()).some((text) => text.includes("Interrupted long ago"))).toBe(false);
+    // Above the groups, and the group list keeps its own copy (a session belongs to its project too).
+    expect(wrapper.find(".active-sessions").element.compareDocumentPosition(wrapper.get(".workspace-group").element))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    // Only the active thread's group is expanded, so the other project's session is reachable from
+    // the group list only after expanding it - which is exactly the hunting this section removes.
+    expect(wrapper.findAll(".workspace-threads .thread-row")).toHaveLength(3);
+    // It still gets its amber dot where it belongs - in the project list, as "this one errored".
+    expect(wrapper.get('.workspace-threads .thread-row[data-thread="t-stale"] .thread-mark').attributes("data-state")).toBe("attention");
+    expect(wrapper.get('.workspace-threads .thread-row[data-thread="t-stale"] .thread-mark').attributes("aria-label"))
+      .toBe("Needs attention - Pi exited or the session failed to load");
+    // The session you are looking at is marked as current, not just tinted.
+    expect(wrapper.get(".workspace-threads .thread-row.is-active").text()).toContain("Quiet session");
+
+    await rows[1].trigger("click");
+    expect(store.activeThreadId).toBe("t-unread");
+    expect(store.threads.find((thread) => thread.id === "t-unread")!.unread).toBe(false);
+  });
+
+  it("collapses the active list and drops it while a search is running", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      catalogLoading: false,
+      workspaces: [{ id: "ws-a", name: "alpha", path: "/repo/a", kind: "local", trust: "approve" }],
+      threads: [
+        { id: "t-live", title: "Live in beta", workspace: "alpha", workspacePath: "/repo/a", trust: "approve", status: "idle", started: true, generation: 1, modifiedAt: new Date().toISOString() },
+      ],
+    });
+
+    const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
+
+    expect(wrapper.get(".active-session-toggle").attributes("aria-expanded")).toBe("true");
+    await wrapper.get(".active-session-toggle").trigger("click");
+    expect(wrapper.get(".active-session-toggle").attributes("aria-expanded")).toBe("false");
+    expect(wrapper.findAll(".active-session-row")).toHaveLength(0);
+    expect(wrapper.findAll(".workspace-threads .thread-row")).toHaveLength(1);
+    await wrapper.get(".active-session-toggle").trigger("click");
+    expect(wrapper.findAll(".active-session-row")).toHaveLength(1);
+
+    // Search results are the only list then - two filtered lists would disagree about the query.
+    store.searchQuery = "beta";
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".active-sessions").exists()).toBe(false);
   });
 
   it("rotates the running ring through the Web Animations API", async () => {
@@ -309,7 +399,9 @@ describe("AppSidebar", () => {
       await wrapper.vm.$nextTick();
 
       expect(wrapper.get(".thread-status").attributes("data-state")).toBe("running");
-      expect(animate).toHaveBeenCalledTimes(1);
+      // The same session renders twice on purpose - once in 活跃会话, once under its workspace group -
+      // and every rendered ring gets its own animation.
+      expect(animate).toHaveBeenCalledTimes(2);
       expect(animate.mock.calls[0][1]).toMatchObject({ iterations: Infinity, easing: "linear" });
 
       wrapper.unmount();

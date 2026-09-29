@@ -18,25 +18,29 @@ import {
   Settings,
   Sparkles,
   Play,
+  ChevronDown,
+  ChevronRight,
   Square,
   SquarePen,
   Trash2,
   Unplug,
   X,
+  Zap,
 } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import RuntimeBadge from "./RuntimeBadge.vue";
 import RemoveWorkspaceDialog from "./RemoveWorkspaceDialog.vue";
-import { useAppStore } from "../stores/app";
+import ThreadRowMarks from "./ThreadRowMarks.vue";
+import { useAppStore, type ThreadSummary } from "../stores/app";
 import { tr } from "../i18n";
 import { threadTooltip } from "../utils/threadLabel";
-import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
 const searchInput = ref<HTMLInputElement>();
 const collapsedWorkspaceIDs = ref<Record<string, boolean>>({});
 const taskMenu = ref({ open: false, threadId: "", x: 0, y: 0 });
 const workspaceMenu = ref({ open: false, workspaceID: "", x: 0, y: 0 });
+const activeSessionsCollapsed = ref(false);
 const workspaceActionID = ref("");
 const workspaceActionError = ref("");
 const workspaceRenameID = ref("");
@@ -50,12 +54,19 @@ const taskRenameInput = ref<HTMLInputElement>();
 const relativeTimeNow = ref(Date.now());
 let relativeTimeTimer: ReturnType<typeof setInterval> | undefined;
 const taskMenuThread = computed(() => appStore.threads.find((thread) => thread.id === taskMenu.value.threadId));
-const taskMenuWorkspace = computed(() => {
-  const thread = taskMenuThread.value;
-  if (!thread) return undefined;
+/**
+ * A thread's workspace. Same rule as `workspaceGroups` below and the same one the store writes with:
+ * `workspaceId` when the thread was created from a registered workspace, otherwise the normalised
+ * path (SSH workspaces have no local path at all, so they only ever match by id).
+ */
+function workspaceForThread(thread: ThreadSummary) {
   return appStore.workspaces.find((workspace) => thread.workspaceId
     ? workspace.id === thread.workspaceId
     : comparablePath(workspace.path) === comparablePath(thread.workspacePath));
+}
+const taskMenuWorkspace = computed(() => {
+  const thread = taskMenuThread.value;
+  return thread ? workspaceForThread(thread) : undefined;
 });
 const workspaceMenuItem = computed(() => appStore.workspaces.find((workspace) => workspace.id === workspaceMenu.value.workspaceID));
 const workspaceRemovalItem = computed(() => appStore.workspaces.find((workspace) => workspace.id === workspaceRemovalID.value));
@@ -86,6 +97,34 @@ const workspaceGroups = computed(() => appStore.workspaces.map((workspace) => {
     : comparablePath(thread.workspacePath) === comparablePath(workspace.path));
   return { workspace, threads, threadCount: threads.length };
 }).filter((group) => !appStore.searchQuery.trim() || group.threadCount > 0));
+
+/**
+ * The cross-project list. `workspaceGroups` is the right shape for browsing a project, and the wrong
+ * shape for "go back to the session I was just running": with a dozen workspaces, only one or two of
+ * which hold a live Pi process, finding them means expanding groups one by one. So anything whose Pi
+ * process is still up, or that has output you have not read, is repeated here - newest activity first,
+ * project named on the row. Hidden while a search is running: two filtered lists would disagree.
+ *
+ * `attention` is deliberately NOT a membership test. It survives a restart (`app.ts` restores a thread
+ * that was mid-run as `attention` + "Previous Pi run was interrupted", with `started: false`), so on a
+ * seeded profile it swamped the list: measured in the sandbox at 11:21, 5 of 7 rows were stale
+ * attention flags and only 2 sessions were actually alive. The amber dot in the group list still shows
+ * it, where it reads as "this one errored" instead of "this one is active".
+ */
+const activeSessionThreads = computed(() => appStore.filteredThreads.filter((thread) => thread.started || thread.unread));
+
+function activeSessionLabel(thread: ThreadSummary): string {
+  const workspace = workspaceForThread(thread);
+  return workspace?.name || thread.workspace || "";
+}
+
+/** The tooltip has to carry the project name too: in this list the group header is not above the row. */
+function activeSessionTooltip(thread: ThreadSummary): string {
+  const base = threadTooltip(thread);
+  const workspace = activeSessionLabel(thread);
+  if (!workspace) return base;
+  return `${base}\n\n${tr("sidebar.inWorkspace", { workspace })}`;
+}
 const defaultExpandedWorkspaceID = computed(() => {
   const activeThread = appStore.activeThread;
   const activeWorkspace = activeThread && appStore.workspaces.find((workspace) => workspace.kind === "ssh"
@@ -355,6 +394,41 @@ onBeforeUnmount(() => {
     <div v-if="!appStore.sidebarCollapsed" class="sidebar-section task-section min-h-0 flex-1 overflow-y-auto px-2.5 pt-1.5">
       <p v-if="appStore.catalogLoading" class="sidebar-empty mx-2 my-1 text-xs leading-relaxed text-[var(--text-secondary)]">{{ tr("sidebar.loading") }}</p>
       <p v-else-if="!appStore.catalogReady && appStore.catalogError" class="sidebar-empty error-text mx-2 my-1 text-xs leading-relaxed text-[var(--text-secondary)]" :title="appStore.catalogError">{{ tr("sidebar.unavailable") }}</p>
+      <section v-if="!appStore.searchQuery.trim() && activeSessionThreads.length" class="active-sessions">
+        <div class="active-session-heading">
+          <button
+            class="active-session-toggle"
+            type="button"
+            :aria-expanded="!activeSessionsCollapsed"
+            :title="tr('sidebar.activeSessionsHelp')"
+            @click="activeSessionsCollapsed = !activeSessionsCollapsed"
+          >
+            <ChevronRight v-if="activeSessionsCollapsed" :size="13" />
+            <ChevronDown v-else :size="13" />
+            <Zap :size="14" :stroke-width="1.7" />
+            <span class="active-session-title">{{ tr("sidebar.activeSessions") }}</span>
+            <span class="active-session-count">{{ activeSessionThreads.length }}</span>
+          </button>
+        </div>
+        <div v-if="!activeSessionsCollapsed" class="active-session-list">
+          <button
+            v-for="thread in activeSessionThreads"
+            :key="`active-${thread.id}`"
+            :data-thread="thread.id"
+            class="thread-row active-session-row"
+            :class="{ 'is-active': appStore.activeThreadId === thread.id }"
+            type="button"
+            :aria-current="appStore.activeThreadId === thread.id ? 'true' : undefined"
+            :title="activeSessionTooltip(thread)"
+            @click="appStore.selectThread(thread.id)"
+            @contextmenu.prevent="openTaskMenu($event, thread.id)"
+          >
+            <ThreadRowMarks :thread="thread" />
+            <span class="thread-title min-w-0 flex-1 truncate" :class="{ 'is-started': thread.started }">{{ thread.title }}</span>
+            <span class="active-session-workspace">{{ activeSessionLabel(thread) }}</span>
+          </button>
+        </div>
+      </section>
       <div v-for="group in workspaceGroups" :key="group.workspace.id" class="workspace-group mt-1">
         <div class="workspace-header group flex h-8 min-w-0 items-center rounded-md border border-transparent hover:bg-[var(--bg-hover)] active:bg-[var(--bg-active)]">
           <input
@@ -403,23 +477,18 @@ onBeforeUnmount(() => {
           <button
             v-for="thread in group.threads"
             :key="thread.id"
+            :data-thread="thread.id"
             class="thread-row flex h-8 w-full min-w-0 items-center gap-2 rounded-md bg-transparent pl-8 pr-2 text-left text-[var(--font-size-label)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)]"
-            :class="{ 'is-active bg-[var(--bg-active)] text-[var(--text)]': appStore.activeThreadId === thread.id }"
+            :class="{ 'is-active': appStore.activeThreadId === thread.id }"
             type="button"
+            :aria-current="appStore.activeThreadId === thread.id ? 'true' : undefined"
             :title="threadTooltip(thread)"
             @click="appStore.selectThread(thread.id)"
             @contextmenu.prevent="openTaskMenu($event, thread.id)"
           >
-            <span class="thread-title min-w-0 flex-1 truncate" :class="{ 'is-started text-[var(--text)]': thread.started }">{{ thread.title }}</span>
+            <span class="thread-title min-w-0 flex-1 truncate" :class="{ 'is-started': thread.started }">{{ thread.title }}</span>
             <time v-if="relativeTime(thread.modifiedAt || thread.createdAt)" class="thread-time" :datetime="thread.modifiedAt || thread.createdAt">{{ relativeTime(thread.modifiedAt || thread.createdAt) }}</time>
-            <span
-              v-if="thread.status === 'running' || thread.status === 'starting'"
-              v-spin
-              class="thread-status size-3.5 shrink-0 rounded-full border-2 border-[var(--border-strong)] border-t-[var(--text-secondary)]"
-              :data-state="thread.status"
-              :aria-label="thread.status === 'starting' ? tr('sidebar.piStarting') : tr('sidebar.taskRunning')"
-            />
-            <span v-else-if="thread.unread" class="thread-unread size-2 shrink-0 rounded-full bg-[var(--text)]" :aria-label="tr('sidebar.unread')" />
+            <ThreadRowMarks :thread="thread" />
           </button>
           <p v-if="group.threads.length === 0" class="sidebar-empty mx-2 my-1 text-xs text-[var(--text-secondary)]">{{ tr("sidebar.noTasks") }}</p>
         </div>

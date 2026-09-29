@@ -635,8 +635,28 @@
   font-size: calc(14px + var(--font-size-delta));
 }
 
+/* The 活跃会话 rows sit directly above the groups, so they must match what those rows actually
+ * render at, not what this file asks for: the template's `text-[var(--font-size-label)]` utility is
+ * `!important` (tailwind.css imports with `important`), so group rows are 12px, not the 14px above. */
+.thread-row.active-session-row {
+  padding-left: 8px;
+  padding-right: 10px;
+  font-size: var(--font-size-label);
+}
+
 .thread-title.is-started {
-  font-weight: 400;
+  /* 400 here made "the Pi process is alive" invisible - which is why the one dot in the row read as a
+     selection marker when it meant 未读. Weight plus the green ring in ThreadRowMarks is the pair. */
+  font-weight: 600;
+}
+
+.active-session-toggle {
+  height: 28px;
+  font-size: calc(12.5px + var(--font-size-delta));
+}
+
+.active-session-workspace {
+  font-size: calc(12px + var(--font-size-delta));
 }
 
 .thread-time {

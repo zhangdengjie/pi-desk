@@ -14,6 +14,20 @@ async function layoutText(): Promise<string> {
   return readStyle("layout.css");
 }
 
+async function sourceText(path: string): Promise<string> {
+  const moduleName = ["node", "fs/promises"].join(":");
+  const { readFile } = await import(/* @vite-ignore */ moduleName) as {
+    readFile(path: string, encoding: "utf8"): Promise<string>;
+  };
+  return (await readFile(path, "utf8")).replace(/\r\n?/g, "\n");
+}
+
+/** Opening tags only - attribute values may contain `>`, so quotes are matched while scanning. */
+function tagsWith(source: string, needle: string): string[] {
+  const open = /<[A-Za-z][\w-]*(?:"[^"]*"|'[^']*'|[^>])*?>/g;
+  return (source.match(open) ?? []).filter((tag) => tag.includes(needle));
+}
+
 async function tokensText(): Promise<string> {
   return readStyle("tokens.css");
 }
@@ -301,6 +315,34 @@ describe("session list state indicators", () => {
     expect(firstRuleBody(layout, ".thread-status")).toMatch(/border-radius:\s*50%/);
     expect(firstRuleBody(layout, ".thread-unread")).toMatch(/background:\s*var\(--blue\)/);
     expect(layout).not.toContain(".thread-title.is-unread");
+  });
+
+  it("separates the selected row from a hovered one with the accent", async () => {
+    const layout = await layoutText();
+    const active = firstRuleBody(layout, ".thread-row.is-active");
+    // `--bg-active` is also the hover colour, which made "the session you are in" indistinguishable
+    // from "the one under the cursor". Two channels now: a stronger fill and a 2px accent bar.
+    expect(active).toMatch(/background:\s*var\(--bg-selected\)/);
+    expect(active).toMatch(/box-shadow:\s*inset 2px 0 0 var\(--accent\)/);
+    // The dots share one slot so a live-but-unread session shows both answers instead of one guess.
+    expect(firstRuleBody(layout, ".thread-marks")).toMatch(/margin-left:\s*auto/);
+    expect(firstRuleBody(layout, '.thread-mark[data-state="live"]')).toMatch(/border:\s*1\.5px solid var\(--green\)/);
+    expect(firstRuleBody(layout, '.thread-mark[data-state="attention"]')).toMatch(/background:\s*var\(--amber\)/);
+  });
+
+  it("keeps colour utilities off the marks the stylesheet owns", async () => {
+    // Reproduced by reading the built CSS: `styles/tailwind.css` imports the framework `important`,
+    // so the `bg-[var(--text)]` that used to sit on `.thread-unread` beat `background: var(--blue)`
+    // and painted the 未读 dot black - the mark readers then read as "this session is active".
+    const source = await sourceText(["src", "components", "ThreadRowMarks.vue"].join("/"));
+    const offenders: string[] = [];
+    for (const needle of ["thread-mark", "thread-unread", "thread-status", "thread-marks"]) {
+      for (const tag of tagsWith(source, `class="${needle}"`)) {
+        if (/\b(bg-|text-\[var\(--text\)\]|border-|size-|rounded-)/.test(tag)) offenders.push(tag.replace(/\s+/g, " ").slice(0, 120));
+      }
+    }
+    expect(tagsWith(source, 'class="thread-unread"'), "the unread dot must exist").toHaveLength(1);
+    expect(offenders).toEqual([]);
   });
 });
 

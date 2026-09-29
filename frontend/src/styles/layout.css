@@ -221,9 +221,21 @@
   flex-basis: 24px;
 }
 
-.workspace-row.is-active,
-.thread-row.is-active {
+.workspace-row.is-active {
   background: var(--bg-active);
+  color: var(--text);
+}
+
+/* The row you are looking at. `--bg-active` alone was indistinguishable from `:hover` one pixel
+ * later, and the template used to paint the same value with a Tailwind utility, so the rule below
+ * could not win - hence no colour utilities on `.thread-row` any more (AGENTS §4.3). */
+.thread-row.is-active {
+  background: var(--bg-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--text);
+}
+
+.thread-row.is-active .thread-title {
   color: var(--text);
 }
 
@@ -308,13 +320,22 @@
   width: 14px;
   height: 14px;
   flex: 0 0 14px;
-  margin-left: auto;
   border: 2px solid var(--border-strong);
   border-top-color: var(--text-secondary);
   border-radius: 50%;
   background: transparent;
   /* 旋转故意不写在这里：这个元素所在的行会被重排序，CSS animation 在 DOM 重新插入时从 0 重播。
      改由 utils/spin.ts 的 v-spin（Web Animations API）驱动，实测见 .pi/bin/hitprobe/reorder-spin.html */
+}
+
+/* One slot, up to two dots: the state of the Pi process and the read-state of the transcript are
+ * different questions and both used to answer in the same place (only one of them ever rendered). */
+.thread-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 /* 统一的"进行中"圈（components/LoadingRing.vue）：整圈轨道 + 一段高亮，任何角度的外轮廓
@@ -339,9 +360,117 @@
   width: 8px;
   height: 8px;
   flex: 0 0 8px;
-  margin-left: auto;
   border-radius: 50%;
   background: var(--blue);
+}
+
+/* `live` is the answer to "which sessions are 激活" - the Pi process is up and idle. It is a hollow
+ * ring on purpose: a filled dot would read as the same kind of mark as 未读. `attention` is amber
+ * because Pi died or the transcript failed to load, which is the one state that used to render as
+ * nothing at all. */
+.thread-mark {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  box-sizing: border-box;
+  border-radius: 50%;
+}
+
+.thread-mark[data-state="live"] {
+  border: 1.5px solid var(--green);
+  background: transparent;
+}
+
+.thread-mark[data-state="attention"] {
+  border: 0;
+  background: var(--amber);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--amber) 30%, transparent);
+}
+
+/* The cross-project list above the workspace groups. Geometry lives here, not in the template. */
+.active-sessions {
+  margin-top: 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.active-session-heading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 26px;
+}
+
+.active-session-toggle {
+  display: flex;
+  min-width: 0;
+  height: 26px;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: calc(11.5px + var(--font-size-delta));
+  font-weight: 600;
+  letter-spacing: .01em;
+  cursor: pointer;
+}
+
+.active-session-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.active-session-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-session-count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: color-mix(in srgb, var(--accent) 74%, var(--text-secondary));
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.active-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 1px 0 2px;
+}
+
+.thread-row.active-session-row {
+  padding-left: 6px;
+  padding-right: 8px;
+  font-size: calc(12px + var(--font-size-delta));
+}
+
+/* Head, not tail: in a flat cross-project list the marker is the column you scan for "which ones are
+ * alive", and the row has no time to push it right. `.thread-row.` prefix = specificity 0,2,0, so the
+ * 0,1,0 rules in workbench.css (loaded later than this file) cannot quietly win. */
+.thread-row.active-session-row .thread-marks {
+  justify-content: center;
+  min-width: 14px;
+  margin-left: 0;
+}
+
+.active-session-workspace {
+  flex: 0 1 auto;
+  max-width: 34%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: calc(10.5px + var(--font-size-delta));
 }
 
 .thread-title {
