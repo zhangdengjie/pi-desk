@@ -245,9 +245,25 @@ describe("MarkdownBody", () => {
     expect(hits).toHaveLength(2);
     expect(hits[0].classes()).not.toContain("is-active");
     expect(hits[1].classes()).toContain("is-active");
-    // Ordinals are document order, so an out-of-range index lights nothing rather than the wrong one.
+    // Ordinals are document order. One the renderer cannot reach is clamped to the last mark: the
+    // transcript counts occurrences in the markdown *source*, which can hold more than the rendered
+    // body (a link's URL, an image alt), and "nothing lit" left the caller with no box to scroll to -
+    // it fell back to centring a multi-thousand-pixel row and the hit ended up off-screen.
     await wrapper.setProps({ searchActiveIndex: 9 });
-    expect(wrapper.findAll("mark.is-active")).toHaveLength(0);
+    const clamped = wrapper.findAll("mark.is-active");
+    expect(clamped).toHaveLength(1);
+    expect(clamped[0].text()).toBe(hits[1].text());
+    wrapper.unmount();
+  });
+
+  it("keeps every mark lit when the caller names none", async () => {
+    // The file preview always passes an ordinal; the transcript passes one too since 09:43, but the
+    // prop stays optional so a caller without a counter (a single rendered block, no navigation)
+    // still gets the old whole-document highlight.
+    const { wrapper } = mountMarkdown("**Done** and done");
+    await wrapper.setProps({ searchQuery: "done", searchActive: true });
+
+    expect(wrapper.findAll("mark.is-active")).toHaveLength(2);
     wrapper.unmount();
   });
 

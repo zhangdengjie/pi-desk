@@ -648,7 +648,7 @@ describe("ConversationPane", () => {
     await wrapper.findAll(".search-popover-control")[1].trigger("click");
     await flushPromises();
 
-    expect(rowScroll).toHaveBeenCalledWith({ behavior: "smooth", block: "center" });
+    expect(rowScroll).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
   });
 
   it("does not jump back to a search result when streaming output changes", async () => {

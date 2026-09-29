@@ -173,6 +173,25 @@ function highlightRenderedHtml(html: string, query: string, active: boolean, act
     if (node instanceof Text && node.nodeValue?.toLocaleLowerCase().includes(lowerNeedle)) textNodes.push(node);
   }
 
+  // The transcript counts occurrences in the *markdown source*, and source can hold more of them
+  // than the rendered body does (a link's URL, an image alt, escaped markup). An ordinal past the
+  // last mark used to light nothing at all - and the caller, finding no lit node, fell back to
+  // centring the whole row, which measured -930px above the viewport on a tall merged turn
+  // (`.pi/bin/hitprobe/search-scroll.html`). Clamping keeps exactly one mark lit, so "which one is
+  // current" always has a box to scroll to. Callers that count from the DOM (the file preview)
+  // never hit the clamp.
+  let target = activeIndex;
+  if (active && target !== null) {
+    let total = 0;
+    for (const node of textNodes) {
+      const lowerText = node.nodeValue ?? "";
+      let from = 0;
+      let at = lowerText.toLocaleLowerCase().indexOf(lowerNeedle, from);
+      while (at >= 0) { total += 1; from = at + needle.length; at = lowerText.toLocaleLowerCase().indexOf(lowerNeedle, from); }
+    }
+    if (total > 0) target = Math.min(target, total - 1);
+  }
+
   for (const node of textNodes) {
     const text = node.nodeValue ?? "";
     const lowerText = text.toLocaleLowerCase();
@@ -183,7 +202,7 @@ function highlightRenderedHtml(html: string, query: string, active: boolean, act
       if (matchIndex > cursor) fragment.append(document.createTextNode(text.slice(cursor, matchIndex)));
       const mark = document.createElement("mark");
       ordinal += 1;
-      const current = active && (activeIndex === null || ordinal === activeIndex);
+      const current = active && (target === null || ordinal === target);
       mark.className = `markdown-search-hit${current ? " is-active" : ""}`;
       mark.textContent = text.slice(matchIndex, matchIndex + needle.length);
       fragment.append(mark);

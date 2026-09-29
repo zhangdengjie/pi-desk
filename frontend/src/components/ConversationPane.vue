@@ -375,24 +375,36 @@ function closeSearch() {
   activeSearchMatch.value = 0;
 }
 
-async function scrollToMessage(messageIndex: number, messageId: string, block: ScrollLogicalPosition, inner?: string) {
+async function scrollToMessage(messageIndex: number, messageId: string, block: ScrollLogicalPosition) {
   if (shouldVirtualize.value) virtualizer.value.scrollToIndex(messageIndex, { align: block === "start" ? "start" : "center" });
   await nextTick();
   const row = Array.from(timeline.value?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])
     .find((element) => element.dataset.messageId === messageId);
-  // A merged turn is a single row that can run to thousands of pixels, so centring *the row* leaves
-  // the thing the user asked for anywhere from under the topbar to behind the composer. When the
-  // caller names a node inside it - the lit search hit - scroll that node; the row stays the
-  // fallback for when the ordinal matched nothing rendered.
-  const hit = row && inner ? row.querySelector<HTMLElement>(inner) : null;
-  const target = hit ?? row;
-  if (target && typeof target.scrollIntoView === "function") target.scrollIntoView({ behavior: "smooth", block });
+  if (row && typeof row.scrollIntoView === "function") row.scrollIntoView({ behavior: "smooth", block });
   updateActiveNavigation();
 }
 
+// A merged turn is one row that can run to thousands of pixels, so centring *the row* is what put the
+// hit outside the viewport on both ends - measured in a real WKWebView against the shipped CSS
+// (`.pi/bin/hitprobe/search-scroll.sh`): row-centring left the first hit 930px above the topbar and
+// the last one 785px below the composer. So: the lit node, else any hit node in that row, else the
+// row's top edge (`.timeline`'s scroll-padding-top keeps that below the title bar).
+const searchHitSelectors = ["mark.markdown-search-hit.is-active", "mark.markdown-search-hit"];
+
 async function scrollToSearchMatch() {
   const match = currentSearchMatch.value;
-  if (match) await scrollToMessage(match.messageIndex, match.messageId, "center", "mark.markdown-search-hit.is-active");
+  if (!match) return;
+  if (shouldVirtualize.value) virtualizer.value.scrollToIndex(match.messageIndex, { align: "center" });
+  await nextTick();
+  const row = Array.from(timeline.value?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])
+    .find((element) => element.dataset.messageId === match.messageId);
+  if (!row) return;
+  const hit = searchHitSelectors
+    .map((selector) => row.querySelector<HTMLElement>(selector))
+    .find((element): element is HTMLElement => element !== null);
+  const target = hit ?? row;
+  if (typeof target.scrollIntoView === "function") target.scrollIntoView({ behavior: "smooth", block: hit ? "center" : "start" });
+  updateActiveNavigation();
 }
 
 async function scrollToNavigation(item: ConversationNavigationItem) {
