@@ -1150,6 +1150,48 @@ describe("app store", () => {
     expect(thread.title).toBe("Inspect the repository");
   });
 
+  it("does not claim a run started for an extension command, which never settles one", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread!;
+    mocks.startSession.mockResolvedValueOnce({
+      threadId: thread.id, generation: 7, stateJson: JSON.stringify({ sessionId: "session-plan" }),
+    });
+    // `/plan save` is executed inside Pi's extension host: `agent-session.js:1218` returns after it,
+    // so the only frames are the prompt preflight and one `extension_ui_request/notify`.
+    mocks.getCommands.mockResolvedValueOnce({
+      commands: [
+        { name: "plan", description: "Plan mode", source: "extension" },
+        { name: "eod", description: "Wrap up", source: "prompt" },
+      ],
+    });
+    store.updateDraft("/plan save");
+
+    await store.sendActivePrompt();
+
+    expect(mocks.sendPrompt).toHaveBeenCalledWith(expect.objectContaining({ message: "/plan save" }));
+    expect(thread.status).not.toBe("running");
+    expect(store.activeWaitingForOutput).toBe(false);
+  });
+
+  it("keeps the optimistic running state for a prompt template, which does start a turn", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread!;
+    mocks.startSession.mockResolvedValueOnce({
+      threadId: thread.id, generation: 8, stateJson: JSON.stringify({ sessionId: "session-template" }),
+    });
+    mocks.getCommands.mockResolvedValueOnce({
+      commands: [{ name: "eod", description: "Wrap up", source: "prompt" }],
+    });
+    store.updateDraft("/eod");
+
+    await store.sendActivePrompt();
+
+    expect(thread.status).toBe("running");
+    expect(store.activeWaitingForOutput).toBe(true);
+  });
+
   it("uses the user request rather than skill transport text for a new task title", async () => {
     const store = useAppStore();
     await store.createThread("D:\\work\\repo", "approve");
@@ -2675,6 +2717,42 @@ describe("app store", () => {
     expect(store.extensionRequestByThread[thread.id]).toBeUndefined();
     expect(store.extensionRequestsPendingByThread[thread.id]).toEqual([]);
     expect(store.activeMessages.at(-1)?.text).toContain("2");
+  });
+
+  it("settles a turn that has nothing behind it, because Stop must not be a dead button", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread!;
+    thread.started = true;
+    thread.generation = 2;
+    thread.status = "running";
+    store.waitingForOutputByThread[thread.id] = true;
+    // Pi answers `abort` identically with or without a run in flight and emits no `agent_settled`
+    // for the empty case, so the client has to ask.
+    mocks.getState.mockResolvedValueOnce({ sessionId: "session-1", isStreaming: false, pendingMessageCount: 0 });
+
+    await store.abortActiveThread();
+
+    expect(mocks.abort).toHaveBeenCalledWith(thread.id);
+    expect(thread.status).toBe("idle");
+    expect(store.activeWaitingForOutput).toBe(false);
+  });
+
+  it("leaves a live run running when Stop is pressed", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread!;
+    thread.started = true;
+    thread.generation = 2;
+    thread.status = "running";
+    store.waitingForOutputByThread[thread.id] = true;
+    mocks.getState.mockResolvedValueOnce({ sessionId: "session-1", isStreaming: true });
+
+    await store.abortActiveThread();
+
+    expect(mocks.abort).toHaveBeenCalledWith(thread.id);
+    expect(thread.status).toBe("running");
+    expect(store.activeWaitingForOutput).toBe(true);
   });
 
   it("drops a queued prompt without promoting over the visible one", async () => {

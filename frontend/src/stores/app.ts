@@ -546,6 +546,29 @@ function normalizeSlashCommandList(value: string | undefined) {
   return (value ?? "").split(/[,\n\s]+/).map(normalizeSlashCommandName).filter(Boolean);
 }
 
+/**
+ * Whether this draft is an extension command - something Pi executes inside its own host and never
+ * hands to a model.
+ *
+ * Frame-level reason this exists: `core/agent-session.js:1218` (pi 0.87.1) runs extension commands
+ * first and `return`s on a hit, so `/plan save` produces exactly one RPC frame - the `prompt`
+ * preflight - and no `agent_start`, `agent_end` or `agent_settled`. A client that marks itself
+ * running at submit time is then waiting for a settling event Pi has no reason to ever send: the
+ * transcript spins, and Stop aborts a run that does not exist. `agent_start` is the only honest
+ * "a run began", so the optimistic flags are skipped for these invocations and picked up normally
+ * when the command does start one (`/plan implement` re-enters the session through `pi.sendMessage`).
+ *
+ * Prompt templates (`/eod`) and skills are deliberately excluded: those expand into real prompts, so
+ * their turn does begin and the optimistic state is what keeps the composer honest.
+ */
+function invokesExtensionCommand(commands: SlashCommand[], text: string): boolean {
+  const trimmed = text.trimStart();
+  if (!trimmed.startsWith("/")) return false;
+  const name = normalizeSlashCommandName(trimmed.slice(1).split(/\s+/)[0] ?? "");
+  if (!name) return false;
+  return commands.some((command) => command.source === "extension" && normalizeSlashCommandName(command.name) === name);
+}
+
 function taskNotificationSummary(title: string): string {
   const normalized = title.replace(/\s+/g, " ").trim() || tr("notifications.untitledTask");
   const characters = Array.from(normalized);
@@ -2316,8 +2339,17 @@ export const useAppStore = defineStore("app", {
         await this.ensureSession(thread);
         await this.applyPendingModel(thread);
         if (this.sessionOperationByThread[thread.id]) throw new Error("Session history operation is in progress");
-        if (!wasRunning) thread.status = "running";
-        if (!wasRunning) this.waitingForOutputByThread[thread.id] = true;
+        if (!wasRunning) {
+          // A slash send whose command list has not arrived yet would be judged "not a command" off an
+          // empty array and re-create the stuck spinner, so ask once, here, before deciding.
+          if (message.trimStart().startsWith("/") && !(this.commandsByThread[thread.id] ?? []).length) {
+            await this.refreshCommands(thread.id).catch(() => undefined);
+          }
+          if (!invokesExtensionCommand(this.commandsByThread[thread.id] ?? [], message)) {
+            thread.status = "running";
+            this.waitingForOutputByThread[thread.id] = true;
+          }
+        }
         await agentService.sendPrompt({
           threadId: thread.id,
           message,
@@ -2391,6 +2423,21 @@ export const useAppStore = defineStore("app", {
       if (cancelled) this.appendSystem(thread.id, tr("extension.cancelledOnStop", { count: cancelled }));
       try {
         await agentService.abort(thread.id);
+        // Pi answers `abort` the same way whether or not a run was in flight, and emits no
+        // `agent_settled` when there was none - so a client that believes it is running (an
+        // extension command that never started a turn, a settling frame lost to a generation bump)
+        // sits behind a Stop button that appears to do nothing. Ask the runtime, and settle here when
+        // it says there is nothing left to stop. A live run reports `isStreaming`, so this can only
+        // ever close a turn that is already over.
+        const state = await agentService.getState<PiSessionState>(thread.id).catch(() => undefined);
+        const nothingRunning = state && !state.isStreaming && !state.isCompacting && !(state.pendingMessageCount ?? 0);
+        if (nothingRunning && !this.bashRunningByThread[thread.id]
+          && (thread.status === "running" || thread.status === "starting")) {
+          thread.status = "idle";
+          this.waitingForOutputByThread[thread.id] = false;
+          this.finishAssistant(thread.id);
+          this.scheduleDesktopStateSave();
+        }
       } catch (error) {
         this.appendSystem(thread.id, `Unable to stop Pi: ${errorMessage(error)}`, errorMessage(error));
       }
