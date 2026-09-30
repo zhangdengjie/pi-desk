@@ -68,3 +68,13 @@ export function RenameWorkspace(request: domain$0.RenameWorkspaceRequest): $Canc
 export function SaveDesktopState(state: domain$0.DesktopState): $CancellablePromise<void> {
     return $Call.ByID(2642902473, state);
 }
+
+/**
+ * SessionSnapshotRef mints the reference that lets the webview fetch this transcript from the app's
+ * own asset server instead of carrying it across the bridge. An empty string with no error means
+ * "this process cannot sign references" - the caller then uses `GetSessionSnapshot`, which is a
+ * slower snapshot rather than a broken one.
+ */
+export function SessionSnapshotRef(request: domain$0.SessionSnapshotRequest): $CancellablePromise<string> {
+    return $Call.ByID(2204929740, request);
+}

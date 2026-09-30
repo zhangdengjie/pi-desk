@@ -75,6 +75,10 @@ func (index *fakeSessionLister) Header(path string) (sessionindex.Summary, error
 	return index.Resolve(path)
 }
 
+func (index *fakeSessionLister) TranscriptRef(string) (string, error) {
+	return "payload.signature", index.err
+}
+
 func (index *fakeSessionLister) Snapshot(_ string) (sessionindex.Snapshot, error) {
 	return sessionindex.Snapshot{
 		Messages:     index.messages,

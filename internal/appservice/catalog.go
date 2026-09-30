@@ -28,6 +28,8 @@ type sessionLister interface {
 	Resolve(string) (sessionindex.Summary, error)
 	Header(string) (sessionindex.Summary, error)
 	Snapshot(string) (sessionindex.Snapshot, error)
+	// TranscriptRef mints the asset-server reference for one session file (`sessionindex/transcriptrefs.go`).
+	TranscriptRef(string) (string, error)
 }
 
 type folderPicker func(initialPath string) (string, error)
@@ -281,6 +283,13 @@ func (service *CatalogService) GetSessionSnapshot(request domain.SessionSnapshot
 	if err != nil {
 		return domain.SessionSnapshot{}, err
 	}
+	return snapshotResult(snapshot), nil
+}
+
+// snapshotResult is the one mapping from an indexed snapshot to the shape the frontend is typed
+// against. The asset-server route (`serveSessionTranscript`) marshals this same value, so the two
+// transports cannot drift into two different transcript models.
+func snapshotResult(snapshot sessionindex.Snapshot) domain.SessionSnapshot {
 	result := domain.SessionSnapshot{
 		Messages:     snapshot.Messages,
 		MessageCount: snapshot.MessageCount,
@@ -288,7 +297,35 @@ func (service *CatalogService) GetSessionSnapshot(request domain.SessionSnapshot
 	if snapshot.Model != nil {
 		result.Model = &domain.SessionModel{Provider: snapshot.Model.Provider, ID: snapshot.Model.ID}
 	}
-	return result, nil
+	return result
+}
+
+// SessionSnapshotRef mints the reference that lets the webview fetch this transcript from the app's
+// own asset server instead of carrying it across the bridge. An empty string with no error means
+// "this process cannot sign references" - the caller then uses `GetSessionSnapshot`, which is a
+// slower snapshot rather than a broken one.
+func (service *CatalogService) SessionSnapshotRef(request domain.SessionSnapshotRequest) (string, error) {
+	path := strings.TrimSpace(request.Path)
+	// Only permission is checked here, and the cheap way to ask is the header: `Resolve` reads the
+	// whole file to build a summary, which measured 95ms on a 7.6MB session - more than the ~45ms
+	// of bridge time this reference exists to save. The route re-validates the path, and
+	// `GetSessionSnapshot` keeps its own guard, so nothing is served that the bridge would refuse.
+	summary, err := service.index.Header(path)
+	if err != nil {
+		return "", err
+	}
+	if _, err = service.regularSessionGuard(summary); err != nil {
+		return "", err
+	}
+	ref, err := service.index.TranscriptRef(path)
+	if err != nil {
+		var unavailable *sessionindex.ReferenceKeyUnavailable
+		if errors.As(err, &unavailable) {
+			return "", nil
+		}
+		return "", err
+	}
+	return ref, nil
 }
 
 func (service *CatalogService) GetSessionUsage(request domain.ListSessionsRequest) (domain.SessionUsageSummary, error) {
@@ -339,6 +376,12 @@ func (service *CatalogService) resolveRegularSession(path string) (sessionindex.
 	if err != nil {
 		return sessionindex.Summary{}, err
 	}
+	return service.regularSessionGuard(summary)
+}
+
+// regularSessionGuard is the SSH rule shared by both transcript transports: an SSH-anchored orphan
+// belongs to the dedicated orphan-session service and never to the regular transcript path.
+func (service *CatalogService) regularSessionGuard(summary sessionindex.Summary) (sessionindex.Summary, error) {
 	if !summary.SSHAnchor {
 		return summary, nil
 	}

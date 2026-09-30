@@ -1,4 +1,5 @@
 import { CatalogService } from "../../bindings/pi-desk/internal/appservice";
+import { fetchSessionSnapshot } from "../utils/sessionTranscript";
 import type { DeletedSession, DesktopState, SessionSnapshot, SessionSummary, SessionUsageSummary, WorkspaceApplication, WorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
 
 const MAX_WORKSPACE_ICON_DATA_URL = 256 * 1024;
@@ -43,7 +44,13 @@ export const catalogService = {
     return (await CatalogService.ListSessions({ workspacePath })) ?? [];
   },
   async getSessionSnapshot(path: string): Promise<SessionSnapshot> {
-    return await CatalogService.GetSessionSnapshot({ path });
+    // The bytes come off the app's own asset server; the bridge is the fallback. See
+    // `src/utils/sessionTranscript.ts` for why (a 4.5MB transcript measured ~300ms over the bridge
+    // against 4-6ms/1.39MB over HTTP).
+    return await fetchSessionSnapshot(path, {
+      mint: (sessionPath) => CatalogService.SessionSnapshotRef({ path: sessionPath }),
+      bridge: () => CatalogService.GetSessionSnapshot({ path }),
+    });
   },
   async getSessionUsage(workspacePath?: string): Promise<SessionUsageSummary> {
     return await CatalogService.GetSessionUsage({ workspacePath });
