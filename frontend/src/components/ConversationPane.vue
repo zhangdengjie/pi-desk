@@ -71,11 +71,24 @@ let pinFrames = 0;
 function openPinWindow() {
   pinWindow.value = true;
   cancelAnimationFrame(pinFrames);
-  pinFrames = requestAnimationFrame(() => {
-    pinFrames = requestAnimationFrame(() => {
+  let waited = 0;
+  const step = () => {
+    // Closed as soon as the virtualizer has seen the pin. Asking it for its offset directly is
+    // private API, and the range it computes answers the same question: once the last row is
+    // inside the range, the offset it used was the bottom.
+    const items = virtualizer.value.getVirtualItems();
+    const last = messages.value.length - 1;
+    if (last >= 0 && items.length && items[items.length - 1].index >= last) {
       pinWindow.value = false;
-    });
-  });
+      return;
+    }
+    if (++waited >= 4) {
+      pinWindow.value = false;
+      return;
+    }
+    pinFrames = requestAnimationFrame(step);
+  };
+  pinFrames = requestAnimationFrame(step);
 }
 
 // A cold transcript arriving is the same race as a thread change: the rows appear before the
@@ -712,8 +725,13 @@ onBeforeUnmount(() => {
         data-virtualized="true"
         :style="{ height: `${virtualTotalSize}px` }"
       >
+        <!-- While the tail pin is still in flight the range would be computed from the old offset,
+             so the rows it names are the ones at the *top* of the list: mounted, painted for one
+             frame, and discarded by the pin. Render only the spacer (the container keeps its
+             estimated height, which is what makes the pin land at the bottom) and mount the real
+             rows once the offset has arrived. -->
         <div
-          v-for="row in virtualRows"
+          v-for="row in pinWindow ? [] : virtualRows"
           :key="String(row.key)"
           :ref="measureVirtualRow"
           class="virtual-message-row"
