@@ -585,7 +585,12 @@ watch(() => appStore.activeThreadId, async () => {
   stickToBottom.value = true;
   openPinWindow();
   await nextTick();
-  virtualizer.value.measure();
+  // `measure()` used to sit here. It is `itemSizeCache.clear()` plus a notify, and the cache is
+  // keyed by `turnKey` (a message id), so entries from other tasks can never be *wrong* - they are
+  // simply the heights this row had the last time it was on screen. Clearing it meant every switch
+  // back re-ranged the list from the character-count estimate, which caps at 900px against rows
+  // measured at 1439-1874px: the probe counted 17 mounts for 8 distinct rows on the 653-entry task
+  // (`.pi/bin/hitprobe/devSwitchProbe.ts.keep`, 2026-09-30 08:3x).
   scrollToBottom();
   updateActiveNavigation();
 });
