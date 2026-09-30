@@ -1,4 +1,5 @@
 import { mount } from "@vue/test-utils";
+import { createPinia, setActivePinia } from "pinia";
 import { nextTick } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ToolCallPanel from "./ToolCallPanel.vue";
@@ -17,8 +18,11 @@ async function openPanel(wrapper: ReturnType<typeof mount>) {
 
 
   // The expansion memory is module-scoped, so a click in one case must not decide
-  // the next one.
-  beforeEach(() => forgetPanelOpenStates());
+  // the next one. The pinia is for MarkdownBody, which resolves file links through the store.
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    forgetPanelOpenStates();
+  });
 
   it("summarizes commands and exposes input and output copy actions", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -377,6 +381,50 @@ async function openPanel(wrapper: ReturnType<typeof mount>) {
     });
 
     expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it("renders a plan as a document, and opens it: it is the only place the answer exists", () => {
+    const plan = [
+      "# F1 冷开骨架化",
+      "",
+      "## 摘要",
+      "",
+      "| 面 | 位置 |",
+      "| --- | --- |",
+      "| Go 全量组装 | index.go:507 |",
+      "",
+      "**Phase 1** 先落 Go 骨架。",
+    ].join("\n");
+    const wrapper = mount(ToolCallPanel, {
+      props: { tool: { id: "tool-plan", name: "plan_mode_complete", arguments: { plan }, output: plan, status: "complete" } },
+    });
+
+    // A plan is the deliverable: collapsed, plan mode reads as "nothing happened".
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    const body = wrapper.get(".tool-markdown .markdown-body");
+    expect(body.find("h1").text()).toBe("F1 冷开骨架化");
+    expect(body.findAll("th").map((cell) => cell.text())).toEqual(["面", "位置"]);
+    expect(body.find("td").text()).toBe("Go 全量组装");
+    expect(body.find("strong").text()).toBe("Phase 1");
+    // The literal markup must be gone, not merely hidden behind it - and the input block, which
+    // carries the same text as escaped JSON, must not come back to stand in for it.
+    expect(wrapper.text()).not.toContain("| --- | --- |");
+    expect(wrapper.find("pre.tool-output").exists()).toBe(false);
+    expect(wrapper.findAll(".tool-section")).toHaveLength(1);
+    expect(wrapper.find('[aria-label="Copy tool input"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("keeps every other tool's output a monospaced log", () => {
+    pinPanelOpen("tool-log", true);
+    const wrapper = mount(ToolCallPanel, {
+      props: { tool: { id: "tool-log", name: "bash", arguments: { command: "ls" }, output: "# not a heading", status: "complete" } },
+    });
+
+    expect(wrapper.get(".tool-output").element.tagName).toBe("PRE");
+    expect(wrapper.get(".tool-output").text()).toBe("# not a heading");
+    expect(wrapper.find(".markdown-body").exists()).toBe(false);
     wrapper.unmount();
   });
 });

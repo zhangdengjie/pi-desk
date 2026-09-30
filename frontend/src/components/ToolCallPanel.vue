@@ -11,6 +11,7 @@ import { useRevealedText } from "../composables/useRevealedText";
 import { streamTuning } from "../utils/streamTuning";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 import LoadingRing from "./LoadingRing.vue";
+import MarkdownBody from "./MarkdownBody.vue";
 
 // Vue casts an absent Boolean prop to false, so the live allowance needs an
 // explicit default or a standalone call would never open.
@@ -56,12 +57,26 @@ const outputPanel = ref<HTMLElement>();
 // is still streaming" counts, and a call caught in flight counts on its own.
 const belongsToLiveRun = computed(() => props.runIsLive || props.tool.status === "running");
 
+/**
+ * Tools whose output *is* the document the reader came for.
+ *
+ * `plan_mode_complete` hands back the finished plan as Markdown and writes no assistant message
+ * after it, so this panel is the plan's only exit - and a `<pre>` there turns headings, tables and
+ * bold into literal `#` and `|`. Every other tool prints a log, which stays monospaced on purpose.
+ */
+const MARKDOWN_OUTPUT_TOOLS = new Set(["plan_mode_complete"]);
+const markdownOutput = computed(() => MARKDOWN_OUTPUT_TOOLS.has(props.tool.name));
+
 const panelOpen = computed(() => {
   const pinned = panelOpenState(props.tool.id);
   if (pinned !== undefined) return pinned;
   // `alwaysClosed` means exactly that: not even the delayed live window gets through.
   if (props.panelMode === "alwaysClosed") return false;
   if (live.value) return true;
+  // A plan is the deliverable of the whole turn, not a log line. Collapsed, plan mode reads as
+  // "nothing happened" - the reader has to open the panel to find out the answer existed at all.
+  // The reader's own toggle still wins, because `panelOpenState` is checked first.
+  if (markdownOutput.value) return true;
   if (!belongsToLiveRun.value) return false;
   return props.panelMode === "alwaysOpen";
 });
@@ -273,7 +288,9 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
-    <div v-if="inputText" class="tool-section">
+    <!-- A plan's arguments hold the same text its output does, so showing both put the raw Markdown
+         (with literal `\n`) straight above the rendered document - the ugliest half of the complaint. -->
+    <div v-if="inputText && !markdownOutput" class="tool-section">
       <div class="tool-section-header">
         <span>{{ tr("tools.input") }}</span>
         <button type="button" :title="tr('tools.copyInput')" :aria-label="tr('tools.copyInput')" @click="void copyText('input', inputText)">
@@ -306,7 +323,10 @@ onBeforeUnmount(() => {
           <Copy v-else :size="13" />
         </button>
       </div>
-      <pre ref="outputPanel" class="tool-output">{{ shownOutput }}</pre>
+      <!-- `shownOutput` is already revealed a frame at a time, so MarkdownBody gets streaming=false:
+           a second reveal on top of the first would hold text back that is already on screen. -->
+      <div v-if="markdownOutput" ref="outputPanel" class="tool-output tool-markdown"><MarkdownBody :text="shownOutput" :streaming="false" /></div>
+      <pre v-else ref="outputPanel" class="tool-output">{{ shownOutput }}</pre>
     </div>
     <ImagePreviewDialog v-if="previewImage" :image="previewImage" @close="previewImage = undefined" />
     </template>

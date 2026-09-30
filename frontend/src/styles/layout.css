@@ -2163,6 +2163,20 @@
   max-height: none;
 }
 
+/* A plan is read, not scanned, so it gets the reasoning block's capped scroll box at the reading
+   size. `.tool-call pre` cannot be reused for it: mono 10.5px plus `white-space: pre-wrap` is what
+   made the plan read as a log, and a long plan needs a ceiling of its own so the row cannot grow
+   past the window. No display utility goes on this element in the template - every Tailwind class
+   there is `!important` and would beat these declarations (AGENTS §4.3). */
+.tool-call .tool-markdown {
+  max-height: min(60vh, 520px);
+  padding: 2px 12px 12px;
+  overflow: auto;
+  color: var(--text-secondary);
+  font-size: calc(13px + var(--font-size-delta));
+  line-height: 1.65;
+}
+
 .tool-summary {
   flex: 0 1 auto;
   min-width: 0;
