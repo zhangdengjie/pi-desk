@@ -38,7 +38,10 @@ export interface TextPatch {
  * inside the undo stack instead of flushing it, and it lets the engine put the caret where the edit
  * actually happened rather than at the end of a re-typed document.
  */
-export function minimalPatch(current: string, next: string): TextPatch | undefined {
+export function minimalPatch(
+  current: string,
+  next: string,
+): TextPatch | undefined {
   if (current === next) return undefined;
   const limit = Math.min(current.length, next.length);
   let from = 0;
@@ -47,7 +50,11 @@ export function minimalPatch(current: string, next: string): TextPatch | undefin
   let endNext = next.length;
   // Never overlap the prefix: `from` is the floor for both cursors, or "ab" -> "aab" would trim the
   // shared "ab" off the suffix side too and report {from:2,to:2,text:"a"}, which applies as "aba".
-  while (endCurrent > from && endNext > from && current[endCurrent - 1] === next[endNext - 1]) {
+  while (
+    endCurrent > from &&
+    endNext > from &&
+    current[endCurrent - 1] === next[endNext - 1]
+  ) {
     endCurrent--;
     endNext--;
   }
@@ -110,4 +117,24 @@ export function shouldCloseUndoGroup(question: UndoGroupQuestion): boolean {
   if (question.inputType.includes("Composition")) return false;
   if (question.inputType.startsWith("history")) return false;
   return question.charsSinceGroup > 0;
+}
+
+export interface CandidateCommit {
+  /** What the field held when `compositionstart` fired. */
+  before: string;
+  /** What it holds when the candidate landed. */
+  after: string;
+}
+
+/**
+ * Whether one IME candidate commit is worth splitting into per-character undo steps, and where it
+ * landed. `undefined` means "leave it to the engine", which is also the safe answer for anything the
+ * component cannot re-derive: a commit that replaced a selection (`from !== to`), a single character
+ * (already one step by itself), or no change at all.
+ */
+export function candidateSplit(commit: CandidateCommit): TextPatch | undefined {
+  const patch = minimalPatch(commit.before, commit.after);
+  if (!patch || patch.from !== patch.to || patch.text.length < 2)
+    return undefined;
+  return patch;
 }

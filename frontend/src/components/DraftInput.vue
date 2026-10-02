@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from "vue";
-import { closeUndoGroup, minimalPatch, shouldCloseUndoGroup } from "../utils/undoableEdit";
+import {
+  candidateSplit,
+  closeUndoGroup,
+  minimalPatch,
+  shouldCloseUndoGroup,
+} from "../utils/undoableEdit";
 const props = defineProps<{
   modelValue: string;
   placeholder: string;
@@ -13,6 +18,8 @@ const input = ref<HTMLTextAreaElement>();
 let lastValue = props.modelValue;
 // An open IME session owns both the selection and the stack: no caret writes while it runs.
 let composing = false;
+// The field's content when the current composition started.
+let committedFrom = "";
 
 /*
  * The chat draft is typed, not authored. `MarkdownEditor.vue` (milkdown/prosemirror) stays in the
@@ -116,15 +123,55 @@ function applyUndoable(element: HTMLTextAreaElement, value: string): boolean {
 
 function onCompositionStart() {
   composing = true;
+  // The text the candidate is about to replace. `compositionend` diffs against it to find what the
+  // IME actually committed, and it is also the state the split has to land back in.
+  committedFrom = input.value?.value ?? "";
 }
 
 function onCompositionEnd() {
   composing = false;
+  splitCommittedCandidate();
+}
+
+/**
+ * Turn one committed candidate into one undo step per character.
+ *
+ * A candidate commit is a single `insertText` transaction, so the field's undo stack has exactly one
+ * step for it and `Cmd+Z` deletes the whole word - measured (`.pi/bin/hitprobe/undo-cjk-split.html`
+ * S0, and round two `undo-cjk-split2.html` over five repeats): the only sequence that gives one
+ * character per step *and* no stale step is to take the commit back out with `undo` and write it
+ * again one character at a time, closing a group after each (A1: `你好世 -> 你好 -> 你 -> ''`).
+ * Replacing the committed range in place (A3) is one step shorter to write but leaves the original
+ * delete as an extra step, so a fourth Cmd+Z puts the whole word back.
+ *
+ * Degrades on any surprise: an empty commit, a candidate that replaced a selection, or an `undo` that
+ * does not land where the composition started - in all of those the text is put back exactly as the
+ * IME left it and the candidate stays one undo step.
+ */
+function splitCommittedCandidate() {
+  const element = input.value;
+  if (!element || typeof document.execCommand !== "function") return;
+  const patch = candidateSplit({ before: committedFrom, after: element.value });
+  if (!patch) return;
+  document.execCommand("undo");
+  if (element.value !== committedFrom) {
+    // Not the step we meant to be undoing, so put it straight back: a granularity experiment is never
+    // allowed to cost the person text.
+    document.execCommand("redo");
+    return;
+  }
+  for (const character of patch.text) {
+    document.execCommand("insertText", false, character);
+    closeUndoGroup(element, element.selectionStart ?? element.value.length);
+  }
 }
 
 function onInput(event: Event) {
   const element = event.target as HTMLTextAreaElement;
-  const inputType = typeof (event as InputEvent).inputType === "string" ? (event as InputEvent).inputType : "";
+  const inputType =
+    typeof (event as InputEvent).inputType === "string"
+      ? (event as InputEvent).inputType
+      : "";
   const before = lastValue.length;
   lastValue = element.value;
   emit("update:modelValue", element.value);
@@ -135,8 +182,12 @@ function onInput(event: Event) {
   // already sits is invisible, costs no phantom undo steps, and makes each step one character
   // (`.pi/bin/hitprobe/undo-battery.html` V3, and `undo-real-draft.html` P1 against the shipped field).
   // A character typed over an equally long selection moves no length, hence the inputType fallback.
-  const touched = Math.abs(element.value.length - before) || (/^(insert|delete)/.test(inputType) ? 1 : 0);
-  if (shouldCloseUndoGroup({ inputType, charsSinceGroup: touched, composing })) {
+  const touched =
+    Math.abs(element.value.length - before) ||
+    (/^(insert|delete)/.test(inputType) ? 1 : 0);
+  if (
+    shouldCloseUndoGroup({ inputType, charsSinceGroup: touched, composing })
+  ) {
     // Not `setSelectionRange(caret, caret)`: the engine may treat a selection write that changes
     // nothing as a no-op, and a no-op closes no undo group. Eight characters came back as TWO undo
     // groups with that form and as eight with `closeUndoGroup` - same page, same handler, measured in
@@ -173,20 +224,28 @@ function captureTextInsertion(): (text: string, separate?: boolean) => boolean {
   return (text, separate = false) => {
     const field = input.value;
     if (!field || field.value !== captured) return false;
-    const patch = separate && previous && !/\s/.test(previous) ? ` ${text}` : text;
-    write(`${field.value.slice(0, from)}${patch}${field.value.slice(to)}`, from + patch.length);
+    const patch =
+      separate && previous && !/\s/.test(previous) ? ` ${text}` : text;
+    write(
+      `${field.value.slice(0, from)}${patch}${field.value.slice(to)}`,
+      from + patch.length,
+    );
     return true;
   };
 }
 
-watch(() => props.modelValue, (value) => {
-  if (value === lastValue) return;
-  write(value, null);
-});
+watch(
+  () => props.modelValue,
+  (value) => {
+    if (value === lastValue) return;
+    write(value, null);
+  },
+);
 
 onMounted(() => {
   const element = input.value;
-  if (element && element.value !== props.modelValue) element.value = props.modelValue;
+  if (element && element.value !== props.modelValue)
+    element.value = props.modelValue;
   resize();
 });
 
