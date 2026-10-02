@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from "vue";
-
+import { closeUndoGroup, minimalPatch, shouldCloseUndoGroup } from "../utils/undoableEdit";
 const props = defineProps<{
   modelValue: string;
   placeholder: string;
@@ -11,6 +11,8 @@ const emit = defineEmits<{ "update:modelValue": [value: string] }>();
 
 const input = ref<HTMLTextAreaElement>();
 let lastValue = props.modelValue;
+// An open IME session owns both the selection and the stack: no caret writes while it runs.
+let composing = false;
 
 /*
  * The chat draft is typed, not authored. `MarkdownEditor.vue` (milkdown/prosemirror) stays in the
@@ -23,7 +25,14 @@ let lastValue = props.modelValue;
  *
  * The field is deliberately uncontrolled (`:value` is never bound): Vue re-assigning `value` on
  * every keystroke is how caret-jump bugs get born. `onMounted` seeds it and the watcher below
- * writes it whenever the draft changes from outside the field.
+ * writes it whenever the draft changes from outside the field - and "writes" means a
+ * selected-range `insertText` / `delete` over the differing part only, because assigning
+ * `element.value` discards the undo stack the textarea was chosen for. The measurements behind both
+ * choices are in `utils/undoableEdit`.
+ *
+ * Undo needed one addition on top of that: the engine groups a whole run of typing together no matter
+ * how long the pauses are, so one `Cmd+Z` erases everything written, and `onInput` closes the group
+ * after every edit so the steps come back one character.
  *
  * The exposed names match what `ComposerBar.vue` already calls on its `markdownEditor` ref, so
  * switching the composer surface is a two-line diff on a file upstream touches often.
@@ -60,7 +69,12 @@ function resize() {
 function write(value: string, caret: number | null) {
   const element = input.value;
   lastValue = value;
-  if (element && element.value !== value) element.value = value;
+  if (element && element.value !== value && !applyUndoable(element, value)) {
+    // The engine refused the edit (no focus, detached field, or an IME session is mid-commit) and a
+    // raw write is the only way to land the text: it costs the undo stack, which beats losing the
+    // draft. `Cmd+Z` then stays dead until the person types again - the old, always-raw behaviour.
+    if (element) element.value = value;
+  }
   if (value !== props.modelValue) emit("update:modelValue", value);
   void nextTick(() => {
     resize();
@@ -70,11 +84,65 @@ function write(value: string, caret: number | null) {
   });
 }
 
+/**
+ * Land `value` in the field without discarding the engine's undo stack: replace only the differing
+ * range, through the same editing path a keystroke uses. Measured in both engines
+ * (`.pi/bin/hitprobe/undo-battery.html`, V13/V14): a selected-range `insertText` / `delete` is one
+ * undo step of its own and everything typed before it is still reachable, while `element.value = …`
+ * wipes the stack (V5/V8/V9) - so a `@` mention picked from the file panel used to be the end of
+ * `Cmd+Z` for the rest of the draft.
+ *
+ * Returns false when the edit did not apply, and the caller falls back to a raw write.
+ */
+function applyUndoable(element: HTMLTextAreaElement, value: string): boolean {
+  const patch = minimalPatch(element.value, value);
+  if (!patch) return true;
+  if (composing) return false;
+  // jsdom (the unit tests) and any engine without the editing commands: report "did not apply" and
+  // let the caller write the value directly.
+  if (typeof document.execCommand !== "function") return false;
+  // The command edits whatever is focused, so a field that is not focused cannot take a patch - and
+  // focusing it here would steal the caret from the panel that initiated the change (the file panel
+  // inserting a mention). Those cases keep the raw write: the person is not typing in this field, so
+  // there is no undo stack worth preserving in it.
+  if (document.activeElement !== element) return false;
+  element.setSelectionRange(patch.from, patch.to);
+  // "" through insertText is a no-op in both engines, so a pure deletion needs its own command.
+  const applied = patch.text
+    ? document.execCommand("insertText", false, patch.text)
+    : patch.to === patch.from || document.execCommand("delete");
+  return applied;
+}
+
+function onCompositionStart() {
+  composing = true;
+}
+
+function onCompositionEnd() {
+  composing = false;
+}
+
 function onInput(event: Event) {
   const element = event.target as HTMLTextAreaElement;
+  const inputType = typeof (event as InputEvent).inputType === "string" ? (event as InputEvent).inputType : "";
+  const before = lastValue.length;
   lastValue = element.value;
   emit("update:modelValue", element.value);
   resize();
+  // The engine coalesces a whole run of typing into ONE undo group no matter how long the pauses are
+  // (0 / 300 / 900 / 2000 ms measured identical), so a single `Cmd+Z` deletes the entire draft. It
+  // closes the group itself the moment the selection moves, and re-asserting the caret where it
+  // already sits is invisible, costs no phantom undo steps, and makes each step one character
+  // (`.pi/bin/hitprobe/undo-battery.html` V3, and `undo-real-draft.html` P1 against the shipped field).
+  // A character typed over an equally long selection moves no length, hence the inputType fallback.
+  const touched = Math.abs(element.value.length - before) || (/^(insert|delete)/.test(inputType) ? 1 : 0);
+  if (shouldCloseUndoGroup({ inputType, charsSinceGroup: touched, composing })) {
+    // Not `setSelectionRange(caret, caret)`: the engine may treat a selection write that changes
+    // nothing as a no-op, and a no-op closes no undo group. Eight characters came back as TWO undo
+    // groups with that form and as eight with `closeUndoGroup` - same page, same handler, measured in
+    // `.pi/bin/hitprobe/undo-real-draft.html` (R0e against R0f).
+    closeUndoGroup(element, element.selectionStart ?? element.value.length);
+  }
 }
 
 function focus() {
@@ -83,6 +151,8 @@ function focus() {
 
 function replaceMarkdown(value: string) {
   if (value === (input.value?.value ?? value)) focus();
+  // The caller wants the caret after what just landed, and that is also what the patch path leaves
+  // behind; `write` only re-asserts it (and focuses) when the text had to go in as a raw write.
   else write(value, value.length);
 }
 
@@ -130,6 +200,9 @@ defineExpose({ focus, replaceMarkdown, handleEnter, captureTextInsertion });
     :placeholder="placeholder"
     :aria-label="ariaLabel"
     rows="1"
+    enterkeyhint="enter"
     @input="onInput"
+    @compositionstart="onCompositionStart"
+    @compositionend="onCompositionEnd"
   />
 </template>
