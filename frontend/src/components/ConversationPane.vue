@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
 import { useVirtualizer } from "@tanstack/vue-virtual";
-import { ArrowDown, CircleDot, History } from "lucide-vue-next";
+import { ArrowDown } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type ComponentPublicInstance } from "vue";
 import ComposerBar from "./ComposerBar.vue";
 import ConversationMessage from "./ConversationMessage.vue";
@@ -705,8 +705,8 @@ onBeforeUnmount(() => {
 
       <div v-else-if="messages.length === 0" class="empty-thread mx-auto grid min-h-80 max-w-xl content-center justify-items-start gap-3 text-left text-[var(--text-secondary)]">
         <LoadingRing v-if="appStore.transcriptStateByThread[appStore.activeThread.id] === 'loading'" :size="22" />
-        <History v-else-if="appStore.activeThread.sessionFile" :size="22" />
-        <CircleDot v-else :size="22" />
+<!--        <History v-else-if="appStore.activeThread.sessionFile" :size="22" />
+        <CircleDot v-else :size="22" />-->
         <strong class="font-display text-lg font-semibold tracking-[-0.02em] text-[var(--text)]">{{ appStore.activeThread.sessionFile ? tr("conversation.previous") : tr("conversation.startIn", { workspace: appStore.activeThread.workspace }) }}</strong>
         <span class="max-w-[60ch] text-sm leading-relaxed">{{ appStore.activeThread.messageCount ? tr("conversation.savedMessages", { count: appStore.activeThread.messageCount }) : appStore.activeThread.trust === "approve" ? tr("conversation.resourcesEnabled") : tr("conversation.resourcesDisabled") }}</span>
         <button
