@@ -111,6 +111,41 @@ function topPaths(paths: Record<string, number>, n: number) {
     .map(([key, value]) => `${key}×${value}`);
 }
 
+/** The elements a pane drag actually has to re-lay-out. Read only when a record is being written
+ * (at most one every 3s), never per frame: these are forced-layout reads.
+ *
+ * Why this is in the record at all: measured 2026-10-03, a 9,298px mounted row dragged smooth
+ * (max 21ms) in a dev instance, while the desktop's own record of the same gesture at a 20,665px
+ * row dropped 7 frames - so *height* is not the variable. The remaining suspects are the ones
+ * counted here: an auto-layout markdown table (WebKit measures every cell), a long `pre`, the
+ * collapsed `details` blocks, and xterm, which re-measures its grid on every width change. */
+const SUSPECT_SELECTOR = ".message-content table, .message-content pre, .message-content details, .message-content > *, .tool-section, .thinking-body";
+const MAX_SUSPECTS = 220;
+
+function suspects() {
+  const out: { sel: string; px: number; cells: number; lines: number }[] = [];
+  let tables = 0;
+  let cells = 0;
+  let scanned = 0;
+  for (const row of Array.from(document.querySelectorAll<HTMLElement>(".virtual-message-row, .message-row"))) {
+    for (const block of Array.from(row.querySelectorAll<HTMLElement>(SUSPECT_SELECTOR))) {
+      if (scanned++ > MAX_SUSPECTS) break;
+      if (block.tagName === "TABLE") {
+        tables += 1;
+        cells += block.querySelectorAll("td,th").length;
+      }
+      out.push({
+        sel: `${block.tagName.toLowerCase()}.${(typeof block.className === "string" ? block.className.split(/\s+/).filter(Boolean)[0] : "") || "-"}`,
+        px: block.scrollHeight,
+        cells: block.tagName === "TABLE" ? block.querySelectorAll("td,th").length : 0,
+        lines: block.tagName === "PRE" ? (block.textContent || "").split("\n").length : 0,
+      });
+    }
+  }
+  out.sort((a, b) => b.px - a.px || b.cells - a.cells);
+  return { tables, cells, worst: out.slice(0, 4) };
+}
+
 function scene() {
   let tallest = 0;
   for (const row of Array.from(document.querySelectorAll<HTMLElement>(".virtual-message-row, .message-row"))) {
@@ -126,10 +161,12 @@ function scene() {
     inspectorPx: inspector ? Math.round(inspector.getBoundingClientRect().width) : 0,
     sidebarPx: Math.round(q(".sidebar")?.getBoundingClientRect().width ?? 0),
     terminalVisible: !!terminal && terminal.offsetParent !== null,
+    terminalRows: document.querySelectorAll(".xterm-rows > div").length,
     tabs: Array.from(document.querySelectorAll<HTMLElement>(".panel-tab [role='tab']")).map(
       (tab) => `${(tab.textContent || "").trim().slice(0, 14)}${tab.getAttribute("aria-selected") === "true" ? "*" : ""}`,
     ),
     visibility: document.visibilityState,
+    ...suspects(),
   };
 }
 
