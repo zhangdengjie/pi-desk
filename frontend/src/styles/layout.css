@@ -85,10 +85,30 @@
   right: calc(var(--inspector-width) - 3px);
 }
 
-.is-resizing-pane,
-.is-resizing-pane * {
-  cursor: col-resize !important;
-  user-select: none !important;
+/* Dragging a divider must not cost a document-wide style pass.
+ *
+ * This rule used to be `.is-resizing-pane * { cursor: col-resize !important; user-select: none
+ * !important }`. With ~4,000 elements mounted, every hit-test the moving cursor produced had to
+ * match a document-wide wildcard carrying two `!important` longhands - which is the fixed spike in
+ * the shipped lag recorder's own log (2026-10-03, `drag` records: median 17ms but max 46-70ms,
+ * `mutations: 0`, and the spike is the same size whether the tallest row is 1,620px or 20,665px).
+ * Synthetic PointerEvents can never show it, because they do not move the real cursor.
+ *
+ * The cheap shape: `cursor` is inherited, so one element can carry it; `user-select: none` on the
+ * root makes descendants resolve to unselectable. The three panes the handle runs between then stop
+ * participating in hit-testing for the duration, so the point under the pointer resolves to
+ * `.app-shell` (inheriting col-resize) and no hover/cursor recalculation happens at all. The handle
+ * keeps receiving the stream because `PaneResizer` calls `setPointerCapture`. */
+html.is-resizing-pane {
+  cursor: col-resize;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html.is-resizing-pane .sidebar,
+html.is-resizing-pane .workspace-shell,
+html.is-resizing-pane .inspector {
+  pointer-events: none;
 }
 
 .sidebar {

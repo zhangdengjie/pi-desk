@@ -477,3 +477,32 @@ describe("transcript line breaks", () => {
     expect(text.indexOf(".markdown-body p")).toBeGreaterThan(text.indexOf(".message-content p"));
   });
 });
+
+describe("pane drag cost", () => {
+  it("never re-resolves a document-wide wildcard while a divider is being dragged", async () => {
+    const text = await layoutText();
+    // Comments describe the dead rule, so match against the stylesheet with comments removed.
+    const css = text.replace(/\/\*[\s\S]*?\*\//g, "");
+    // Measured with the app's own lag recorder (2026-10-03): every real `drag` record showed
+    // median 17ms but max 46-70ms with mutations 0, and the spike was the same size at a 1,620px
+    // mounted row and at a 20,665px one. The cost was `.is-resizing-pane` plus a universal
+    // selector carrying two `!important` longhands, i.e. a wildcard match against ~4,000 elements
+    // per hit-test - and only a real cursor triggers that path.
+    expect(css).not.toMatch(/\.is-resizing-pane[^{,]*\*/);
+    expect(css).not.toMatch(/\*[\s,][^{]*\{[^}]*!important/);
+
+    const root = css.match(/html\.is-resizing-pane\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(root).toContain("cursor: col-resize");
+    expect(root).toContain("user-select: none");
+    // The muting is a bounded element list, not the whole tree.
+    const muted = css.match(/html\.is-resizing-pane\s+\.[^{]*\{[^}]*\}/s)?.[0] ?? "";
+    expect(muted).toContain("pointer-events: none");
+    for (const pane of [".sidebar", ".workspace-shell", ".inspector"]) expect(muted).toContain(pane);
+
+    // The handle itself must keep refusing to become a native drag source (WebKit swallows every
+    // later pointermove once an NSDragging session starts).
+    const handle = css.match(/\.pane-resizer\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(handle).toContain("user-select: none");
+    expect(handle).toContain("touch-action: none");
+  });
+});
