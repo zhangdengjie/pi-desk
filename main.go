@@ -200,6 +200,12 @@ func main() {
 		log.Fatal(err)
 	}
 	catalog := workspace.NewCatalog(statePath)
+	// Frame records from the webview (frontend/src/services/lagRecorder.ts) land beside state.json,
+	// so a sandbox instance writes its own and never mixes with the desktop's log.
+	lagLog := appservice.NewLagLog(filepath.Join(filepath.Dir(statePath), "perf"))
+	if dir := lagLog.Dir(); dir != "" {
+		log.Printf("pi-desk: lag records -> %s", dir)
+	}
 	if appdirs.Overridden() {
 		log.Printf("pi-desk: sandbox instance, writable state under %s", filepath.Dir(statePath))
 	}
@@ -288,8 +294,12 @@ func main() {
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
 			// Session images are served straight out of the session file instead of travelling in the
-			// transcript snapshot (see internal/sessionindex/imagerefs.go).
-			Middleware: appservice.SessionImageMiddleware(sessionIndex),
+			// transcript snapshot (see internal/sessionindex/imagerefs.go), and /perf-lag is how the
+			// webview's own frame recorder reaches disk. Both are pass-throughs for every other path.
+			Middleware: appservice.ChainAssetMiddleware(
+				appservice.SessionImageMiddleware(sessionIndex),
+				appservice.LagLogMiddleware(lagLog),
+			),
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
