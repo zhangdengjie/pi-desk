@@ -1280,7 +1280,10 @@ html.is-resizing-pane .inspector {
 .conversation-outline-item:hover .conversation-outline-line,
 .conversation-outline-item:focus-visible .conversation-outline-line,
 .conversation-outline-item.is-hovered .conversation-outline-line {
-  width: 24px;
+  /* 18, not 24: 24 is `gutter - railLeft`, which is *exactly* the content edge, so a tick that grew
+     on hover read as a bar jammed against the first character of the answer. The contract test
+     allows up to 24; the gap is the point here. */
+  width: 18px;
   background: var(--text-secondary);
 }
 
@@ -1290,12 +1293,14 @@ html.is-resizing-pane .inspector {
 }
 
 .conversation-outline-item:active .conversation-outline-line {
-  width: 20px;
+  width: 16px;
 }
 
 .conversation-outline-item.is-active .conversation-outline-line {
-  /* Was 28px, which is 4px past the gutter. The active row is already told apart by its colour. */
-  width: 24px;
+  /* Was 28px, which is 4px past the gutter, then 24px - which is the gutter itself, i.e. touching
+     the text. The active row is already told apart by its colour, so it does not also need to be
+     the widest thing in the rail. */
+  width: 18px;
   background: var(--text);
 }
 
