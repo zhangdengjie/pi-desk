@@ -794,6 +794,17 @@
   right: calc(var(--inspector-width) + 16px);
 }
 
+/* The same overlay arithmetic applies to the jump-to-latest control: the pane keeps the full
+   workspace width while the inspector is open, so `left: 50%` centres it on the *whole* pane and it
+   lands half an inspector to the right of the column the reader is looking at - on top of the
+   divider. Subtracting half the inspector puts it back over the transcript, which is also where the
+   composer is. `--inspector-width` is declared `inherits: false` (tokens.css:12), so this element
+   has to carry it by hand exactly as `.timeline` and the search popover do, and no `left-*` utility
+   may go back on the button in the template (AGENTS §4.3). */
+.app-shell.is-inspector-open .timeline-jump-latest {
+  left: calc(50% - var(--inspector-width) / 2);
+}
+
 .message-row {
   padding: 10px 0;
 }

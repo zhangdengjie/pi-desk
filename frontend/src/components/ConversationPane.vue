@@ -756,7 +756,7 @@ onBeforeUnmount(() => {
       <button
         v-if="!stickToBottom && messages.length"
         class="timeline-jump-latest"
-        :style="{ '--composer-overlay-reserve': `${composerHeight}px` }"
+        :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--composer-overlay-reserve': `${composerHeight}px` }"
         type="button"
         :title="tr('conversation.jumpToLatest')"
         :aria-label="tr('conversation.jumpToLatest')"

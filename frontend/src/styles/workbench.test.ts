@@ -237,6 +237,20 @@ describe("responsive workbench layout", () => {
     expect(pane).not.toMatch(/class="conversation-search[^"]*\b(right|left)-[\w.]+/);
   });
 
+  it("centres the jump-to-latest control over the transcript, not over the pane", async () => {
+    const css = await workbenchText();
+    const pane = await vueText("src/components/ConversationPane.vue");
+    // The same overlay bites here: the pane keeps the full workspace width while the inspector is
+    // open, so `left: 50%` sat the button half an inspector to the right of the column the reader is
+    // looking at - on the divider.
+    expect(css).toMatch(/\.app-shell\.is-inspector-open \.timeline-jump-latest\s*{[^}]*left:\s*calc\(50% - var\(--inspector-width\) \/ 2\)/s);
+    // `--inspector-width` is registered `inherits: false`, so this element has to be handed it too.
+    expect(pane).toMatch(/class="timeline-jump-latest"\s*\n\s*:style="\{ '--inspector-width'/);
+    // And `left` stays out of the template for the same reason `right` does: the utility is
+    // `!important` and would beat this unlayered rule.
+    expect(pane).not.toMatch(/class="timeline-jump-latest[^"]*\b(left|right)-[\w.]+/);
+  });
+
   it("separates transcript markdown levels by a size step and a rule, not by hue", async () => {
     const css = await workbenchText();
     // Typora's contract: headings are ink, and the level is carried by size + a hairline under
