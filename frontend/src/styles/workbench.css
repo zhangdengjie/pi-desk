@@ -912,17 +912,14 @@
   margin-top: 12px;
 }
 
-/* Ordered-list markers. The browser already right-aligns the marker box (measured: five markers of
-   a 1..5 list all end at x=68), but PingFang SC draws "1" as a narrow stroke inside a full-width
-   advance, so its *ink* starts at x=53 while "2"-"5" start at x=49 - a ragged left edge, which is
-   one of the things that reads as "not the terminal". Pi's TUI cannot have that problem: every glyph
-   is one cell wide. Drawing the marker in the mono stack squares the column off (measured: identical
-   extents for all five) without touching list semantics or the text column. `font-variant-numeric:
-   tabular-nums` was tried first and changed nothing - the advances are already equal, it is the glyph
-   shape that differs. */
-.markdown-body ol > li::marker {
-  font-family: var(--font-mono);
-}
+/* Ordered-list markers stay in the body font. Drawing them in `--font-mono` was tried to square off
+   the ragged left edge (PingFang's "1" is a narrow stroke inside a full-width advance, so the *ink*
+   starts 5px right of "2"-"5" while `tabular-nums` changes nothing - both measured in a real
+   WKWebView) and it was reverted: a mono "1." is ~18px wide against the 22px of `padding-left` the
+   list gets, and an outside marker is right-aligned to the content edge, so the wider glyph hung
+   ~7px *outside* the block - into the outline rail's 26px column at the minimum gutter - and the
+   digits read a size larger than the sentence next to them. The column is a 5px cosmetic wobble;
+   a marker overlapping the rail and the numbers shouting are not. */
 
 .markdown-body code {
   /* The 1px border stays, but goes transparent: removing it would reflow every line that
