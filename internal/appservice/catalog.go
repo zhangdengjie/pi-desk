@@ -404,7 +404,7 @@ func (service *CatalogService) GetDesktopState() (domain.DesktopState, error) {
 	}
 	if record.Preferences != nil {
 		result.Preferences = &domain.DesktopPreferences{
-			Appearance: record.Preferences.Appearance, Language: record.Preferences.Language, FontFamily: record.Preferences.FontFamily, FontSize: record.Preferences.FontSize,
+			Appearance: record.Preferences.Appearance, Language: record.Preferences.Language, FontFamily: record.Preferences.FontFamily, FontSize: record.Preferences.FontSize, TranscriptFontWeight: record.Preferences.TranscriptFontWeight, TranscriptLineHeight: record.Preferences.TranscriptLineHeight,
 			LightCodeTheme: record.Preferences.LightCodeTheme, DarkCodeTheme: record.Preferences.DarkCodeTheme, ShowCodeLineNumbers: record.Preferences.ShowCodeLineNumbers, WrapCodeLines: record.Preferences.WrapCodeLines, CodeFontSize: record.Preferences.CodeFontSize,
 			OfflineMode: record.Preferences.OfflineMode, ProxyEnabled: record.Preferences.ProxyEnabled,
 			ProxyURL: record.Preferences.ProxyURL, StreamingBehavior: record.Preferences.StreamingBehavior,
@@ -444,7 +444,7 @@ func (service *CatalogService) SaveDesktopState(state domain.DesktopState) error
 	}
 	if state.Preferences != nil {
 		record.Preferences = &workspace.PreferencesRecord{
-			Appearance: strings.TrimSpace(state.Preferences.Appearance), Language: strings.TrimSpace(state.Preferences.Language), FontFamily: strings.TrimSpace(state.Preferences.FontFamily), FontSize: state.Preferences.FontSize,
+			Appearance: strings.TrimSpace(state.Preferences.Appearance), Language: strings.TrimSpace(state.Preferences.Language), FontFamily: strings.TrimSpace(state.Preferences.FontFamily), FontSize: state.Preferences.FontSize, TranscriptFontWeight: strings.TrimSpace(state.Preferences.TranscriptFontWeight), TranscriptLineHeight: strings.TrimSpace(state.Preferences.TranscriptLineHeight),
 			LightCodeTheme: strings.TrimSpace(state.Preferences.LightCodeTheme), DarkCodeTheme: strings.TrimSpace(state.Preferences.DarkCodeTheme), ShowCodeLineNumbers: state.Preferences.ShowCodeLineNumbers, WrapCodeLines: state.Preferences.WrapCodeLines, CodeFontSize: state.Preferences.CodeFontSize,
 			OfflineMode: state.Preferences.OfflineMode, ProxyEnabled: state.Preferences.ProxyEnabled,
 			ProxyURL: strings.TrimSpace(state.Preferences.ProxyURL), StreamingBehavior: strings.TrimSpace(state.Preferences.StreamingBehavior),

@@ -75,6 +75,17 @@ function syncDocumentFontSize(size: number) {
   document.documentElement.dataset.fontSize = String(size);
 }
 
+// The attribute, not a style: tokens.css owns the three weight names so a future "follow the Pi
+// theme" setting has one place to remap them, and `data-*` on the root is how every other
+// document-level preference already gets in (theme / font family / font size).
+function syncDocumentTranscriptWeight(weight: string) {
+  document.documentElement.dataset.transcriptWeight = weight;
+}
+
+function syncDocumentTranscriptLineHeight(height: string) {
+  document.documentElement.dataset.transcriptLineHeight = height;
+}
+
 async function initializeDesktop() {
   await appStore.initialize();
   appStore.startScheduledTaskScheduler();
@@ -108,6 +119,8 @@ watch(windowTitle, (title) => {
 watch(() => appStore.appearance, syncDocumentTheme, { immediate: true });
 watch(() => appStore.interfaceFont, syncDocumentFont, { immediate: true });
 watch(() => appStore.interfaceFontSize, syncDocumentFontSize, { immediate: true });
+watch(() => appStore.transcriptFontWeight, syncDocumentTranscriptWeight, { immediate: true });
+watch(() => appStore.transcriptLineHeight, syncDocumentTranscriptLineHeight, { immediate: true });
 </script>
 
 <template>

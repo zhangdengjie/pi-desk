@@ -88,6 +88,13 @@ export type QueueMode = "all" | "one-at-a-time";
 export type Appearance = "dark" | "light" | "system";
 export type Language = "zh-CN" | "en";
 export type InterfaceFont = "default" | "system" | "serif" | "mono";
+// The transcript's own weight knob. Pi's terminal draws body text one step heavier than a
+// proportional Regular at the same size, which is most of why its output reads "crisp" next to
+// Pi Desk; --transcript-font-weight (tokens.css) is where these three names land.
+export type TranscriptFontWeight = "normal" | "medium" | "semibold";
+// The companion knob: the terminal packs lines at ~1.2 while Typora's airiness here is 1.7, so a
+// reader who lifts the weight usually wants the leading tighter too. --transcript-line-height.
+export type TranscriptLineHeight = "relaxed" | "compact" | "tight";
 export const CODE_THEME_OPTIONS = [
   ["github-light", "GitHub Light"], ["github-dark", "GitHub Dark"],
   ["vitesse-light", "Vitesse Light"], ["vitesse-dark", "Vitesse Dark"],
@@ -1060,6 +1067,8 @@ export const useAppStore = defineStore("app", {
     language: "zh-CN" as Language,
     interfaceFont: "default" as InterfaceFont,
     interfaceFontSize: 14,
+    transcriptFontWeight: "normal" as TranscriptFontWeight,
+    transcriptLineHeight: "relaxed" as TranscriptLineHeight,
     lightCodeTheme: "github-light" as CodeTheme,
     darkCodeTheme: "github-dark" as CodeTheme,
     showCodeLineNumbers: true,
@@ -4090,6 +4099,12 @@ export const useAppStore = defineStore("app", {
       this.interfaceFontSize = Number.isInteger(desktop.preferences.fontSize) && desktop.preferences.fontSize >= 12 && desktop.preferences.fontSize <= 18
         ? desktop.preferences.fontSize
         : 14;
+      this.transcriptFontWeight = (["normal", "medium", "semibold"] as const).includes(desktop.preferences.transcriptFontWeight as TranscriptFontWeight)
+        ? desktop.preferences.transcriptFontWeight as TranscriptFontWeight
+        : "normal";
+      this.transcriptLineHeight = (["relaxed", "compact", "tight"] as const).includes(desktop.preferences.transcriptLineHeight as TranscriptLineHeight)
+        ? desktop.preferences.transcriptLineHeight as TranscriptLineHeight
+        : "relaxed";
       const themes = CODE_THEME_OPTIONS.map(([value]) => value);
       const hasCodePreferences = themes.includes(desktop.preferences.lightCodeTheme as CodeTheme)
         || themes.includes(desktop.preferences.darkCodeTheme as CodeTheme)
@@ -4388,6 +4403,8 @@ export const useAppStore = defineStore("app", {
           language: this.language,
           fontFamily: this.interfaceFont,
           fontSize: this.interfaceFontSize,
+          transcriptFontWeight: this.transcriptFontWeight,
+          transcriptLineHeight: this.transcriptLineHeight,
           lightCodeTheme: this.lightCodeTheme,
           darkCodeTheme: this.darkCodeTheme,
           showCodeLineNumbers: this.showCodeLineNumbers,

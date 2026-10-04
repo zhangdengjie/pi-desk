@@ -44,6 +44,17 @@
   --font-reading: var(--font-interface-reading);
   --font-code-stack: "Cascadia Code", "SFMono-Regular", Menlo, Consolas, monospace;
   --font-mono: var(--font-code-stack);
+  /* The transcript's own body weight, one step above the inherited Regular by default-free intent:
+     400 keeps today's rendering byte-for-byte, and the three names below are what the setting in
+     Appearance writes to `:root[data-transcript-weight]`. Pi's terminal draws body text heavier than
+     a proportional Regular at the same size, which is most of what reads as "crisp" next to this
+     app - see the measured renders in .pi/plans/2026-10-04.md. */
+  --transcript-font-weight: 400;
+  /* The leading companion to the weight above: 1.7 is Typora's document airiness, 1.6 and 1.5 are
+     the same paragraph read closer to how a terminal packs it. Block margins are deliberately left
+     alone - a tighter line gap plus unchanged gaps between blocks is what keeps a long answer
+     scannable instead of turning it into a wall. */
+  --transcript-line-height: 1.7;
   --font-size-root: 16px;
   --font-size-delta: 0px;
   --font-size-meta: calc(11px + var(--font-size-delta));
@@ -84,9 +95,14 @@
      Two of them because the collapsing border model gives a cell's border priority over the table
      frame at equal width, so --md-cell-rule governs *every* line of a table - frame included -
      and --md-rule is left with the heading hairline, hr and the quote bar. Measured: with 25% and
-     35% declared, all four vertical rules of a rendered table come out #e5e5e5, the cell value. */
+     35% declared, all four vertical rules of a rendered table come out #e5e5e5, the cell value.
+     35% was too weak to do the job this rule exists for: at #e5 on #f8 a wrapped cell loses its
+     column, which is the exact failure the closed grid was added to prevent (the Pi terminal draws
+     the same grid at full border strength and stays readable). 70% puts the line at Typora's own
+     ratio to the page - #dfdfdf on #fff - while staying opaque, so double-painted internal edges
+     cannot drift darker than the frame. */
   --md-rule: color-mix(in srgb, var(--border-strong) 25%, var(--bg-conversation));
-  --md-cell-rule: color-mix(in srgb, var(--border-strong) 35%, var(--bg-conversation));
+  --md-cell-rule: color-mix(in srgb, var(--border-strong) 70%, var(--bg-conversation));
   --md-table-head-bg: color-mix(in srgb, var(--text) 3.5%, transparent);
   --md-table-row-bg: color-mix(in srgb, var(--text) 2%, transparent);
   font-family: var(--font-sans);
@@ -345,6 +361,15 @@
   --font-interface-display: var(--font-mono);
   --font-interface-reading: var(--font-mono);
 }
+
+/* PingFang SC ships Regular / Medium / Semibold, so all three names resolve to a real face instead
+   of leaning on font synthesis (which tokens.css:99 turns off with `font-synthesis: none`). */
+:root[data-transcript-weight="normal"] { --transcript-font-weight: 400; }
+:root[data-transcript-weight="medium"] { --transcript-font-weight: 500; }
+:root[data-transcript-weight="semibold"] { --transcript-font-weight: 600; }
+:root[data-transcript-line-height="relaxed"] { --transcript-line-height: 1.7; }
+:root[data-transcript-line-height="compact"] { --transcript-line-height: 1.6; }
+:root[data-transcript-line-height="tight"] { --transcript-line-height: 1.5; }
 
 :root[data-font-size="12"] { --font-size-delta: -1.5px; }
 :root[data-font-size="13"] { --font-size-delta: -0.75px; }

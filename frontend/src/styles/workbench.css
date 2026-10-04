@@ -854,8 +854,11 @@
    larger than the answer body. Placed before the `.file-markdown-preview` rules below, which
    keep their own, wider document scale. */
 .markdown-body {
-  /* Typora's airiness is mostly this plus the heading margins below. */
-  line-height: 1.7;
+  /* Two transcript-level knobs from Appearance: 正文字重 and 正文行高. Defaults (400 / 1.7) keep the
+     rendering this file shipped with, so both are opt-in. Headings keep their own 700 and <strong>
+     its 700, so the weight only lifts the prose, the list text and the inline code. */
+  line-height: var(--transcript-line-height);
+  font-weight: var(--transcript-font-weight);
 }
 
 .markdown-body :is(h1, h2, h3, h4) {
@@ -896,6 +899,18 @@
 .markdown-body :is(ul, ol, pre, blockquote) + p,
 .markdown-body :is(h1, h2, h3, h4) + p {
   margin-top: 12px;
+}
+
+/* Ordered-list markers. The browser already right-aligns the marker box (measured: five markers of
+   a 1..5 list all end at x=68), but PingFang SC draws "1" as a narrow stroke inside a full-width
+   advance, so its *ink* starts at x=53 while "2"-"5" start at x=49 - a ragged left edge, which is
+   one of the things that reads as "not the terminal". Pi's TUI cannot have that problem: every glyph
+   is one cell wide. Drawing the marker in the mono stack squares the column off (measured: identical
+   extents for all five) without touching list semantics or the text column. `font-variant-numeric:
+   tabular-nums` was tried first and changed nothing - the advances are already equal, it is the glyph
+   shape that differs. */
+.markdown-body ol > li::marker {
+  font-family: var(--font-mono);
 }
 
 .markdown-body code {

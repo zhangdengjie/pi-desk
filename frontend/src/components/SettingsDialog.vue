@@ -245,6 +245,22 @@ function sourceIcon(source: SlashCommand["source"]) {
                   <option v-for="size in [12, 13, 14, 15, 16, 17, 18]" :key="size" :value="size">{{ size }} px</option>
                 </select>
               </label>
+              <label class="setting-row setting-row-select" :class="ui.row">
+                <span><strong>{{ tr("settings.transcriptWeight") }}</strong><small>{{ tr("settings.transcriptWeightHelp") }}</small></span>
+                <select class="appearance-select !w-32 !basis-32" :class="ui.select" v-model="appStore.transcriptFontWeight" :aria-label="tr('settings.transcriptWeight')" @change="appStore.preferencesChanged()">
+                  <option value="normal">{{ tr("settings.weightNormal") }}</option>
+                  <option value="medium">{{ tr("settings.weightMedium") }}</option>
+                  <option value="semibold">{{ tr("settings.weightSemibold") }}</option>
+                </select>
+              </label>
+              <label class="setting-row setting-row-select" :class="ui.row">
+                <span><strong>{{ tr("settings.transcriptLineHeight") }}</strong><small>{{ tr("settings.transcriptLineHeightHelp") }}</small></span>
+                <select class="appearance-select !w-32 !basis-32" :class="ui.select" v-model="appStore.transcriptLineHeight" :aria-label="tr('settings.transcriptLineHeight')" @change="appStore.preferencesChanged()">
+                  <option value="relaxed">{{ tr("settings.lineHeightRelaxed") }}</option>
+                  <option value="compact">{{ tr("settings.lineHeightCompact") }}</option>
+                  <option value="tight">{{ tr("settings.lineHeightTight") }}</option>
+                </select>
+              </label>
             </div>
           </section>
           <section>

@@ -448,6 +448,8 @@ describe("app store", () => {
         language: "en",
         fontFamily: "serif",
         fontSize: 16,
+        transcriptFontWeight: "semibold",
+        transcriptLineHeight: "compact",
         lightCodeTheme: "vitesse-light",
         darkCodeTheme: "catppuccin-mocha",
         showCodeLineNumbers: false,
@@ -470,7 +472,7 @@ describe("app store", () => {
     await store.initialize();
 
     expect(store).toMatchObject({
-      appearance: "dark", language: "en", interfaceFont: "serif", interfaceFontSize: 16,
+      appearance: "dark", language: "en", interfaceFont: "serif", interfaceFontSize: 16, transcriptFontWeight: "semibold", transcriptLineHeight: "compact",
       lightCodeTheme: "vitesse-light", darkCodeTheme: "catppuccin-mocha", showCodeLineNumbers: false, wrapCodeLines: true, codeFontSize: 14,
       offlineMode: false, proxyEnabled: true, proxyURL: "http://127.0.0.1:7890",
       streamingBehavior: "followUp", sidebarCollapsed: true, sidebarWidth: 344,
@@ -479,7 +481,7 @@ describe("app store", () => {
     await store.persistDesktopState();
     expect(mocks.saveDesktopState).toHaveBeenCalledWith(expect.objectContaining({
       preferences: expect.objectContaining({
-        proxyUrl: "http://127.0.0.1:7890", streamingBehavior: "followUp", fontFamily: "serif", fontSize: 16,
+        proxyUrl: "http://127.0.0.1:7890", streamingBehavior: "followUp", fontFamily: "serif", fontSize: 16, transcriptFontWeight: "semibold", transcriptLineHeight: "compact",
         lightCodeTheme: "vitesse-light", darkCodeTheme: "catppuccin-mocha", showCodeLineNumbers: false, wrapCodeLines: true, codeFontSize: 14,
         sidebarWidth: 344, inspectorOpen: false, inspectorWidth: 468, workspaceApplication: "vscode",
       }),
