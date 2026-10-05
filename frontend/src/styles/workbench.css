@@ -219,20 +219,11 @@
   padding-left: 0;
 }
 
-/* Collapsed on macOS: the 48px rail cannot clear the traffic lights, so the mark leaves.
-   This only works while `AppTopbar.vue` keeps the mark free of Tailwind display utilities —
-   `@import "tailwindcss" important` puts every utility in `@layer utilities` with `!important`,
-   and per CSS Cascade an unlayered `!important` ranks *below* a layered one, so adding
-   `!important` here would still lose. Removing the utility is the only fix. */
-.app-shell.is-mac.is-sidebar-collapsed .topbar-brand-mark {
-  display: none;
-}
-
+/* Collapsed on macOS: the 48px rail cannot clear the traffic lights, so the brand column gives up
+   its left padding. The "Pi" mark that used to sit here was removed in 3271ac4 along with the
+   back/forward buttons - the hide rules and the history state that served them are gone too, and
+   `AppTopbar.test.ts` no longer navigates a history that does not exist. */
 .app-shell.is-sidebar-collapsed .topbar-brand strong {
-  display: none;
-}
-
-.app-shell.is-sidebar-collapsed .topbar-history {
   display: none;
 }
 
@@ -253,56 +244,13 @@
   padding: 0;
 }
 
-/* Same cascade trap as `.topbar-brand-mark`: every hide rule below lives in an unlayered
-   stylesheet, so it can only win while the element carries no Tailwind display utility
-   (`tailwind.css` imports the framework `important`). Declaring the display here keeps
+/* Same cascade trap as every hide below: these rules live in an unlayered stylesheet, so they can
+   only win while the element carries no Tailwind display utility (`tailwind.css` imports the
+   framework `important`). Declaring the display here keeps
    `max-width: 520px / 760px / 1050px` hiding reachable for these controls. */
 .inspector-toggle {
   display: inline-grid;
   place-items: center;
-}
-
-.topbar-history {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.topbar-history-button {
-  display: inline-grid;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-  place-items: center;
-}
-
-.topbar-history-button:hover:not(:disabled) {
-  background: var(--bg-hover);
-}
-
-.topbar-history-button:disabled {
-  color: var(--text-muted);
-  cursor: default;
-  opacity: 0.45;
-}
-
-.topbar-brand-mark {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 24px;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: var(--text);
-  color: var(--bg-workspace);
-  font-size: var(--font-size-meta);
-  font-weight: 700;
-  letter-spacing: -0.025em;
 }
 
 .topbar-task {
@@ -1874,7 +1822,6 @@
     display: none;
   }
 
-  .topbar-history,
   .topbar-sidebar-toggle {
     display: none;
   }

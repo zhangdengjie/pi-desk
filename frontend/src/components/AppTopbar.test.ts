@@ -106,7 +106,7 @@ describe("AppTopbar", () => {
     expect(wrapper.find(".inspector-toggle").exists()).toBe(true);
   });
 
-  it("navigates backward and forward through visited tasks", async () => {
+  it("renders no navigation chrome for a history nothing reads", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
@@ -119,18 +119,16 @@ describe("AppTopbar", () => {
     });
     const wrapper = mount(AppTopbar, { global: { plugins: [pinia] } });
 
+    // 3271ac4 removed the "Pi" mark and the back/forward buttons. The stack behind them
+    // (`navigationHistory` / `navigationIndex` / `restoringNavigation`) had no reader left and went
+    // with it; this test used to drive buttons that no longer exist, which is why the suite was red
+    // for a removal nobody disputed.
     expect(wrapper.find(".topbar-brand strong").exists()).toBe(false);
-    expect(wrapper.get('[aria-label="Back"]').attributes("disabled")).toBeDefined();
-    store.selectThread("thread-2");
-    await wrapper.vm.$nextTick();
-    await wrapper.get('[aria-label="Back"]').trigger("click");
-    expect(store.activeThreadId).toBe("thread-1");
-    await wrapper.get('[aria-label="Forward"]').trigger("click");
-    expect(store.activeThreadId).toBe("thread-2");
-    store.sidebarCollapsed = true;
-    await wrapper.vm.$nextTick();
     expect(wrapper.find('[aria-label="Back"]').exists()).toBe(false);
     expect(wrapper.find('[aria-label="Forward"]').exists()).toBe(false);
+    store.selectThread("thread-2");
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('[aria-label="Back"]').exists()).toBe(false);
   });
 
   it("shows the scheduled-task context without repository controls", () => {

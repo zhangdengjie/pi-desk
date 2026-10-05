@@ -68,19 +68,16 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.app-shell\.is-mac\.is-sidebar-collapsed \.topbar-brand\s*{[^}]*padding-left:\s*0/s);
   });
 
-  it("hides the collapsed macOS brand mark through the stylesheet, not through !important", async () => {
+  it("keeps the removed topbar chrome out of both the template and the stylesheet", async () => {
     const css = await workbenchText();
     const topbar = await topbarText();
-    // `styles/tailwind.css` imports the framework `important`, so every display utility ships as
-    // `display: … !important` inside `@layer utilities`. CSS Cascade ranks an unlayered
-    // `!important` *below* a layered one, which is why the old `display: none !important` here
-    // never took effect: the span has to stop carrying a display utility instead.
-    const markClass = topbar.match(/<span class="topbar-brand-mark([^"]*)"/);
-    expect(markClass, "topbar-brand-mark span not found in AppTopbar.vue").not.toBeNull();
-    expect(markClass![1].trim()).toBe("");
-    expect(css).toMatch(/\.app-shell\.is-mac\.is-sidebar-collapsed \.topbar-brand-mark\s*{\s*display:\s*none/s);
-    // Geometry the utilities used to own now lives here, with the same rendered values.
-    expect(css).toMatch(/\.topbar-brand-mark\s*{[^}]*display:\s*grid[^}]*width:\s*24px[^}]*border-radius:\s*var\(--radius-md\)[^}]*letter-spacing:\s*-0\.025em/s);
+    // 3271ac4 deleted the "Pi" mark and the back/forward buttons from the template but left the rules
+    // that served them - and left a test asserting the span was still there, which is why this suite
+    // was red. The cascade trap this test used to demonstrate (a Tailwind display utility on the
+    // element would beat any unlayered `display: none`, because `tailwind.css` imports the framework
+    // `important`) is still covered by the next test, against the elements that do exist.
+    expect(topbar).not.toMatch(/topbar-brand-mark|topbar-history/);
+    expect(css).not.toMatch(/\.topbar-brand-mark|\.topbar-history/);
   });
 
   it("leaves display utilities off every element the workbench stylesheet hides", async () => {
@@ -239,6 +236,19 @@ describe("responsive workbench layout", () => {
     // The file preview indents 24px rather than 22px, so its column has to follow or the number lands
     // 2px outside the block edge there.
     expect(css).toMatch(/\.file-markdown-preview :is\(ul, ol\)\s*{[^}]*--md-li-indent:\s*24px/s);
+  });
+
+  it("keeps the sidebar's text on the font-size ladder, not on rem utilities", async () => {
+    const sidebar = await vueText("src/components/AppSidebar.vue");
+    // `html { font-size: var(--font-size-root) }` is a flat 16px and `--font-size-delta` never touches
+    // it, so `text-sm` / `text-xs` stay 14px / 12px no matter where the reader puts Settings > 外观 >
+    // 字体大小. The thread rows were already on the ladder while their own group headers and the empty
+    // states were not - which is exactly how the list drifts out of step with 活跃会话 when the setting
+    // moves.
+    expect(sidebar).not.toMatch(/[^-]\btext-(xs|sm|base|lg|xl)\b/);
+    // The swap is size-neutral at the default setting: body = 14px + delta, label = 12px + delta.
+    expect(sidebar).toMatch(/text-\[var\(--font-size-body\)\]/);
+    expect(sidebar).toMatch(/text-\[var\(--font-size-label\)\]/);
   });
 
   it("moves the conversation search popover clear of the inspector overlay", async () => {

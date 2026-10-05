@@ -2,7 +2,7 @@
 import { ui } from "../ui/classes";
 import { CalendarClock, Check, ChevronDown, ChevronRight, FolderGit2, Info, PanelLeftClose, PanelRightOpen } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { type AppPage, useAppStore } from "../stores/app";
+import { useAppStore } from "../stores/app";
 import { tr } from "../i18n";
 import { threadTooltip } from "../utils/threadLabel";
 
@@ -23,27 +23,6 @@ const workspaceApplicationDisabled = computed(() => !activeWorkspaceApplication.
 const workspaceApplicationTitle = computed(() => workspaceApplicationDisabled.value
   ? tr("topbar.trustToOpen")
   : tr("topbar.openWithApplication", { application: activeWorkspaceApplication.value?.name ?? "" }));
-type NavigationTarget = { page: AppPage; threadId: string };
-const navigationHistory = ref<NavigationTarget[]>([]);
-const navigationIndex = ref(-1);
-let restoringNavigation = false;
-const currentNavigationTarget = computed<NavigationTarget>(() => ({ page: appStore.activePage, threadId: appStore.activeThreadId }));
-
-function sameNavigationTarget(left: NavigationTarget | undefined, right: NavigationTarget): boolean {
-  return left?.page === right.page && left.threadId === right.threadId;
-}
-
-watch(currentNavigationTarget, (target) => {
-  if (target.page === "task" && !target.threadId) return;
-  if (restoringNavigation) {
-    restoringNavigation = false;
-    return;
-  }
-  if (sameNavigationTarget(navigationHistory.value[navigationIndex.value], target)) return;
-  navigationHistory.value = [...navigationHistory.value.slice(0, navigationIndex.value + 1), target];
-  navigationIndex.value = navigationHistory.value.length - 1;
-}, { immediate: true });
-
 watch(() => appStore.activeThreadId, () => {
   workspaceApplicationMenuOpen.value = false;
   appStore.workspaceApplicationError = "";
@@ -100,10 +79,11 @@ onBeforeUnmount(() => {
     :style="{ '--sidebar-width': `${appStore.sidebarWidth}px` }"
   >
     <div class="topbar-brand flex min-w-0 items-center gap-2 border-r-0 bg-[var(--bg-workspace)]" aria-label="Pi Desk">
-      <!-- No Tailwind layout utilities here: `tailwind.css` imports the framework `important`,
-           so a `grid`/`flex` class would emit `display: grid !important` inside
-           `@layer utilities` and no rule in `workbench.css` could hide the mark again.
-           Geometry and colour live in `styles/workbench.css` (`.topbar-brand-mark`). -->
+      <!-- No Tailwind layout utilities on the brand column's children: `tailwind.css` imports the
+           framework `important`, so a `grid`/`flex` class would emit `display: … !important` inside
+           `@layer utilities`, and per CSS Cascade an unlayered `!important` ranks *below* a layered
+           one - no rule in `workbench.css` could hide such an element again. Geometry and colour for
+           this column live in `styles/workbench.css`. -->
       <button
         v-if="!appStore.sidebarCollapsed"
         class="icon-button topbar-sidebar-toggle ml-auto size-7 shrink-0 place-items-center rounded-md border-0 bg-transparent text-[var(--text-muted)] transition-colors duration-150 ease-out hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--focus)]"
