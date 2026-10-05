@@ -326,6 +326,15 @@ describe("responsive workbench layout", () => {
     // 26px colour well survives is by not matching that selector: 10px of inline padding each side
     // left a 6px content box, and WebKit painted the swatch inside it - a vertical lens.
     expect(classes).toContain("input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=range])");
+    // The same trick, one rung smaller: the hex field wants `--font-size-label` (12px) while every
+    // other settings input stays on `--font-size-body`. Only the `!text-` utility excludes it, so the
+    // 34px box, the padding and the radius still come from the shared rule.
+    expect(classes).toContain(":not(.appearance-color-hex)]:!text-[var(--font-size-body)]");
+    expect(classes).toContain("]:!h-[34px]");
+    const layout = await textAt("src/styles/layout.css");
+    const hex = layout.match(/\.setting-row \.appearance-color-hex\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(hex).toMatch(/font-size:\s*var\(--font-size-label\)/);
+    expect(hex).toMatch(/height:\s*34px/);
   });
 
   it("moves the conversation search popover clear of the inspector overlay", async () => {

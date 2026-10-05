@@ -8262,7 +8262,11 @@ article.mcp-server-row {
   background: var(--bg-app);
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: var(--font-size-body);
+  /* One rung down from the rest of the controls: the field holds `#rrggbb`, and at 14px mono that is
+     heavier than the row it sits in. It only takes effect because `ui.settingsControls` now excludes
+     this class from its `!text-` utility - an `!important` utility in `@layer utilities` cannot be
+     answered from here (AGENTS §4.3). The geometry utilities still apply, so the box is unchanged. */
+  font-size: var(--font-size-label);
   text-transform: lowercase;
 }
 
