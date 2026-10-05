@@ -231,6 +231,7 @@ type DesktopPreferences struct {
 	FontSize             int    `json:"fontSize"`
 	TranscriptFontWeight string `json:"transcriptFontWeight,omitempty"`
 	TranscriptLineHeight string `json:"transcriptLineHeight,omitempty"`
+	TranscriptTone       string `json:"transcriptTone,omitempty"`
 	LightCodeTheme       string `json:"lightCodeTheme,omitempty"`
 	DarkCodeTheme        string `json:"darkCodeTheme,omitempty"`
 	ShowCodeLineNumbers  bool   `json:"showCodeLineNumbers,omitempty"`

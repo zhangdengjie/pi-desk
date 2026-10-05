@@ -95,6 +95,10 @@ export type TranscriptFontWeight = "normal" | "medium" | "semibold";
 // The companion knob: the terminal packs lines at ~1.2 while Typora's airiness here is 1.7, so a
 // reader who lifts the weight usually wants the leading tighter too. --transcript-line-height.
 export type TranscriptLineHeight = "relaxed" | "compact" | "tight";
+// The third knob over the surface the answer sits on. A tint mixed into the theme's own
+// `--bg-conversation` rather than a colour of its own, so one value covers light, dark and "system"
+// and the derived tokens (markdown rules, table zebra) follow it for free. See tokens.css.
+export type TranscriptTone = "default" | "sepia" | "mist" | "sage" | "stone";
 export const CODE_THEME_OPTIONS = [
   ["github-light", "GitHub Light"], ["github-dark", "GitHub Dark"],
   ["vitesse-light", "Vitesse Light"], ["vitesse-dark", "Vitesse Dark"],
@@ -1069,6 +1073,7 @@ export const useAppStore = defineStore("app", {
     interfaceFontSize: 14,
     transcriptFontWeight: "normal" as TranscriptFontWeight,
     transcriptLineHeight: "relaxed" as TranscriptLineHeight,
+    transcriptTone: "default" as TranscriptTone,
     lightCodeTheme: "github-light" as CodeTheme,
     darkCodeTheme: "github-dark" as CodeTheme,
     showCodeLineNumbers: true,
@@ -4105,6 +4110,9 @@ export const useAppStore = defineStore("app", {
       this.transcriptLineHeight = (["relaxed", "compact", "tight"] as const).includes(desktop.preferences.transcriptLineHeight as TranscriptLineHeight)
         ? desktop.preferences.transcriptLineHeight as TranscriptLineHeight
         : "relaxed";
+      this.transcriptTone = (["default", "sepia", "mist", "sage", "stone"] as const).includes(desktop.preferences.transcriptTone as TranscriptTone)
+        ? desktop.preferences.transcriptTone as TranscriptTone
+        : "default";
       const themes = CODE_THEME_OPTIONS.map(([value]) => value);
       const hasCodePreferences = themes.includes(desktop.preferences.lightCodeTheme as CodeTheme)
         || themes.includes(desktop.preferences.darkCodeTheme as CodeTheme)
@@ -4405,6 +4413,7 @@ export const useAppStore = defineStore("app", {
           fontSize: this.interfaceFontSize,
           transcriptFontWeight: this.transcriptFontWeight,
           transcriptLineHeight: this.transcriptLineHeight,
+          transcriptTone: this.transcriptTone,
           lightCodeTheme: this.lightCodeTheme,
           darkCodeTheme: this.darkCodeTheme,
           showCodeLineNumbers: this.showCodeLineNumbers,

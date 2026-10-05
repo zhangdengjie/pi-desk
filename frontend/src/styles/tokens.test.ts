@@ -26,7 +26,13 @@ describe("teleported dialog theme inheritance", () => {
     expect(tokens).toContain(":root[data-theme=\"light\"],\n.app-shell[data-theme=\"light\"]");
     expect(tokens).toContain(":root[data-theme=\"system\"],\n  .app-shell[data-theme=\"system\"]");
     expect(tokens).toContain("--bg-settings: #f8f8f8");
-    expect(tokens).toContain("--bg-conversation: #f8f8f8");
+    // Not a literal any more: the transcript's ground is the theme's own colour plus an optional tint
+    // (Settings > Appearance > Answer background), mixed in tokens.css so one value covers light, dark
+    // and "system". What this test owns is that the declaration still lives on the root selector, so a
+    // teleported dialog inherits it.
+    expect(tokens).toMatch(/--bg-conversation: color-mix\(in oklab, #f8f8f8 calc\(100% - var\(--transcript-tint-strength, 0%\)\), var\(--transcript-tint, transparent\)\)/);
+    // And the mix has to be an identity when no tone is chosen, or the default appearance would move.
+    expect(tokens).toMatch(/:root\s*{\s*--transcript-tint: transparent;\s*--transcript-tint-strength: 0%;/);
     expect(tokens).toContain("--bg-card: #ffffff");
     expect(tokens).toContain("--bg-composer: var(--bg-card)");
   });

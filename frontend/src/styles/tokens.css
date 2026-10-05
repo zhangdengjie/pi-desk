@@ -113,7 +113,7 @@
   --bg-card: var(--bg-raised);
   --bg-sidebar: oklch(13.5% 0.006 255);
   --bg-workspace: oklch(18% 0.006 255);
-  --bg-conversation: var(--bg-workspace);
+  --bg-conversation: color-mix(in oklab, var(--bg-workspace) calc(100% - var(--transcript-tint-strength, 0%)), var(--transcript-tint, transparent));
   --bg-raised: oklch(21% 0.007 255);
   --bg-hover: oklch(24.5% 0.007 255);
   --bg-active: oklch(28% 0.008 255);
@@ -371,6 +371,41 @@
 :root[data-transcript-line-height="compact"] { --transcript-line-height: 1.6; }
 :root[data-transcript-line-height="tight"] { --transcript-line-height: 1.5; }
 
+/* The transcript's own ground, as a tint rather than a colour.
+
+   A reader asking for "a background colour setting" wants the answer area to feel warmer or cooler,
+   not to be painted an arbitrary hex that the rest of the theme then contradicts: every token derived
+   from `--bg-conversation` (the markdown rules, the table's zebra and cell rules) follows it, and
+   `--text` stays the theme's own. Mixing a hue into whatever the active theme painted there gives
+   exactly that, and it is why the values below are (tint, strength) pairs rather than eight
+   hand-picked light/dark hexes - one line per tone covers light, dark, and "system", and a future
+   theme cannot fall out of step with it. At 0% strength the mix is the identity, which is what
+   `default` means, so the shipped appearance does not move. */
+:root {
+  --transcript-tint: transparent;
+  --transcript-tint-strength: 0%;
+}
+
+:root[data-transcript-tone="sepia"] {
+  --transcript-tint: #c98b3a;
+  --transcript-tint-strength: 11%;
+}
+
+:root[data-transcript-tone="mist"] {
+  --transcript-tint: #4a86b8;
+  --transcript-tint-strength: 11%;
+}
+
+:root[data-transcript-tone="sage"] {
+  --transcript-tint: #5c9a5e;
+  --transcript-tint-strength: 11%;
+}
+
+:root[data-transcript-tone="stone"] {
+  --transcript-tint: #8a8a8a;
+  --transcript-tint-strength: 14%;
+}
+
 :root[data-font-size="12"] { --font-size-delta: -1.5px; }
 :root[data-font-size="13"] { --font-size-delta: -0.75px; }
 :root[data-font-size="14"] { --font-size-delta: 0px; }
@@ -387,7 +422,7 @@
   --bg-card: #ffffff;
   --bg-sidebar: oklch(95.5% 0.005 255);
   --bg-workspace: oklch(99% 0.003 85);
-  --bg-conversation: #f8f8f8;
+  --bg-conversation: color-mix(in oklab, #f8f8f8 calc(100% - var(--transcript-tint-strength, 0%)), var(--transcript-tint, transparent));
   --bg-raised: oklch(99% 0.003 85);
   --bg-hover: oklch(94.5% 0.006 255);
   --bg-active: oklch(91.5% 0.007 255);
@@ -440,7 +475,7 @@
     --bg-card: #ffffff;
     --bg-sidebar: oklch(95.5% 0.005 255);
     --bg-workspace: oklch(99% 0.003 85);
-    --bg-conversation: #f8f8f8;
+    --bg-conversation: color-mix(in oklab, #f8f8f8 calc(100% - var(--transcript-tint-strength, 0%)), var(--transcript-tint, transparent));
     --bg-raised: oklch(99% 0.003 85);
     --bg-hover: oklch(94.5% 0.006 255);
     --bg-active: oklch(91.5% 0.007 255);

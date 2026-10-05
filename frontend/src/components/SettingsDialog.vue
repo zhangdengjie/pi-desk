@@ -261,6 +261,16 @@ function sourceIcon(source: SlashCommand["source"]) {
                   <option value="tight">{{ tr("settings.lineHeightTight") }}</option>
                 </select>
               </label>
+              <label class="setting-row setting-row-select" :class="ui.row">
+                <span><strong>{{ tr("settings.transcriptTone") }}</strong><small>{{ tr("settings.transcriptToneHelp") }}</small></span>
+                <select class="appearance-select !w-32 !basis-32" :class="ui.select" v-model="appStore.transcriptTone" :aria-label="tr('settings.transcriptTone')" @change="appStore.preferencesChanged()">
+                  <option value="default">{{ tr("settings.toneDefault") }}</option>
+                  <option value="sepia">{{ tr("settings.toneSepia") }}</option>
+                  <option value="mist">{{ tr("settings.toneMist") }}</option>
+                  <option value="sage">{{ tr("settings.toneSage") }}</option>
+                  <option value="stone">{{ tr("settings.toneStone") }}</option>
+                </select>
+              </label>
             </div>
           </section>
           <section>

@@ -86,6 +86,10 @@ function syncDocumentTranscriptLineHeight(height: string) {
   document.documentElement.dataset.transcriptLineHeight = height;
 }
 
+function syncDocumentTranscriptTone(tone: string) {
+  document.documentElement.dataset.transcriptTone = tone;
+}
+
 async function initializeDesktop() {
   await appStore.initialize();
   appStore.startScheduledTaskScheduler();
@@ -121,6 +125,7 @@ watch(() => appStore.interfaceFont, syncDocumentFont, { immediate: true });
 watch(() => appStore.interfaceFontSize, syncDocumentFontSize, { immediate: true });
 watch(() => appStore.transcriptFontWeight, syncDocumentTranscriptWeight, { immediate: true });
 watch(() => appStore.transcriptLineHeight, syncDocumentTranscriptLineHeight, { immediate: true });
+watch(() => appStore.transcriptTone, syncDocumentTranscriptTone, { immediate: true });
 </script>
 
 <template>

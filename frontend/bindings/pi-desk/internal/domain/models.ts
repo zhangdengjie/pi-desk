@@ -128,6 +128,7 @@ export interface DesktopPreferences {
     "fontSize": number;
     "transcriptFontWeight"?: string;
     "transcriptLineHeight"?: string;
+    "transcriptTone"?: string;
     "lightCodeTheme"?: string;
     "darkCodeTheme"?: string;
     "showCodeLineNumbers"?: boolean;
