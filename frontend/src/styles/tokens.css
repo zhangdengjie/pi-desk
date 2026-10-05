@@ -419,13 +419,18 @@
   --transcript-tint-strength: 0%;
 }
 
-:root[data-font-size="12"] { --font-size-delta: -1.5px; }
-:root[data-font-size="13"] { --font-size-delta: -0.75px; }
+/* Linear: the number in Settings > 外观 > 字体大小 is the pixel size the chrome's body rung renders at
+   (14 -> 0, 12 -> -2). It used to be compressed - 12 was -1.5px, 13 was -0.75px, 15..18 stepped by 0.5 -
+   so picking 12 drew the transcript at 13px and the label was a notch name, not a size. The reading
+   surface keeps its deliberate +0.5px over the chrome (`.markdown-body` is 14.5px-based); everything
+   else now reads true. */
+:root[data-font-size="12"] { --font-size-delta: -2px; }
+:root[data-font-size="13"] { --font-size-delta: -1px; }
 :root[data-font-size="14"] { --font-size-delta: 0px; }
-:root[data-font-size="15"] { --font-size-delta: 0.5px; }
-:root[data-font-size="16"] { --font-size-delta: 1px; }
-:root[data-font-size="17"] { --font-size-delta: 1.5px; }
-:root[data-font-size="18"] { --font-size-delta: 2px; }
+:root[data-font-size="15"] { --font-size-delta: 1px; }
+:root[data-font-size="16"] { --font-size-delta: 2px; }
+:root[data-font-size="17"] { --font-size-delta: 3px; }
+:root[data-font-size="18"] { --font-size-delta: 4px; }
 
 :root[data-theme="light"],
 .app-shell[data-theme="light"] {

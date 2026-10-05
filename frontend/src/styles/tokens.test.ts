@@ -67,8 +67,8 @@ describe("teleported dialog theme inheritance", () => {
     expect(tokens).toMatch(/--font-interface-custom:\s*var\(--font-interface-shipped\)/);
     expect(tokens).toContain(':root[data-font-size="12"]');
     expect(tokens).toContain(':root[data-font-size="18"]');
-    expect(tokens).toContain("--font-size-delta: -1.5px");
-    expect(tokens).toContain("--font-size-delta: 2px");
+    expect(tokens).toContain("--font-size-delta: -2px");
+    expect(tokens).toContain("--font-size-delta: 4px");
     expect(tokens).toContain("--font-size-root: 16px");
     expect(tokens).toContain("--font-size-meta: calc(11px + var(--font-size-delta))");
     expect(tokens).toContain("--font-size-control: calc(13px + var(--font-size-delta))");
