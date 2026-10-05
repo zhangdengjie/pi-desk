@@ -8219,14 +8219,43 @@ article.mcp-server-row {
 }
 
 .setting-row .transcript-tint-swatch {
-  width: 34px;
-  height: 24px;
-  flex: 0 0 34px;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
   padding: 0;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
   background: transparent;
   cursor: pointer;
+  overflow: hidden;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+/* The native colour well is a rounded rectangle and CSS on the element cannot round it: WebKit paints
+   the swatch itself, so the circle has to be drawn by the two pseudo-elements it exposes. Without
+   `appearance: none` the well keeps its own bezel and the border-radius clips to a squircle. */
+.setting-row .transcript-tint-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.setting-row .transcript-tint-swatch::-webkit-color-swatch {
+  border: none;
+  border-radius: 50%;
+}
+
+.setting-row .transcript-tint-hex {
+  width: 78px;
+  height: 26px;
+  flex: 0 0 78px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  text-transform: lowercase;
 }
 
 .setting-row .transcript-tint-range {
@@ -8235,11 +8264,6 @@ article.mcp-server-row {
   flex: 0 0 104px;
   accent-color: var(--text-secondary);
   cursor: pointer;
-}
-
-.setting-row .transcript-tint-range:disabled {
-  cursor: default;
-  opacity: .45;
 }
 
 .transcript-tint-value {
@@ -8280,7 +8304,7 @@ article.mcp-server-row {
   padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 50%;
-  background: color-mix(in oklab, var(--bg-conversation) calc(100% - var(--transcript-tint-strength, 11%)), var(--tint-swatch));
+  background: color-mix(in oklab, var(--bg-conversation) calc(100% - var(--transcript-tint-strength, 40%)), var(--tint-swatch));
   cursor: pointer;
 }
 

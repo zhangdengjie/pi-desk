@@ -1,6 +1,7 @@
 import tokensFile from "./tokens.css?inline";
 import tailwindFile from "./tailwind.css?inline";
 import { describe, expect, it } from "vitest";
+import { TRANSCRIPT_TINT_ANCHOR } from "../utils/transcriptTint";
 
 async function tokensText(): Promise<string> {
   if (tokensFile.includes("--bg-app")) return tokensFile.replace(/\r\n?/g, "\n");
@@ -35,6 +36,18 @@ describe("teleported dialog theme inheritance", () => {
     expect(tokens).toMatch(/:root\s*{\s*--transcript-tint: transparent;\s*--transcript-tint-strength: 0%;/);
     expect(tokens).toContain("--bg-card: #ffffff");
     expect(tokens).toContain("--bg-composer: var(--bg-card)");
+  });
+
+  it("keeps the tint anchor the stylesheet declares equal to the one TypeScript uses", async () => {
+    const tokens = await tokensText();
+    // App.vue anchors the reader's pick to a lightness constant instead of reading
+    // `--transcript-tint-anchor` off the element, because the tint watch and the theme watch fire on
+    // the same appearance change and whichever runs first would see the old theme. That is only safe
+    // while the two copies agree, so they are pinned together here.
+    expect(tokens).toContain(`--transcript-tint-anchor: ${TRANSCRIPT_TINT_ANCHOR.light};`);
+    expect(tokens).toContain(`--transcript-tint-anchor: ${TRANSCRIPT_TINT_ANCHOR.dark};`);
+    // The light block and the system-light media block must not drift apart.
+    expect(tokens.match(/--transcript-tint-anchor: 0\.9871;/g)).toHaveLength(2);
   });
 
   it("publishes global font-family and root-size preference tokens", async () => {

@@ -19,6 +19,7 @@ import WindowControls from "./components/WindowControls.vue";
 import { tr } from "./i18n";
 import { onBrowserEvent } from "./services/browser";
 import { installGhostSelectionGuard } from "./services/ghostSelectionGuard";
+import { anchoredTranscriptTint, TRANSCRIPT_TINT_ANCHOR } from "./utils/transcriptTint";
 import {
   MAX_INSPECTOR_WIDTH,
   MAX_SIDEBAR_WIDTH,
@@ -40,11 +41,10 @@ let disposeGhostSelectionGuard: (() => void) | undefined;
 function syncSystemColorScheme(event: MediaQueryListEvent) {
   systemDark.value = event.matches;
 }
-const codeTheme = computed(() => (
+const darkSurface = computed(() => (
   appStore.appearance === "dark" || (appStore.appearance === "system" && systemDark.value)
-    ? appStore.darkCodeTheme
-    : appStore.lightCodeTheme
 ));
+const codeTheme = computed(() => (darkSurface.value ? appStore.darkCodeTheme : appStore.lightCodeTheme));
 const windowTitle = computed(() => appStore.activePage === "scheduledTasks"
   ? tr("scheduledTasks.title")
   : appStore.activeExtensionTitle || appStore.activeThread?.title || "Pi Desk");
@@ -86,18 +86,20 @@ function syncDocumentTranscriptLineHeight(height: string) {
   document.documentElement.dataset.transcriptLineHeight = height;
 }
 
-// The tint is written as two inline custom properties rather than a `data-*` attribute: the reader
-// picks an arbitrary colour now, so there is no closed set of values for a stylesheet to enumerate.
-// The mix itself lives in tokens.css (`--bg-conversation`), whose defaults are the identity - so
-// removing both properties, which is what "follow the theme" means, restores the shipped appearance.
-function syncDocumentTranscriptTint(tint: string, strength: number) {
+// The reader's pick is anchored to the surface it is about to tint, then written onto the root as two
+// custom properties - an arbitrary colour has no closed set of values for a stylesheet to enumerate,
+// and removing both (the 跟随主题 state) falls back to the identity mix in tokens.css.
+// The anchor is a constant mirrored from tokens.css rather than read back from it: this watch fires on
+// the same appearance change as `syncDocumentTheme`, and whichever runs first would otherwise be
+// asking the *old* theme what its lightness is. `tokens.test.ts` pins the two against each other.
+function syncDocumentTranscriptTint(tint: string, strength: number, dark: boolean) {
   const style = document.documentElement.style;
   if (!tint) {
     style.removeProperty("--transcript-tint");
     style.removeProperty("--transcript-tint-strength");
     return;
   }
-  style.setProperty("--transcript-tint", tint);
+  style.setProperty("--transcript-tint", anchoredTranscriptTint(tint, dark ? TRANSCRIPT_TINT_ANCHOR.dark : TRANSCRIPT_TINT_ANCHOR.light) || tint);
   style.setProperty("--transcript-tint-strength", `${strength}%`);
 }
 
@@ -136,7 +138,7 @@ watch(() => appStore.interfaceFont, syncDocumentFont, { immediate: true });
 watch(() => appStore.interfaceFontSize, syncDocumentFontSize, { immediate: true });
 watch(() => appStore.transcriptFontWeight, syncDocumentTranscriptWeight, { immediate: true });
 watch(() => appStore.transcriptLineHeight, syncDocumentTranscriptLineHeight, { immediate: true });
-watch(() => [appStore.transcriptTint, appStore.transcriptTintStrength] as const, ([tint, strength]) => syncDocumentTranscriptTint(tint, strength), { immediate: true });
+watch(() => [appStore.transcriptTint, appStore.transcriptTintStrength, darkSurface.value] as const, ([tint, strength, dark]) => syncDocumentTranscriptTint(tint, strength, dark), { immediate: true });
 </script>
 
 <template>

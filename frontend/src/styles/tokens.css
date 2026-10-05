@@ -114,6 +114,10 @@
   --bg-sidebar: oklch(13.5% 0.006 255);
   --bg-workspace: oklch(18% 0.006 255);
   --bg-conversation: color-mix(in oklab, var(--bg-workspace) calc(100% - var(--transcript-tint-strength, 0%)), var(--transcript-tint, transparent));
+  /* The lightness the reader's pick is re-anchored to before it reaches the mix above. Mirrored in
+     `utils/transcriptTint.ts` (which does the anchoring) and pinned by a contract test in
+     `tokens.test.ts`, because reading it back from here at runtime would race the theme watch. */
+  --transcript-tint-anchor: 0.18;
   --bg-raised: oklch(21% 0.007 255);
   --bg-hover: oklch(24.5% 0.007 255);
   --bg-active: oklch(28% 0.008 255);
@@ -380,10 +384,12 @@
    exactly that, so one value covers light, dark and "system" and no tone can produce dark-on-dark.
 
    The two properties below are the identity state, and they are what the reader's pick overrides -
-   `App.vue` writes them onto the root as inline custom properties, because an arbitrary colour picker
-   has no closed set of values for a stylesheet to enumerate. The picker's ceiling is 25% for the same
-   reason: at 25% of even the darkest hex the light theme's ground stays above oklch(60%), which keeps
-   `--text`'s contrast in the readable band, and the mirror holds in dark. */
+   `App.vue` writes them onto the root, as an *anchored* colour: the pick's hue and a bounded chroma,
+   but the theme's own lightness (see `utils/transcriptTint.ts`, which does that maths and why). That
+   is what lets 强度 run to 100% without a reader being able to pick a ground their own `--text`
+   stops contrasting with - measured worst case is 9.5:1 in light, 10.3:1 in dark at full strength on
+   the eight most extreme picks, against 4.5:1 for AA. Removing both properties - the 跟随主题 state -
+   restores the shipped appearance. */
 :root {
   --transcript-tint: transparent;
   --transcript-tint-strength: 0%;
@@ -406,6 +412,7 @@
   --bg-sidebar: oklch(95.5% 0.005 255);
   --bg-workspace: oklch(99% 0.003 85);
   --bg-conversation: color-mix(in oklab, #f8f8f8 calc(100% - var(--transcript-tint-strength, 0%)), var(--transcript-tint, transparent));
+  --transcript-tint-anchor: 0.9871;
   --bg-raised: oklch(99% 0.003 85);
   --bg-hover: oklch(94.5% 0.006 255);
   --bg-active: oklch(91.5% 0.007 255);
@@ -459,6 +466,7 @@
     --bg-sidebar: oklch(95.5% 0.005 255);
     --bg-workspace: oklch(99% 0.003 85);
     --bg-conversation: color-mix(in oklab, #f8f8f8 calc(100% - var(--transcript-tint-strength, 0%)), var(--transcript-tint, transparent));
+    --transcript-tint-anchor: 0.9871;
     --bg-raised: oklch(99% 0.003 85);
     --bg-hover: oklch(94.5% 0.006 255);
     --bg-active: oklch(91.5% 0.007 255);

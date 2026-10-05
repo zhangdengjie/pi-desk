@@ -99,8 +99,8 @@ export type TranscriptLineHeight = "relaxed" | "compact" | "tight";
 // `--bg-conversation` (see tokens.css for why a mix and not a colour), plus how much of it. The cap is
 // exported because the settings range and the load-time clamp have to agree - past it the reader picks
 // a ground their own `--text` stops contrasting with.
-export const TRANSCRIPT_TINT_MAX_STRENGTH = 25;
-export const TRANSCRIPT_TINT_DEFAULT_STRENGTH = 11;
+export const TRANSCRIPT_TINT_MAX_STRENGTH = 100;
+export const TRANSCRIPT_TINT_DEFAULT_STRENGTH = 40;
 export const CODE_THEME_OPTIONS = [
   ["github-light", "GitHub Light"], ["github-dark", "GitHub Dark"],
   ["vitesse-light", "Vitesse Light"], ["vitesse-dark", "Vitesse Dark"],

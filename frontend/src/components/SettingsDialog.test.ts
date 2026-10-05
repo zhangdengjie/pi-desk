@@ -97,6 +97,10 @@ describe("SettingsDialog", () => {
     expect(wrapper.find(".settings-card .settings-section-title").exists()).toBe(false);
     expect(wrapper.findAll(".appearance-settings .settings-card .setting-row")).toHaveLength(13);
     expect(wrapper.findAll(".appearance-select")).toHaveLength(9);
+    // A row carrying four controls must not be a <label>: the engine forwards any click that lands on
+    // the row - including one on the slider - to the first labelable descendant, which is the colour
+    // well. That is how "the strength slider will not drag" gets reported.
+    expect(wrapper.get(".transcript-tint-row").element.tagName).toBe("DIV");
     expect(wrapper.findAll('select[aria-label="Light code theme"] option')).toHaveLength(10);
     await wrapper.get('select[aria-label="Theme"]').setValue("light");
     await wrapper.get('select[aria-label="Font"]').setValue("mono");
@@ -104,6 +108,8 @@ describe("SettingsDialog", () => {
     await wrapper.get('select[aria-label="Answer weight"]').setValue("medium");
     await wrapper.get('select[aria-label="Answer line height"]').setValue("compact");
     await wrapper.get('.transcript-tint-preset[title="Cool mist"]').trigger("click");
+    await wrapper.get(".transcript-tint-hex").setValue("#123456");
+    await wrapper.get(".transcript-tint-range").setValue("70");
     await wrapper.get('select[aria-label="Light code theme"]').setValue("catppuccin-latte");
     await wrapper.get('select[aria-label="Dark code theme"]').setValue("catppuccin-mocha");
     await wrapper.get('select[aria-label="Code font size"]').setValue("14");
@@ -118,14 +124,16 @@ describe("SettingsDialog", () => {
     expect(store.interfaceFontSize).toBe(16);
     expect(store.transcriptFontWeight).toBe("medium");
     expect(store.transcriptLineHeight).toBe("compact");
-    expect(store.transcriptTint).toBe("#4a86b8");
-    expect(store.transcriptTintStrength).toBe(11);
+    expect(store.transcriptTint).toBe("#123456");
+    expect(store.transcriptTintStrength).toBe(70);
     expect(store.lightCodeTheme).toBe("catppuccin-latte");
     expect(store.darkCodeTheme).toBe("catppuccin-mocha");
     expect(store.codeFontSize).toBe(14);
     expect(store.showCodeLineNumbers).toBe(false);
     expect(store.wrapCodeLines).toBe(true);
-    expect(store.preferencesChanged).toHaveBeenCalledTimes(12);
+    // 12 baseline, +1 for the hex field's input, +1 because test-utils' setValue fires `change` as
+    // well as `input`, which is what the range's @change listens to.
+    expect(store.preferencesChanged).toHaveBeenCalledTimes(14);
     expect(store.appearanceChanged).toHaveBeenCalledOnce();
     await wrapper.get('[data-testid="settings-back"]').trigger("click");
     expect(store.closeSettings).toHaveBeenCalledOnce();

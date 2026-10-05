@@ -6,6 +6,7 @@ import { computed, onMounted, ref } from "vue";
 import { PiMaintenanceAction, type PiMaintenanceResult } from "../../bindings/pi-desk/internal/domain";
 import { maintainPi } from "../services/desktop";
 import { CODE_THEME_OPTIONS, TRANSCRIPT_TINT_MAX_STRENGTH, useAppStore, type QueueMode, type SettingsSection, type SlashCommand, type StreamPanelMode } from "../stores/app";
+import { HEX_COLOR_PATTERN } from "../utils/transcriptTint";
 import { tr } from "../i18n";
 import ModelManager from "./ModelManager.vue";
 import ExtensionManager from "./ExtensionManager.vue";
@@ -32,6 +33,25 @@ const TRANSCRIPT_TINT_PRESETS = [
 
 function pickTranscriptTint(event: Event) {
   appStore.transcriptTint = (event.target as HTMLInputElement).value;
+}
+
+// The hex field is typed as well as picked, because the native colour panel cannot be aimed at a
+// value the reader already knows. It commits only when complete, so a half-typed "#12" is a draft and
+// not a colour - and Vue re-renders `:value` only when the store actually changes, which is what lets
+// the draft survive in the field.
+function typeTranscriptTintHex(event: Event) {
+  const field = event.target as HTMLInputElement;
+  const value = field.value.startsWith("#") ? field.value : `#${field.value}`;
+  field.value = value;
+  if (!HEX_COLOR_PATTERN.test(value)) return;
+  appStore.transcriptTint = value.toLowerCase();
+  appStore.preferencesChanged();
+}
+
+// Leaving a half-typed value behind would show text the tint is not honouring.
+function normalizeTranscriptTintHex(event: Event) {
+  const field = event.target as HTMLInputElement;
+  field.value = appStore.transcriptTint;
 }
 
 function applyTranscriptTintPreset(value: string) {
@@ -289,15 +309,16 @@ function sourceIcon(source: SlashCommand["source"]) {
                   <option value="tight">{{ tr("settings.lineHeightTight") }}</option>
                 </select>
               </label>
-              <label class="setting-row transcript-tint-row" :class="ui.row">
+              <div class="setting-row transcript-tint-row" :class="ui.row">
                 <span><strong>{{ tr("settings.transcriptTint") }}</strong><small>{{ tr("settings.transcriptTintHelp") }}</small></span>
                 <div class="transcript-tint-controls">
                   <button type="button" class="transcript-tint-reset" :disabled="!appStore.transcriptTint" @click="resetTranscriptTint">{{ tr("settings.tintFollowTheme") }}</button>
                   <input class="transcript-tint-swatch" type="color" :value="appStore.transcriptTint || TRANSCRIPT_TINT_FALLBACK" :aria-label="tr('settings.transcriptTint')" @input="pickTranscriptTint" @change="appStore.preferencesChanged()" />
-                  <input class="transcript-tint-range" type="range" min="0" :max="TRANSCRIPT_TINT_MAX_STRENGTH" step="1" v-model.number="appStore.transcriptTintStrength" :aria-label="tr('settings.tintStrength')" :disabled="!appStore.transcriptTint" @change="appStore.preferencesChanged()" />
-                  <span class="transcript-tint-value">{{ appStore.transcriptTintStrength }}%</span>
+                  <input class="transcript-tint-hex" type="text" maxlength="7" spellcheck="false" autocomplete="off" :value="appStore.transcriptTint" :aria-label="tr('settings.tintHex')" :placeholder="tr('settings.tintHex')" @input="typeTranscriptTintHex" @blur="normalizeTranscriptTintHex" />
+                  <input class="transcript-tint-range" type="range" min="0" :max="TRANSCRIPT_TINT_MAX_STRENGTH" step="1" v-model.number="appStore.transcriptTintStrength" :aria-label="tr('settings.tintStrength')" @change="appStore.preferencesChanged()" />
+                  <span class="transcript-tint-value">{{ appStore.transcriptTint ? `${appStore.transcriptTintStrength}%` : "—" }}</span>
                 </div>
-              </label>
+              </div>
               <div class="setting-row transcript-tint-presets" :class="ui.row">
                 <span><small>{{ tr("settings.tintPresets") }}</small></span>
                 <div class="transcript-tint-preset-list">
