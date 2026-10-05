@@ -67,6 +67,22 @@ markdown.renderer.rules.heading_open = (tokens, index, options, env, self) => {
 
 markdown.validateLink = (url) => /^file:/i.test(url) || defaultValidateLink(url);
 
+// The transcript draws an ordered list's number itself instead of letting the browser place it, so
+// that the digits sit in a bounded, centred column - see `.markdown-body ol` in workbench.css for the
+// measurements. Two attributes have to travel with the <ol> for that to be correct rather than
+// merely pretty:
+// - `--md-ol-start`: markdown-it emits `<ol start="8">` for a list written to begin at 8, and
+//   `counter-increment` knows nothing about that attribute, so without this the numbers restart at 1.
+// - `role="list"`: WebKit drops the list semantics of an <ol>/<ul> whose `list-style` is none, which
+//   would silently cost VoiceOver the item count on every numbered answer.
+markdown.renderer.rules.ordered_list_open = (tokens, index, options, _env, self) => {
+  const start = Number(tokens[index].attrGet("start") ?? "1");
+  const offset = Number.isInteger(start) && start > 1 ? start - 1 : 0;
+  tokens[index].attrSet("role", "list");
+  if (offset) tokens[index].attrSet("style", `--md-ol-start:${offset}`);
+  return self.renderToken(tokens, index, options);
+};
+
 type CellTokens = Parameters<NonNullable<typeof markdown.renderer.rules.td_open>>[0];
 
 function tableColumnCount(tokens: CellTokens, index: number): number {

@@ -223,6 +223,24 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.file-markdown-preview :is\(blockquote, li\) > :last-child\s*{[^}]*margin-bottom:\s*0/s);
   });
 
+  it("draws ordered-list markers in a bounded column instead of an outside marker", async () => {
+    const css = await workbenchText();
+    // The list gives up the browser's marker entirely: an outside marker is right-aligned to the text
+    // column, so the only way to square off the digits was to make the marker wider, and the only
+    // direction it can grow is left - onto the outline tick. Measured twice, and both attempts are
+    // reverted in the history (bd781f1, e2f907b).
+    expect(css).toMatch(/\.markdown-body ol\s*{[^}]*list-style:\s*none/s);
+    // The number is a counter, and a counter has to be told where the list starts, because
+    // markdown-it emits `<ol start="8">` (see markdownRenderer.test.ts for the other half).
+    expect(css).toMatch(/\.markdown-body ol\s*{[^}]*counter-reset:\s*md-ol var\(--md-ol-start, 0\)/s);
+    expect(css).toMatch(/\.markdown-body ol > li::before\s*{[^}]*content:\s*counter\(md-ol\)/s);
+    expect(css).toMatch(/\.markdown-body ol > li::before\s*{[^}]*left:\s*calc\(-1 \* var\(--md-li-indent\)\)/s);
+    expect(css).toMatch(/\.markdown-body ol > li::before\s*{[^}]*text-align:\s*center/s);
+    // The file preview indents 24px rather than 22px, so its column has to follow or the number lands
+    // 2px outside the block edge there.
+    expect(css).toMatch(/\.file-markdown-preview :is\(ul, ol\)\s*{[^}]*--md-li-indent:\s*24px/s);
+  });
+
   it("moves the conversation search popover clear of the inspector overlay", async () => {
     const css = await workbenchText();
     const pane = await vueText("src/components/ConversationPane.vue");

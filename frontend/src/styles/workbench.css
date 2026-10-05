@@ -921,6 +921,57 @@
    digits read a size larger than the sentence next to them. The column is a 5px cosmetic wobble;
    a marker overlapping the rail and the numbers shouting are not. */
 
+/* Ordered-list markers: a column this app owns, not one the browser places.
+
+   The browser right-aligns an outside marker to the text column, so every attempt to square off the
+   digit column by changing the marker's font just moves the whole marker left instead. Measured in a
+   real WKWebView with the content edge at 32pt and the outline tick's right edge at 8 + 18 = 26pt:
+   mono at 1em reached 25.5pt of ink (onto the tick, and a size larger than the sentence), and 0.8em
+   landed within 3.5pt of that edge with two runs disagreeing about which side of it - bd781f1 and
+   e2f907b are the two reverts this replaces. PingFang's own digits wobble 2.0pt because "1" is a
+   narrow stroke inside a full-width advance, and `font-variant-numeric: tabular-nums` changes
+   nothing: the advances are already equal, it is the ink that is not.
+
+   A fixed column ends the argument. The marker is positioned against the list item's own box, so its
+   width is `--md-li-indent` minus the gap whatever the font, the digits centre inside it, and nothing
+   can reach past the block edge on the left. The number comes from a counter, which is why
+   markdownRenderer.ts has to hand over `--md-ol-start` (markdown-it emits `<ol start="8">` and a
+   counter would restart at 1) and `role="list"` (WebKit drops list semantics under `list-style:
+   none`). Nested lists need no extra rule: an inner <ol> sits inside the outer item's content box, so
+   its own offset lands exactly on the outer text column.
+
+   Known bound: a three-digit marker ("100.") is wider than the column and, being nowrap'd, overflows
+   it symmetrically rather than wrapping. Two digits and their period fit inside the overhang budget. */
+.markdown-body ol {
+  --md-li-indent: 22px;
+  list-style: none;
+  padding-left: var(--md-li-indent);
+  counter-reset: md-ol var(--md-ol-start, 0);
+}
+
+.markdown-body ol > li {
+  counter-increment: md-ol;
+  position: relative;
+}
+
+.markdown-body ol > li::before {
+  content: counter(md-ol) ".";
+  position: absolute;
+  left: calc(-1 * var(--md-li-indent));
+  top: 0;
+  width: calc(var(--md-li-indent) - 4px);
+  text-align: center;
+  /* A three-character marker ("10.") is wider than the column: mono at 15px gives it ~27px of advance
+     against 18px of box. Without `nowrap` the box wrapped it and the period landed on the item's
+     second line - rendered and read back as "10 第十项：…" / ". 在列内。". Overflow is the better
+     half of the trade, and it was measured rather than assumed: "9." and "10." both end at 47.0pt of
+     ink against a text column starting at 54.5pt, so the two-digit item is 7.5pt from the prose and
+     no marker reaches past it. The left overhang is 1.5pt, which still clears the outline tick by 4.5. */
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  line-height: var(--transcript-line-height);
+}
+
 .markdown-body code {
   /* The 1px border stays, but goes transparent: removing it would reflow every line that
      contains code, and the outline was the actual noise - a faint fill is enough to keep
@@ -1140,6 +1191,10 @@
 
 .file-markdown-preview :is(ul, ol) {
   padding-left: 24px;
+  /* The transcript draws ordered-list markers in a column sized to its own indent (workbench.css);
+     this surface indents 24px instead, so the column has to follow or the number sits 2px outside the
+     block edge here. */
+  --md-li-indent: 24px;
 }
 
 .file-markdown-preview li + li {

@@ -20,6 +20,22 @@ function env(overrides: Partial<{ workspacePath: string; baseDir: string }> = {}
 
 beforeEach(() => markdownRenderCache.clear());
 
+describe("ordered list markers", () => {
+  it("hands the CSS counter its start, and keeps the role the list-style reset costs", () => {
+    const html = renderMarkdownDocument("8. 八\n9. 九\n", env(), "md1");
+    // The transcript draws the number with `counter-increment`, which knows nothing about the
+    // `start` attribute - without this offset a list that begins at 8 would print 1, 2.
+    expect(html).toMatch(/<ol[^>]*style="--md-ol-start:7"/);
+    // `start` itself stays in the markup: it is the semantic value, and the preview and any other
+    // consumer that keeps native markers still has to number correctly.
+    expect(html).toContain('start="8"');
+    expect(html).toMatch(/<ol[^>]*role="list"/);
+    const plain = renderMarkdownDocument("1. 一\n2. 二\n", env(), "md2");
+    expect(plain).toMatch(/<ol[^>]*role="list"/);
+    expect(plain).not.toMatch(/--md-ol-start/);
+  });
+});
+
 describe("markdown render cache", () => {
   it("parses a text once however many instances render it", () => {
     const text = longDoc();
