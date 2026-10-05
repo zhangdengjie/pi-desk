@@ -332,9 +332,13 @@ describe("responsive workbench layout", () => {
     expect(classes).toContain(":not(.appearance-color-hex)]:!text-[var(--font-size-body)]");
     expect(classes).toContain("]:!h-[34px]");
     const layout = await textAt("src/styles/layout.css");
-    const hex = layout.match(/\.setting-row \.appearance-color-hex\s*\{[^}]*\}/s)?.[0] ?? "";
+    const hex = (layout.match(/\.setting-row \.appearance-color-hex\s*\{[^}]*\}/s)?.[0] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
     expect(hex).toMatch(/font-size:\s*var\(--font-size-label\)/);
     expect(hex).toMatch(/height:\s*34px/);
+    // And nothing here may claim geometry the shared rule owns. Both of these were declared once and
+    // measured dead - `!px-2.5` and `!rounded-md` answered them from a layer this sheet cannot reach.
+    expect(hex).not.toMatch(/border-radius/);
+    expect(hex).not.toMatch(/(^|\s)padding:/);
   });
 
   it("moves the conversation search popover clear of the inspector overlay", async () => {

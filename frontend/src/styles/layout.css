@@ -8256,9 +8256,13 @@ article.mcp-server-row {
   width: 104px;
   height: 34px;
   flex: 0 0 104px;
-  padding: 0 7px;
+  /* `padding` and `border-radius` used to be declared here as `0 7px` and `var(--radius-sm)` (6px) and
+     never applied: `ui.settingsControls` pins every text-ish input to `!px-2.5` (10px) and
+     `!rounded-md` (8px), and an `!important` utility inside `@layer utilities` cannot be answered from
+     an unlayered sheet (AGENTS §4.3). Measured in the real WKWebView: 10px / 8px. The shared values are
+     the ones wanted - this field is a settings input like any other - so the geometry belongs to that
+     rule and only the things it does not claim are spelled out here. */
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
   background: var(--bg-app);
   color: var(--text);
   font-family: var(--font-mono);
