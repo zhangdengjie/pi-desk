@@ -270,6 +270,13 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.markdown-body ol > li::before\s*{[^}]*content:\s*counter\(md-ol\)/s);
     expect(css).toMatch(/\.markdown-body ol > li::before\s*{[^}]*left:\s*calc\(-1 \* var\(--md-li-indent\)\)/s);
     expect(css).toMatch(/\.markdown-body ol > li::before\s*{[^}]*text-align:\s*center/s);
+    // Vertical: the marker is pinned to the item's top edge, so the only thing that can put its
+    // baseline on the first line's is the item's own strut. `--font-mono` + the transcript token left
+    // the digit 2.75pt above the text's baseline against a CJK line, and because the token is only the
+    // transcript's leading, the same marker read low in the user bubble (1.5) and high in the file
+    // preview (1.7). Both have to be `inherit` - see the block comment in workbench.css.
+    expect(css).toMatch(/\.markdown-body ol > li::before\s*{[^}]*font-family:\s*inherit/s);
+    expect(css).toMatch(/\.markdown-body ol > li::before\s*{[^}]*line-height:\s*inherit/s);
     // The file preview indents 24px rather than 22px, so its column has to follow or the number lands
     // 2px outside the block edge there.
     expect(css).toMatch(/\.file-markdown-preview :is\(ul, ol\)\s*{[^}]*--md-li-indent:\s*24px/s);

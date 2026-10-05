@@ -889,15 +889,6 @@
   margin-top: 12px;
 }
 
-/* Ordered-list markers stay in the body font. Drawing them in `--font-mono` was tried to square off
-   the ragged left edge (PingFang's "1" is a narrow stroke inside a full-width advance, so the *ink*
-   starts 5px right of "2"-"5" while `tabular-nums` changes nothing - both measured in a real
-   WKWebView) and it was reverted: a mono "1." is ~18px wide against the 22px of `padding-left` the
-   list gets, and an outside marker is right-aligned to the content edge, so the wider glyph hung
-   ~7px *outside* the block - into the outline rail's 26px column at the minimum gutter - and the
-   digits read a size larger than the sentence next to them. The column is a 5px cosmetic wobble;
-   a marker overlapping the rail and the numbers shouting are not. */
-
 /* Ordered-list markers: a column this app owns, not one the browser places.
 
    The browser right-aligns an outside marker to the text column, so every attempt to square off the
@@ -938,15 +929,30 @@
   top: 0;
   width: calc(var(--md-li-indent) - 4px);
   text-align: center;
-  /* A three-character marker ("10.") is wider than the column: mono at 15px gives it ~27px of advance
-     against 18px of box. Without `nowrap` the box wrapped it and the period landed on the item's
-     second line - rendered and read back as "10 第十项：…" / ". 在列内。". Overflow is the better
+  /* A three-character marker ("10.") is wider than the column: at 15px a monospace face gives it ~27px
+     of advance against 18px of box. Without `nowrap` the box wrapped it and the period landed on the
+     item's second line - rendered and read back as "10 第十项：…" / ". 在列内。". Overflow is the better
      half of the trade, and it was measured rather than assumed: "9." and "10." both end at 47.0pt of
      ink against a text column starting at 54.5pt, so the two-digit item is 7.5pt from the prose and
      no marker reaches past it. The left overhang is 1.5pt, which still clears the outline tick by 4.5. */
   white-space: nowrap;
-  font-family: var(--font-mono);
-  line-height: var(--transcript-line-height);
+  /* The marker is drawn on the item's own strut, on purpose and by measurement.
+
+     `top: 0` pins the marker's box to the item's top edge, so nothing aligns its baseline with the
+     first line's: the two only coincide if both boxes are laid out by the same font at the same
+     line-height. Naming a font and a leading here instead of inheriting them put the digit 2.75pt
+     above the text's baseline (1.38pt off centre) against a CJK-first line at 12px, and the ink read
+     as riding high - the complaint this closes. `inherit` + `inherit` lands it on the baseline
+     (0.12pt off centre with the reader's own monospace body face, 0.00pt with the shipped PingFang).
+
+     `line-height: inherit` carries a second, larger half of that bug: the token is the *transcript's*
+     leading, but this same stylesheet paints markers on surfaces that set their own (`.markdown-body`
+     is the token, `.message-row[data-role="user"] .markdown-body` is 1.5, a loose item's <p> is 1.62,
+     `.file-markdown-preview` is 1.7). Pinning the marker to the token therefore made one list read low
+     in one pane and high in another, which is why the two reports looked like opposite defects. The
+     item is the only thing the marker has to agree with, and it is the only thing it now agrees with. */
+  font-family: inherit;
+  line-height: inherit;
 }
 
 .markdown-body code {
