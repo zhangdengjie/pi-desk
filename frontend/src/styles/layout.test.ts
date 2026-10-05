@@ -500,6 +500,10 @@ describe("transcript line breaks", () => {
     // surfaces that each declare a leading are how one list read high in a pane and low in another.
     const preview = workbench.match(/\.file-markdown-preview\s*{[^}]*}/s)?.[0] ?? "";
     expect(preview).not.toMatch(/line-height/);
+    // And no private size for the user bubble: it shares the answer body's type, because the rule that
+    // used to ask for 15px / 1.5 sat under workbench.css's same-specificity selector and never painted
+    // anything. Re-adding it here would be a dead rule again, not a fix.
+    expect(layout).not.toMatch(/\.message-row\[data-role="user"\][^{]*\{[^}]*(font-size|line-height)/s);
   });
 });
 

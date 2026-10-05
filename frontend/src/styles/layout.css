@@ -9247,11 +9247,11 @@ article.mcp-server-row {
   white-space: nowrap;
 }
 
-.message-row[data-role="user"] .markdown-body,
-.message-row[data-role="user"] .message-content > p {
-  font-size: calc(15px + var(--font-size-delta));
-  line-height: 1.5;
-}
+/* No user-bubble type scale here, on purpose. This rule used to ask for `15px / 1.5` and got neither:
+   workbench.css names the same selectors with the same specificity and loads later, so the bubble has
+   been rendering at the answer body's size and leading all along - measured 12px / 19.20px against
+   this file's 13px / 1.5. Keeping the dead ask here only invites someone to "fix" the bubble by
+   moving the number, when the number is not what paints it. */
 
 .message-content p,
 .markdown-body {
