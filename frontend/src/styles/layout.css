@@ -8207,6 +8207,88 @@ article.mcp-server-row {
   flex: 0 0 16px;
 }
 
+/* The transcript tint row (Settings > 外观 > 对话底色). The rule above sizes *every* input in a
+   settings row to a 16px checkbox, which would flatten both the colour swatch and the strength
+   slider, so each control re-states its own box here - and with a `.setting-row` prefix, because an
+   unadorned class selector would lose that fight on specificity. Geometry stays out of the template
+   (AGENTS §4.2). */
+.transcript-tint-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setting-row .transcript-tint-swatch {
+  width: 34px;
+  height: 24px;
+  flex: 0 0 34px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.setting-row .transcript-tint-range {
+  width: 104px;
+  height: 20px;
+  flex: 0 0 104px;
+  accent-color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.setting-row .transcript-tint-range:disabled {
+  cursor: default;
+  opacity: .45;
+}
+
+.transcript-tint-value {
+  min-width: 34px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-label);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.transcript-tint-reset {
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-app);
+  color: var(--text-secondary);
+  font-size: var(--font-size-label);
+  cursor: pointer;
+}
+
+.transcript-tint-reset:disabled {
+  cursor: default;
+  opacity: .5;
+}
+
+.transcript-tint-preset-list {
+  display: flex;
+  gap: 6px;
+}
+
+/* The chip paints the mixed result, not the raw hue: what the reader would actually get at the
+   default strength on the theme they are looking at. A swatch of the pure colour would promise
+   something the ground never becomes. */
+.transcript-tint-preset {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--bg-conversation) calc(100% - var(--transcript-tint-strength, 11%)), var(--tint-swatch));
+  cursor: pointer;
+}
+
+.transcript-tint-preset.is-active {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
 .setting-row-select select {
   width: 156px;
   height: 30px;

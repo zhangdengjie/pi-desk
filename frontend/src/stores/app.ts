@@ -95,10 +95,12 @@ export type TranscriptFontWeight = "normal" | "medium" | "semibold";
 // The companion knob: the terminal packs lines at ~1.2 while Typora's airiness here is 1.7, so a
 // reader who lifts the weight usually wants the leading tighter too. --transcript-line-height.
 export type TranscriptLineHeight = "relaxed" | "compact" | "tight";
-// The third knob over the surface the answer sits on. A tint mixed into the theme's own
-// `--bg-conversation` rather than a colour of its own, so one value covers light, dark and "system"
-// and the derived tokens (markdown rules, table zebra) follow it for free. See tokens.css.
-export type TranscriptTone = "default" | "sepia" | "mist" | "sage" | "stone";
+// The third knob over the surface the answer sits on: an arbitrary tint mixed into the theme's own
+// `--bg-conversation` (see tokens.css for why a mix and not a colour), plus how much of it. The cap is
+// exported because the settings range and the load-time clamp have to agree - past it the reader picks
+// a ground their own `--text` stops contrasting with.
+export const TRANSCRIPT_TINT_MAX_STRENGTH = 25;
+export const TRANSCRIPT_TINT_DEFAULT_STRENGTH = 11;
 export const CODE_THEME_OPTIONS = [
   ["github-light", "GitHub Light"], ["github-dark", "GitHub Dark"],
   ["vitesse-light", "Vitesse Light"], ["vitesse-dark", "Vitesse Dark"],
@@ -1073,7 +1075,8 @@ export const useAppStore = defineStore("app", {
     interfaceFontSize: 14,
     transcriptFontWeight: "normal" as TranscriptFontWeight,
     transcriptLineHeight: "relaxed" as TranscriptLineHeight,
-    transcriptTone: "default" as TranscriptTone,
+    transcriptTint: "",
+    transcriptTintStrength: TRANSCRIPT_TINT_DEFAULT_STRENGTH,
     lightCodeTheme: "github-light" as CodeTheme,
     darkCodeTheme: "github-dark" as CodeTheme,
     showCodeLineNumbers: true,
@@ -4110,9 +4113,14 @@ export const useAppStore = defineStore("app", {
       this.transcriptLineHeight = (["relaxed", "compact", "tight"] as const).includes(desktop.preferences.transcriptLineHeight as TranscriptLineHeight)
         ? desktop.preferences.transcriptLineHeight as TranscriptLineHeight
         : "relaxed";
-      this.transcriptTone = (["default", "sepia", "mist", "sage", "stone"] as const).includes(desktop.preferences.transcriptTone as TranscriptTone)
-        ? desktop.preferences.transcriptTone as TranscriptTone
-        : "default";
+      const transcriptTint = desktop.preferences.transcriptTint ?? "";
+      const transcriptTintStrength = desktop.preferences.transcriptTintStrength ?? TRANSCRIPT_TINT_DEFAULT_STRENGTH;
+      this.transcriptTint = /^#[0-9a-fA-F]{6}$/.test(transcriptTint) ? transcriptTint : "";
+      this.transcriptTintStrength = Number.isInteger(transcriptTintStrength)
+        && transcriptTintStrength >= 0
+        && transcriptTintStrength <= TRANSCRIPT_TINT_MAX_STRENGTH
+        ? transcriptTintStrength
+        : TRANSCRIPT_TINT_DEFAULT_STRENGTH;
       const themes = CODE_THEME_OPTIONS.map(([value]) => value);
       const hasCodePreferences = themes.includes(desktop.preferences.lightCodeTheme as CodeTheme)
         || themes.includes(desktop.preferences.darkCodeTheme as CodeTheme)
@@ -4413,7 +4421,8 @@ export const useAppStore = defineStore("app", {
           fontSize: this.interfaceFontSize,
           transcriptFontWeight: this.transcriptFontWeight,
           transcriptLineHeight: this.transcriptLineHeight,
-          transcriptTone: this.transcriptTone,
+          transcriptTint: this.transcriptTint,
+          transcriptTintStrength: this.transcriptTintStrength,
           lightCodeTheme: this.lightCodeTheme,
           darkCodeTheme: this.darkCodeTheme,
           showCodeLineNumbers: this.showCodeLineNumbers,

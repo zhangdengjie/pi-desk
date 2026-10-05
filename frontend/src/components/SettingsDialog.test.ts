@@ -95,15 +95,15 @@ describe("SettingsDialog", () => {
     expect(wrapper.get("h1").text()).toBe("Appearance");
     expect(wrapper.get(".settings-section-title").text()).toBe("Appearance");
     expect(wrapper.find(".settings-card .settings-section-title").exists()).toBe(false);
-    expect(wrapper.findAll(".appearance-settings .settings-card .setting-row")).toHaveLength(12);
-    expect(wrapper.findAll(".appearance-select")).toHaveLength(10);
+    expect(wrapper.findAll(".appearance-settings .settings-card .setting-row")).toHaveLength(13);
+    expect(wrapper.findAll(".appearance-select")).toHaveLength(9);
     expect(wrapper.findAll('select[aria-label="Light code theme"] option')).toHaveLength(10);
     await wrapper.get('select[aria-label="Theme"]').setValue("light");
     await wrapper.get('select[aria-label="Font"]').setValue("mono");
     await wrapper.get('select[aria-label="Font size"]').setValue("16");
     await wrapper.get('select[aria-label="Answer weight"]').setValue("medium");
     await wrapper.get('select[aria-label="Answer line height"]').setValue("compact");
-    await wrapper.get('select[aria-label="Answer background"]').setValue("mist");
+    await wrapper.get('.transcript-tint-preset[title="Cool mist"]').trigger("click");
     await wrapper.get('select[aria-label="Light code theme"]').setValue("catppuccin-latte");
     await wrapper.get('select[aria-label="Dark code theme"]').setValue("catppuccin-mocha");
     await wrapper.get('select[aria-label="Code font size"]').setValue("14");
@@ -118,7 +118,8 @@ describe("SettingsDialog", () => {
     expect(store.interfaceFontSize).toBe(16);
     expect(store.transcriptFontWeight).toBe("medium");
     expect(store.transcriptLineHeight).toBe("compact");
-    expect(store.transcriptTone).toBe("mist");
+    expect(store.transcriptTint).toBe("#4a86b8");
+    expect(store.transcriptTintStrength).toBe(11);
     expect(store.lightCodeTheme).toBe("catppuccin-latte");
     expect(store.darkCodeTheme).toBe("catppuccin-mocha");
     expect(store.codeFontSize).toBe(14);

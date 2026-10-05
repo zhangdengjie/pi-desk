@@ -377,33 +377,16 @@
    not to be painted an arbitrary hex that the rest of the theme then contradicts: every token derived
    from `--bg-conversation` (the markdown rules, the table's zebra and cell rules) follows it, and
    `--text` stays the theme's own. Mixing a hue into whatever the active theme painted there gives
-   exactly that, and it is why the values below are (tint, strength) pairs rather than eight
-   hand-picked light/dark hexes - one line per tone covers light, dark, and "system", and a future
-   theme cannot fall out of step with it. At 0% strength the mix is the identity, which is what
-   `default` means, so the shipped appearance does not move. */
+   exactly that, so one value covers light, dark and "system" and no tone can produce dark-on-dark.
+
+   The two properties below are the identity state, and they are what the reader's pick overrides -
+   `App.vue` writes them onto the root as inline custom properties, because an arbitrary colour picker
+   has no closed set of values for a stylesheet to enumerate. The picker's ceiling is 25% for the same
+   reason: at 25% of even the darkest hex the light theme's ground stays above oklch(60%), which keeps
+   `--text`'s contrast in the readable band, and the mirror holds in dark. */
 :root {
   --transcript-tint: transparent;
   --transcript-tint-strength: 0%;
-}
-
-:root[data-transcript-tone="sepia"] {
-  --transcript-tint: #c98b3a;
-  --transcript-tint-strength: 11%;
-}
-
-:root[data-transcript-tone="mist"] {
-  --transcript-tint: #4a86b8;
-  --transcript-tint-strength: 11%;
-}
-
-:root[data-transcript-tone="sage"] {
-  --transcript-tint: #5c9a5e;
-  --transcript-tint-strength: 11%;
-}
-
-:root[data-transcript-tone="stone"] {
-  --transcript-tint: #8a8a8a;
-  --transcript-tint-strength: 14%;
 }
 
 :root[data-font-size="12"] { --font-size-delta: -1.5px; }

@@ -5,7 +5,7 @@ import { ArrowLeft, BarChart3, BookOpen, Boxes, Copy, Database, Download, Extern
 import { computed, onMounted, ref } from "vue";
 import { PiMaintenanceAction, type PiMaintenanceResult } from "../../bindings/pi-desk/internal/domain";
 import { maintainPi } from "../services/desktop";
-import { CODE_THEME_OPTIONS, useAppStore, type QueueMode, type SettingsSection, type SlashCommand, type StreamPanelMode } from "../stores/app";
+import { CODE_THEME_OPTIONS, TRANSCRIPT_TINT_MAX_STRENGTH, useAppStore, type QueueMode, type SettingsSection, type SlashCommand, type StreamPanelMode } from "../stores/app";
 import { tr } from "../i18n";
 import ModelManager from "./ModelManager.vue";
 import ExtensionManager from "./ExtensionManager.vue";
@@ -16,6 +16,34 @@ import SessionStatistics from "./SessionStatistics.vue";
 import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
+
+// The transcript tint: an arbitrary colour plus a strength, mixed into whatever the active theme
+// painted at `--bg-conversation` (tokens.css). `<input type="color">` cannot express "no colour", so
+// the reset button next to it owns that state and the swatch falls back to a representative hue.
+// The presets are not a closed set any more - they are shortcuts that write the same two values, and
+// a chip shows the mixed result rather than the raw hue so it reads as the ground it produces.
+const TRANSCRIPT_TINT_FALLBACK = "#c98b3a";
+const TRANSCRIPT_TINT_PRESETS = [
+  { value: "#c98b3a", labelKey: "settings.toneSepia" },
+  { value: "#4a86b8", labelKey: "settings.toneMist" },
+  { value: "#5c9a5e", labelKey: "settings.toneSage" },
+  { value: "#8a8a8a", labelKey: "settings.toneStone" },
+];
+
+function pickTranscriptTint(event: Event) {
+  appStore.transcriptTint = (event.target as HTMLInputElement).value;
+}
+
+function applyTranscriptTintPreset(value: string) {
+  // Clicking the active chip clears it, so the row has two ways back to the theme's own ground.
+  appStore.transcriptTint = appStore.transcriptTint === value ? "" : value;
+  appStore.preferencesChanged();
+}
+
+function resetTranscriptTint() {
+  appStore.transcriptTint = "";
+  appStore.preferencesChanged();
+}
 const copied = ref(false);
 const section = computed<SettingsSection>({
   get: () => appStore.settingsSection,
@@ -261,16 +289,21 @@ function sourceIcon(source: SlashCommand["source"]) {
                   <option value="tight">{{ tr("settings.lineHeightTight") }}</option>
                 </select>
               </label>
-              <label class="setting-row setting-row-select" :class="ui.row">
-                <span><strong>{{ tr("settings.transcriptTone") }}</strong><small>{{ tr("settings.transcriptToneHelp") }}</small></span>
-                <select class="appearance-select !w-32 !basis-32" :class="ui.select" v-model="appStore.transcriptTone" :aria-label="tr('settings.transcriptTone')" @change="appStore.preferencesChanged()">
-                  <option value="default">{{ tr("settings.toneDefault") }}</option>
-                  <option value="sepia">{{ tr("settings.toneSepia") }}</option>
-                  <option value="mist">{{ tr("settings.toneMist") }}</option>
-                  <option value="sage">{{ tr("settings.toneSage") }}</option>
-                  <option value="stone">{{ tr("settings.toneStone") }}</option>
-                </select>
+              <label class="setting-row transcript-tint-row" :class="ui.row">
+                <span><strong>{{ tr("settings.transcriptTint") }}</strong><small>{{ tr("settings.transcriptTintHelp") }}</small></span>
+                <div class="transcript-tint-controls">
+                  <button type="button" class="transcript-tint-reset" :disabled="!appStore.transcriptTint" @click="resetTranscriptTint">{{ tr("settings.tintFollowTheme") }}</button>
+                  <input class="transcript-tint-swatch" type="color" :value="appStore.transcriptTint || TRANSCRIPT_TINT_FALLBACK" :aria-label="tr('settings.transcriptTint')" @input="pickTranscriptTint" @change="appStore.preferencesChanged()" />
+                  <input class="transcript-tint-range" type="range" min="0" :max="TRANSCRIPT_TINT_MAX_STRENGTH" step="1" v-model.number="appStore.transcriptTintStrength" :aria-label="tr('settings.tintStrength')" :disabled="!appStore.transcriptTint" @change="appStore.preferencesChanged()" />
+                  <span class="transcript-tint-value">{{ appStore.transcriptTintStrength }}%</span>
+                </div>
               </label>
+              <div class="setting-row transcript-tint-presets" :class="ui.row">
+                <span><small>{{ tr("settings.tintPresets") }}</small></span>
+                <div class="transcript-tint-preset-list">
+                  <button v-for="preset in TRANSCRIPT_TINT_PRESETS" :key="preset.value" type="button" class="transcript-tint-preset" :class="{ 'is-active': appStore.transcriptTint === preset.value }" :style="{ '--tint-swatch': preset.value }" :title="tr(preset.labelKey)" :aria-label="tr(preset.labelKey)" @click="applyTranscriptTintPreset(preset.value)"></button>
+                </div>
+              </div>
             </div>
           </section>
           <section>

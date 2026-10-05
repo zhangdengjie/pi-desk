@@ -86,8 +86,19 @@ function syncDocumentTranscriptLineHeight(height: string) {
   document.documentElement.dataset.transcriptLineHeight = height;
 }
 
-function syncDocumentTranscriptTone(tone: string) {
-  document.documentElement.dataset.transcriptTone = tone;
+// The tint is written as two inline custom properties rather than a `data-*` attribute: the reader
+// picks an arbitrary colour now, so there is no closed set of values for a stylesheet to enumerate.
+// The mix itself lives in tokens.css (`--bg-conversation`), whose defaults are the identity - so
+// removing both properties, which is what "follow the theme" means, restores the shipped appearance.
+function syncDocumentTranscriptTint(tint: string, strength: number) {
+  const style = document.documentElement.style;
+  if (!tint) {
+    style.removeProperty("--transcript-tint");
+    style.removeProperty("--transcript-tint-strength");
+    return;
+  }
+  style.setProperty("--transcript-tint", tint);
+  style.setProperty("--transcript-tint-strength", `${strength}%`);
 }
 
 async function initializeDesktop() {
@@ -125,7 +136,7 @@ watch(() => appStore.interfaceFont, syncDocumentFont, { immediate: true });
 watch(() => appStore.interfaceFontSize, syncDocumentFontSize, { immediate: true });
 watch(() => appStore.transcriptFontWeight, syncDocumentTranscriptWeight, { immediate: true });
 watch(() => appStore.transcriptLineHeight, syncDocumentTranscriptLineHeight, { immediate: true });
-watch(() => appStore.transcriptTone, syncDocumentTranscriptTone, { immediate: true });
+watch(() => [appStore.transcriptTint, appStore.transcriptTintStrength] as const, ([tint, strength]) => syncDocumentTranscriptTint(tint, strength), { immediate: true });
 </script>
 
 <template>
