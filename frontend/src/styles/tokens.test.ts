@@ -52,10 +52,19 @@ describe("teleported dialog theme inheritance", () => {
 
   it("publishes global font-family and root-size preference tokens", async () => {
     const tokens = await tokensText();
-    expect(tokens).toContain('--font-interface-body: "PingFang SC",');
+    expect(tokens).toContain('--font-interface-shipped: "PingFang SC",');
     expect(tokens).toContain(':root[data-font-family="system"]');
     expect(tokens).toContain(':root[data-font-family="serif"]');
     expect(tokens).toContain(':root[data-font-family="mono"]');
+    // A reader-typed family has no closed set of values, so the sheet consumes it as a variable instead
+    // of enumerating it - and the fallback has to stay the shipped stack, because WebKit cannot tell us
+    // whether the name exists (`document.fonts.check` answers true for a made-up one).
+    expect(tokens).toContain(':root[data-font-family="custom"]');
+    expect(tokens).toMatch(/--font-interface-body:\s*var\(--font-interface-custom\),\s*var\(--font-interface-shipped\)/);
+    // The fallback has to be the shipped stack by reference, never a copy: a literal list here drifts
+    // from the base one the first time someone edits line 40.
+    expect(tokens).toMatch(/--font-interface-shipped:/);
+    expect(tokens).toMatch(/--font-interface-custom:\s*var\(--font-interface-shipped\)/);
     expect(tokens).toContain(':root[data-font-size="12"]');
     expect(tokens).toContain(':root[data-font-size="18"]');
     expect(tokens).toContain("--font-size-delta: -1.5px");

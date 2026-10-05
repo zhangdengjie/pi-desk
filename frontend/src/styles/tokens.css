@@ -37,7 +37,11 @@
 
 :root {
   color-scheme: dark;
-  --font-interface-body: "PingFang SC", "Segoe UI Variable", "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  /* The shipped stack, named once. The `custom` family in the font-family blocks below has to fall
+     back to exactly this rather than to `system-ui`: picking 自定义 and typing nothing would otherwise
+     silently swap PingFang for SF. */
+  --font-interface-shipped: "PingFang SC", "Segoe UI Variable", "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-interface-body: var(--font-interface-shipped);
   --font-interface-display: var(--font-interface-body);
   --font-interface-reading: var(--font-interface-body);
   --font-sans: var(--font-interface-body);
@@ -371,6 +375,19 @@
   --font-interface-body: var(--font-mono);
   --font-interface-display: var(--font-mono);
   --font-interface-reading: var(--font-mono);
+}
+
+/* A family the reader typed (Settings > 外观 > 字体 > 自定义…). App.vue writes
+   `--font-interface-custom` as a quoted, comma-separated list that `utils/fontFamily.ts` has already
+   stripped of anything able to end this declaration. The fallback chain is the "system" stack on
+   purpose: WebKit cannot tell us whether a family exists - `document.fonts.check` answers true for a
+   name made up on the spot - so a wrong one has to degrade to what shipped before rather than to the
+   browser's default serif. */
+:root[data-font-family="custom"] {
+  --font-interface-custom: var(--font-interface-shipped);
+  --font-interface-body: var(--font-interface-custom), var(--font-interface-shipped);
+  --font-interface-display: var(--font-interface-body);
+  --font-interface-reading: var(--font-interface-body);
 }
 
 /* PingFang SC ships Regular / Medium / Semibold, so all three names resolve to a real face instead

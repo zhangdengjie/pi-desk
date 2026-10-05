@@ -8321,6 +8321,19 @@ article.mcp-server-row {
   outline-offset: 2px;
 }
 
+/* Settings > 外观 > 字体 > 自定义…: the field and its live sample share a row, and the sample is set in
+   the value being typed, because that is the only feedback the engine can give about a family name. */
+.setting-row .interface-font-custom-input {
+  flex: 1 1 150px;
+  min-width: 110px;
+}
+
+.interface-font-custom-preview {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-size: var(--font-size-subheading);
+}
+
 .setting-row-select select {
   width: 156px;
   height: 30px;

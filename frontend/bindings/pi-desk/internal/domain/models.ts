@@ -125,6 +125,13 @@ export interface DesktopPreferences {
     "appearance": string;
     "language": string;
     "fontFamily": string;
+
+    /**
+     * FontCustom is the family name behind FontFamily == "custom". It is a value the reader types, so
+     * the front end sanitises it into a quoted list before it reaches CSS; here it is only length-bound
+     * (rune-wise, since names are localised) so a pasted blob cannot bloat state.json.
+     */
+    "fontCustom"?: string;
     "fontSize": number;
     "transcriptFontWeight"?: string;
     "transcriptLineHeight"?: string;

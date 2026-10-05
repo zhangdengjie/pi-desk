@@ -7,6 +7,7 @@ import { PiMaintenanceAction, type PiMaintenanceResult } from "../../bindings/pi
 import { maintainPi } from "../services/desktop";
 import { CODE_THEME_OPTIONS, TRANSCRIPT_TINT_MAX_STRENGTH, useAppStore, type QueueMode, type SettingsSection, type SlashCommand, type StreamPanelMode } from "../stores/app";
 import { HEX_COLOR_PATTERN } from "../utils/transcriptTint";
+import { FONT_FAMILY_INPUT_MAX, sanitizeFontFamilyList } from "../utils/fontFamily";
 import { tr } from "../i18n";
 import ModelManager from "./ModelManager.vue";
 import ExtensionManager from "./ExtensionManager.vue";
@@ -33,6 +34,17 @@ const TRANSCRIPT_TINT_PRESETS = [
 
 function pickTranscriptTint(event: Event) {
   appStore.transcriptTint = (event.target as HTMLInputElement).value;
+}
+
+// The custom interface family is applied as it is typed, because the preview beside the field is the
+// only feedback the engine can give: `document.fonts.check` answers true for a made-up name, so a
+// "valid" indicator would be a lie. An unusable name falls through to the shipped stack rather than
+// to the browser default - see tokens.css.
+const interfaceFontPreview = computed(() => sanitizeFontFamilyList(appStore.interfaceFontCustom) || "inherit");
+
+function typeInterfaceFontCustom(event: Event) {
+  appStore.interfaceFontCustom = (event.target as HTMLInputElement).value.slice(0, FONT_FAMILY_INPUT_MAX);
+  appStore.preferencesChanged();
 }
 
 // The hex field is typed as well as picked, because the native colour panel cannot be aimed at a
@@ -285,8 +297,16 @@ function sourceIcon(source: SlashCommand["source"]) {
                   <option value="system">{{ tr("settings.fontSystem") }}</option>
                   <option value="serif">{{ tr("settings.fontSerif") }}</option>
                   <option value="mono">{{ tr("settings.fontMono") }}</option>
+                  <option value="custom">{{ tr("settings.fontCustom") }}</option>
                 </select>
               </label>
+              <div v-if="appStore.interfaceFont === 'custom'" class="setting-row interface-font-custom-row" :class="ui.row">
+                <span><strong>{{ tr("settings.fontCustomName") }}</strong><small>{{ tr("settings.fontCustomHelp") }}</small></span>
+                <div class="interface-font-custom-controls">
+                  <input class="interface-font-custom-input" type="text" :maxlength="FONT_FAMILY_INPUT_MAX" spellcheck="false" autocomplete="off" :value="appStore.interfaceFontCustom" :aria-label="tr('settings.fontCustomName')" :placeholder="tr('settings.fontCustomPlaceholder')" @input="typeInterfaceFontCustom" />
+                  <span class="interface-font-custom-preview" :style="{ fontFamily: interfaceFontPreview }">{{ tr("settings.fontCustomPreview") }}</span>
+                </div>
+              </div>
               <label class="setting-row setting-row-select" :class="ui.row">
                 <span><strong>{{ tr("settings.fontSize") }}</strong><small>{{ tr("settings.fontSizeHelp") }}</small></span>
                 <select class="appearance-select !w-32 !basis-32" :class="ui.select" v-model.number="appStore.interfaceFontSize" :aria-label="tr('settings.fontSize')" @change="appStore.preferencesChanged()">

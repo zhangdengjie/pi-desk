@@ -96,6 +96,7 @@ type PreferencesRecord struct {
 	Appearance             string `json:"appearance"`
 	Language               string `json:"language"`
 	FontFamily             string `json:"fontFamily"`
+	FontCustom             string `json:"fontCustom,omitempty"`
 	FontSize               int    `json:"fontSize"`
 	TranscriptFontWeight   string `json:"transcriptFontWeight,omitempty"`
 	TranscriptLineHeight   string `json:"transcriptLineHeight,omitempty"`
@@ -360,6 +361,11 @@ func (catalog *Catalog) SaveDesktop(desktop DesktopRecord) error {
 		}
 		if strings.TrimSpace(preferences.FontFamily) == "" {
 			preferences.FontFamily = "default"
+		}
+		// Bound by runes, not bytes: family names are localised ("苹方-简"), and slicing on a byte count
+		// would cut one in half and leave invalid UTF-8 in state.json.
+		if runes := []rune(preferences.FontCustom); len(runes) > 160 {
+			preferences.FontCustom = string(runes[:160])
 		}
 		if preferences.FontSize == 0 {
 			preferences.FontSize = 14
@@ -737,7 +743,7 @@ func validateDesktop(desktop DesktopRecord) error {
 			return errors.New("invalid language preference")
 		}
 		switch preferences.FontFamily {
-		case "default", "system", "serif", "mono":
+		case "default", "system", "serif", "mono", "custom":
 		default:
 			return errors.New("invalid font family preference")
 		}

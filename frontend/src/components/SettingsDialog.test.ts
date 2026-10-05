@@ -139,6 +139,39 @@ describe("SettingsDialog", () => {
     expect(store.closeSettings).toHaveBeenCalledOnce();
   });
 
+  it("types a custom interface family and previews exactly what CSS will get", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.settingsOpen = true;
+    store.preferencesChanged = vi.fn();
+    const wrapper = mount(SettingsDialog, { global: { plugins: [pinia] } });
+    await wrapper.findAll(".settings-nav button").find((button) => button.text() === "Appearance")!.trigger("click");
+
+    // The row only exists once the reader asks for a name the stylesheet cannot enumerate.
+    expect(wrapper.find(".interface-font-custom-row").exists()).toBe(false);
+    await wrapper.get('select[aria-label="Font"]').setValue("custom");
+    await nextTick();
+    expect(wrapper.find(".interface-font-custom-row").exists()).toBe(true);
+    // And not a <label> - the same click-forwarding trap that made the tint slider undraggable.
+    expect(wrapper.get(".interface-font-custom-row").element.tagName).toBe("DIV");
+
+    await wrapper.get(".interface-font-custom-input").setValue('x"; color:red');
+    expect(store.interfaceFontCustom).toBe('x"; color:red');
+    expect(store.preferencesChanged).toHaveBeenCalled();
+    // The preview is set in the sanitised list, i.e. the same string App.vue writes onto the root, so
+    // what the reader sees is what the engine gets - and the characters that could end the declaration
+    // are gone before it ever reaches a stylesheet.
+    const style = wrapper.get(".interface-font-custom-preview").attributes("style") ?? "";
+    expect(style.replace(/^font-family:\s*/, "").replace(/;$/, "")).toBe('"x color:red"');
+
+    await wrapper.get(".interface-font-custom-input").setValue("Hiragino Sans GB");
+    expect(wrapper.get(".interface-font-custom-preview").attributes("style")).toContain('"Hiragino Sans GB"');
+
+    await wrapper.get(".interface-font-custom-input").setValue("");
+    expect(wrapper.get(".interface-font-custom-preview").attributes("style")).toContain("inherit");
+  });
+
   it("hides an expected unregistered-workspace persistence error", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

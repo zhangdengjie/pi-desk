@@ -19,6 +19,7 @@ import WindowControls from "./components/WindowControls.vue";
 import { tr } from "./i18n";
 import { onBrowserEvent } from "./services/browser";
 import { installGhostSelectionGuard } from "./services/ghostSelectionGuard";
+import { sanitizeFontFamilyList } from "./utils/fontFamily";
 import { anchoredTranscriptTint, TRANSCRIPT_TINT_ANCHOR } from "./utils/transcriptTint";
 import {
   MAX_INSPECTOR_WIDTH,
@@ -67,8 +68,18 @@ function syncDocumentTheme(theme: string) {
   document.documentElement.dataset.theme = theme;
 }
 
-function syncDocumentFont(font: string) {
+// `custom` is the one case the stylesheet cannot enumerate: the family name comes from the reader, so
+// it is written onto the root as a value and consumed by `:root[data-font-family="custom"]` in
+// tokens.css. The sanitiser is what makes that safe to do at all - see `utils/fontFamily.ts` for why a
+// typed name cannot be validated and only previewed.
+function syncDocumentFont(font: string, custom: string) {
   document.documentElement.dataset.fontFamily = font;
+  const list = sanitizeFontFamilyList(custom);
+  if (font === "custom" && list) {
+    document.documentElement.style.setProperty("--font-interface-custom", list);
+    return;
+  }
+  document.documentElement.style.removeProperty("--font-interface-custom");
 }
 
 function syncDocumentFontSize(size: number) {
@@ -134,7 +145,7 @@ watch(windowTitle, (title) => {
 }, { immediate: true });
 
 watch(() => appStore.appearance, syncDocumentTheme, { immediate: true });
-watch(() => appStore.interfaceFont, syncDocumentFont, { immediate: true });
+watch(() => [appStore.interfaceFont, appStore.interfaceFontCustom] as const, ([font, custom]) => syncDocumentFont(font, custom), { immediate: true });
 watch(() => appStore.interfaceFontSize, syncDocumentFontSize, { immediate: true });
 watch(() => appStore.transcriptFontWeight, syncDocumentTranscriptWeight, { immediate: true });
 watch(() => appStore.transcriptLineHeight, syncDocumentTranscriptLineHeight, { immediate: true });

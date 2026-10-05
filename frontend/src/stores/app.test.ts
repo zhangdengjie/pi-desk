@@ -447,6 +447,7 @@ describe("app store", () => {
         appearance: "dark",
         language: "en",
         fontFamily: "serif",
+        fontCustom: "苹方-简",
         fontSize: 16,
         transcriptFontWeight: "semibold",
         transcriptLineHeight: "compact",
@@ -474,7 +475,7 @@ describe("app store", () => {
     await store.initialize();
 
     expect(store).toMatchObject({
-      appearance: "dark", language: "en", interfaceFont: "serif", interfaceFontSize: 16, transcriptFontWeight: "semibold", transcriptLineHeight: "compact", transcriptTint: "#4a86b8", transcriptTintStrength: 14,
+      appearance: "dark", language: "en", interfaceFont: "serif", interfaceFontCustom: "苹方-简", interfaceFontSize: 16, transcriptFontWeight: "semibold", transcriptLineHeight: "compact", transcriptTint: "#4a86b8", transcriptTintStrength: 14,
       lightCodeTheme: "vitesse-light", darkCodeTheme: "catppuccin-mocha", showCodeLineNumbers: false, wrapCodeLines: true, codeFontSize: 14,
       offlineMode: false, proxyEnabled: true, proxyURL: "http://127.0.0.1:7890",
       streamingBehavior: "followUp", sidebarCollapsed: true, sidebarWidth: 344,
@@ -483,11 +484,32 @@ describe("app store", () => {
     await store.persistDesktopState();
     expect(mocks.saveDesktopState).toHaveBeenCalledWith(expect.objectContaining({
       preferences: expect.objectContaining({
-        proxyUrl: "http://127.0.0.1:7890", streamingBehavior: "followUp", fontFamily: "serif", fontSize: 16, transcriptFontWeight: "semibold", transcriptLineHeight: "compact", transcriptTint: "#4a86b8", transcriptTintStrength: 14,
+        proxyUrl: "http://127.0.0.1:7890", streamingBehavior: "followUp", fontFamily: "serif", fontCustom: "苹方-简", fontSize: 16, transcriptFontWeight: "semibold", transcriptLineHeight: "compact", transcriptTint: "#4a86b8", transcriptTintStrength: 14,
         lightCodeTheme: "vitesse-light", darkCodeTheme: "catppuccin-mocha", showCodeLineNumbers: false, wrapCodeLines: true, codeFontSize: 14,
         sidebarWidth: 344, inspectorOpen: false, inspectorWidth: 468, workspaceApplication: "vscode",
       }),
     }));
+  });
+
+  it("restores a custom interface family and bounds what was typed", async () => {
+    mocks.getDesktopState.mockResolvedValueOnce({
+      threads: [],
+      preferences: { appearance: "light", language: "zh-CN", fontFamily: "custom", fontCustom: "Noto Sans CJK SC", fontSize: 14 },
+    });
+    const store = useAppStore();
+    await store.initialize();
+    expect(store.interfaceFont).toBe("custom");
+    expect(store.interfaceFontCustom).toBe("Noto Sans CJK SC");
+
+    // The value ends up on the document root as part of a CSS declaration, so a pasted blob must not be
+    // carried whole through a restart. `utils/fontFamily.ts` strips what could break out of it; this is
+    // the length bound.
+    mocks.getDesktopState.mockResolvedValueOnce({
+      threads: [],
+      preferences: { appearance: "light", language: "zh-CN", fontFamily: "custom", fontCustom: "A".repeat(400), fontSize: 14 },
+    });
+    await store.initialize();
+    expect(store.interfaceFontCustom).toHaveLength(160);
   });
 
   it("opens the active trusted workspace with an installed application and persists the selection", async () => {

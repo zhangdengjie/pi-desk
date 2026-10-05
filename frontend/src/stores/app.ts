@@ -9,6 +9,7 @@ import { onTerminalEvent, terminalService, type TerminalEvent } from "../service
 import { browserService, type BrowserEvent } from "../services/browser";
 import { modelConfigService } from "../services/modelconfig";
 import { applyStreamTuning } from "../utils/streamTuning";
+import { FONT_FAMILY_INPUT_MAX } from "../utils/fontFamily";
 import { BATCH_ASK_PLACEHOLDER, parseBatchAskEnvelope, type BatchAskQuestion } from "../utils/batchAsk";
 import { formatFileMention } from "../utils/fileMentions";
 import { MAX_ATTACHED_IMAGES, MAX_SOURCE_IMAGE_BYTES, parseImageDataURL, type PreparedImage } from "../utils/imageAttachments";
@@ -87,7 +88,7 @@ export const STREAM_PANEL_MODES: readonly StreamPanelMode[] = ["auto", "alwaysOp
 export type QueueMode = "all" | "one-at-a-time";
 export type Appearance = "dark" | "light" | "system";
 export type Language = "zh-CN" | "en";
-export type InterfaceFont = "default" | "system" | "serif" | "mono";
+export type InterfaceFont = "default" | "system" | "serif" | "mono" | "custom";
 // The transcript's own weight knob. Pi's terminal draws body text one step heavier than a
 // proportional Regular at the same size, which is most of why its output reads "crisp" next to
 // Pi Desk; --transcript-font-weight (tokens.css) is where these three names land.
@@ -1072,6 +1073,7 @@ export const useAppStore = defineStore("app", {
     appearance: "light" as Appearance,
     language: "zh-CN" as Language,
     interfaceFont: "default" as InterfaceFont,
+    interfaceFontCustom: "",
     interfaceFontSize: 14,
     transcriptFontWeight: "normal" as TranscriptFontWeight,
     transcriptLineHeight: "relaxed" as TranscriptLineHeight,
@@ -4101,9 +4103,12 @@ export const useAppStore = defineStore("app", {
       if (!desktop.preferences) return;
       this.appearance = (desktop.preferences.appearance || "light") as Appearance;
       this.language = (desktop.preferences.language || "zh-CN") as Language;
-      this.interfaceFont = (["default", "system", "serif", "mono"] as const).includes(desktop.preferences.fontFamily as InterfaceFont)
+      this.interfaceFont = (["default", "system", "serif", "mono", "custom"] as const).includes(desktop.preferences.fontFamily as InterfaceFont)
         ? desktop.preferences.fontFamily as InterfaceFont
         : "default";
+      this.interfaceFontCustom = typeof desktop.preferences.fontCustom === "string"
+        ? desktop.preferences.fontCustom.slice(0, FONT_FAMILY_INPUT_MAX)
+        : "";
       this.interfaceFontSize = Number.isInteger(desktop.preferences.fontSize) && desktop.preferences.fontSize >= 12 && desktop.preferences.fontSize <= 18
         ? desktop.preferences.fontSize
         : 14;
@@ -4418,6 +4423,7 @@ export const useAppStore = defineStore("app", {
           appearance: this.appearance,
           language: this.language,
           fontFamily: this.interfaceFont,
+          fontCustom: this.interfaceFontCustom,
           fontSize: this.interfaceFontSize,
           transcriptFontWeight: this.transcriptFontWeight,
           transcriptLineHeight: this.transcriptLineHeight,

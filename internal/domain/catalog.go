@@ -225,9 +225,13 @@ type ScheduledTaskState struct {
 }
 
 type DesktopPreferences struct {
-	Appearance             string `json:"appearance"`
-	Language               string `json:"language"`
-	FontFamily             string `json:"fontFamily"`
+	Appearance string `json:"appearance"`
+	Language   string `json:"language"`
+	FontFamily string `json:"fontFamily"`
+	// FontCustom is the family name behind FontFamily == "custom". It is a value the reader types, so
+	// the front end sanitises it into a quoted list before it reaches CSS; here it is only length-bound
+	// (rune-wise, since names are localised) so a pasted blob cannot bloat state.json.
+	FontCustom             string `json:"fontCustom,omitempty"`
 	FontSize               int    `json:"fontSize"`
 	TranscriptFontWeight   string `json:"transcriptFontWeight,omitempty"`
 	TranscriptLineHeight   string `json:"transcriptLineHeight,omitempty"`
