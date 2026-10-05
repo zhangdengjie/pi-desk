@@ -40,7 +40,7 @@ onBeforeUnmount(() => {
         <button class="icon-button" :class="ui.iconButton" type="button" :title="tr('extension.cancel')" @click="appStore.respondToExtension(undefined, true)"><X :size="17" /></button>
       </header>
       <div class="dialog-body" :class="[ui.dialogBody, { 'batch-question-dialog-body': request.method === 'batch_ask' }]">
-        <p v-if="pendingCount" class="extension-pending text-xs text-[var(--text-muted)]">{{ tr("extension.pendingCount", { count: pendingCount }) }}</p>
+        <p v-if="pendingCount" class="extension-pending text-[var(--font-size-label)] text-[var(--text-muted)]">{{ tr("extension.pendingCount", { count: pendingCount }) }}</p>
         <BatchQuestionForm
           v-if="request.method === 'batch_ask' && request.batchQuestions"
           :key="request.id"

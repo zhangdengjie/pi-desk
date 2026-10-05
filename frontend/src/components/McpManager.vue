@@ -630,10 +630,10 @@ onMounted(() => {
               <small>{{ tr("settings.mcpCompleteJsonHelp") }}</small>
             </label>
 
-          <section v-if="testResult || testError" class="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 text-sm" aria-live="polite" data-testid="mcp-test-result">
+          <section v-if="testResult || testError" class="grid gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 text-[var(--font-size-body)]" aria-live="polite" data-testid="mcp-test-result">
             <div v-if="testError" class="flex min-w-0 items-start gap-2 text-[var(--red)]" role="alert">
               <XCircle :size="16" class="mt-0.5 shrink-0" aria-hidden="true" />
-              <div class="min-w-0"><strong>{{ tr("settings.mcpTestFailed") }}</strong><p class="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed">{{ testError }}</p></div>
+              <div class="min-w-0"><strong>{{ tr("settings.mcpTestFailed") }}</strong><p class="mt-1 whitespace-pre-wrap break-words text-[var(--font-size-label)] leading-relaxed">{{ testError }}</p></div>
             </div>
             <template v-else-if="testResult">
               <header class="flex min-w-0 items-start gap-2">
@@ -644,29 +644,29 @@ onMounted(() => {
                 </div>
               </header>
               <section class="grid min-w-0 gap-2 rounded-md border border-[var(--border)] px-2.5 py-2">
-                <strong class="text-xs font-medium text-[var(--text-secondary)]">{{ tr("settings.mcpTestTools") }} · {{ testResult.toolCount }}</strong>
+                <strong class="text-[var(--font-size-label)] font-medium text-[var(--text-secondary)]">{{ tr("settings.mcpTestTools") }} · {{ testResult.toolCount }}</strong>
                 <ul v-if="testResult.tools?.length" class="grid list-none gap-2">
                   <li v-for="tool in testResult.tools" :key="tool.name" class="min-w-0 rounded-md bg-[var(--bg-workspace)] px-2.5 py-2">
-                    <strong class="block break-words text-sm font-medium">{{ tool.name }}</strong>
-                    <p v-if="tool.description" class="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-[var(--text-muted)]">{{ tool.description }}</p>
-                    <details v-if="tool.inputSchema" class="mt-2 text-xs text-[var(--text-secondary)]">
+                    <strong class="block break-words text-[var(--font-size-body)] font-medium">{{ tool.name }}</strong>
+                    <p v-if="tool.description" class="mt-1 whitespace-pre-wrap break-words text-[var(--font-size-label)] leading-relaxed text-[var(--text-muted)]">{{ tool.description }}</p>
+                    <details v-if="tool.inputSchema" class="mt-2 text-[var(--font-size-label)] text-[var(--text-secondary)]">
                       <summary class="cursor-pointer select-none">{{ tr("settings.mcpTestToolInput") }}</summary>
-                      <pre class="mt-1 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--border)] bg-[var(--bg-code)] p-2 font-mono text-xs leading-relaxed text-[var(--text-code)]">{{ tool.inputSchema }}</pre>
+                      <pre class="mt-1 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--border)] bg-[var(--bg-code)] p-2 font-mono text-[var(--font-size-label)] leading-relaxed text-[var(--text-code)]">{{ tool.inputSchema }}</pre>
                     </details>
                   </li>
                 </ul>
-                <p v-else class="text-xs text-[var(--text-muted)]">{{ tr("settings.mcpTestNone") }}</p>
+                <p v-else class="text-[var(--font-size-label)] text-[var(--text-muted)]">{{ tr("settings.mcpTestNone") }}</p>
               </section>
               <div class="grid gap-2 sm:grid-cols-2">
                 <div v-for="group in [
                   { label: tr('settings.mcpTestResources'), count: testResult.resourceCount, values: testResult.resources ?? [] },
                   { label: tr('settings.mcpTestPrompts'), count: testResult.promptCount, values: testResult.prompts ?? [] },
                 ]" :key="group.label" class="min-w-0 rounded-md border border-[var(--border)] px-2.5 py-2">
-                  <strong class="text-xs font-medium text-[var(--text-secondary)]">{{ group.label }} · {{ group.count }}</strong>
-                  <p class="mt-1 break-words text-xs leading-relaxed text-[var(--text-muted)]">{{ group.values.length ? group.values.join(" · ") : tr("settings.mcpTestNone") }}</p>
+                  <strong class="text-[var(--font-size-label)] font-medium text-[var(--text-secondary)]">{{ group.label }} · {{ group.count }}</strong>
+                  <p class="mt-1 break-words text-[var(--font-size-label)] leading-relaxed text-[var(--text-muted)]">{{ group.values.length ? group.values.join(" · ") : tr("settings.mcpTestNone") }}</p>
                 </div>
               </div>
-              <p v-if="testResult.capabilities?.length" class="break-words text-xs text-[var(--text-muted)]">{{ tr("settings.mcpTestCapabilities") }}: {{ testResult.capabilities.join(" · ") }}</p>
+              <p v-if="testResult.capabilities?.length" class="break-words text-[var(--font-size-label)] text-[var(--text-muted)]">{{ tr("settings.mcpTestCapabilities") }}: {{ testResult.capabilities.join(" · ") }}</p>
             </template>
           </section>
           <p class="prompt-reload-note">{{ appStore.activeThread?.started ? tr("settings.mcpRestartNeeded") : tr("settings.mcpReadyOnStart") }}</p>

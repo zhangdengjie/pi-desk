@@ -835,7 +835,7 @@ watch(() => currentTab.value?.id, async () => {
       </template>
     </div>
 
-    <div v-else-if="currentTab?.kind === 'diff'" :key="currentTab.id" class="inspector-content repository-panel flex min-h-0 flex-col overflow-hidden p-0 text-sm">
+    <div v-else-if="currentTab?.kind === 'diff'" :key="currentTab.id" class="inspector-content repository-panel flex min-h-0 flex-col overflow-hidden p-0 text-[var(--font-size-body)]">
       <div class="repository-diff">
         <div v-if="appStore.activeRepositoryDiffLoading" class="repository-state" :class="ui.empty"><LoaderCircle v-spin :size="18" class="is-spinning" /></div>
         <div v-else-if="appStore.activeRepositoryDiffError && !activeDiff" class="repository-state error-text" :class="ui.empty">{{ appStore.activeRepositoryDiffError }}</div>

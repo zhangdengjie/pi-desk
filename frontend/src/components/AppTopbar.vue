@@ -100,8 +100,8 @@ onBeforeUnmount(() => {
       <div class="topbar-title-group flex min-w-0 items-center gap-2.5">
         <CalendarClock v-if="appStore.activePage === 'scheduledTasks'" :size="17" class="text-[var(--text-muted)]" />
         <strong class="font-display text-[calc(15px+var(--font-size-delta))] font-semibold tracking-[-0.01em] text-[var(--text)]" :title="appStore.activePage === 'scheduledTasks' ? tr('scheduledTasks.title') : threadTooltip(appStore.activeThread) || 'Pi Desk'">{{ appStore.activePage === "scheduledTasks" ? tr("scheduledTasks.title") : appStore.activeThread?.title || "Pi Desk" }}</strong>
-        <span v-if="appStore.activePage === 'task' && appStore.activeExtensionTitle" class="extension-window-title min-w-0 truncate text-xs text-[var(--text-secondary)]" :title="appStore.activeExtensionTitle">{{ appStore.activeExtensionTitle }}</span>
-        <span v-if="appStore.activePage === 'task' && appStore.activeThread" class="workspace-chip min-w-0 max-w-56 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-app)] px-2 py-1 text-xs text-[var(--text-secondary)]" :title="appStore.activeThread.workspacePath">
+        <span v-if="appStore.activePage === 'task' && appStore.activeExtensionTitle" class="extension-window-title min-w-0 truncate text-[var(--font-size-label)] text-[var(--text-secondary)]" :title="appStore.activeExtensionTitle">{{ appStore.activeExtensionTitle }}</span>
+        <span v-if="appStore.activePage === 'task' && appStore.activeThread" class="workspace-chip min-w-0 max-w-56 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-app)] px-2 py-1 text-[var(--font-size-label)] text-[var(--text-secondary)]" :title="appStore.activeThread.workspacePath">
           <FolderGit2 :size="14" />
           <span>{{ appStore.activeThread.workspace }}</span>
         </span>
@@ -142,7 +142,7 @@ onBeforeUnmount(() => {
               type="button"
               role="menuitemradio"
               :aria-checked="application.id === activeWorkspaceApplication?.id"
-              class="flex min-h-9 w-full items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)]"
+              class="flex min-h-9 w-full items-center gap-2 rounded-lg border-0 bg-transparent px-2.5 text-left text-[var(--font-size-label)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)]"
               :class="{ 'is-selected bg-[var(--bg-hover)] text-[var(--text)]': application.id === activeWorkspaceApplication?.id }"
               @click="void openWorkspaceWith(application.id)"
             >
@@ -151,7 +151,7 @@ onBeforeUnmount(() => {
               <Check v-if="application.id === activeWorkspaceApplication?.id" class="workspace-application-check" :size="15" />
             </button>
           </div>
-          <p v-else-if="appStore.workspaceApplicationError" class="workspace-application-error absolute right-0 top-[calc(100%+8px)] z-50 m-0 w-64 rounded-lg border border-[color-mix(in_srgb,var(--red)_45%,var(--border))] bg-[var(--bg-menu)] px-3 py-2 text-xs leading-relaxed text-[var(--red)] shadow-xl" role="alert">{{ appStore.workspaceApplicationError }}</p>
+          <p v-else-if="appStore.workspaceApplicationError" class="workspace-application-error absolute right-0 top-[calc(100%+8px)] z-50 m-0 w-64 rounded-lg border border-[color-mix(in_srgb,var(--red)_45%,var(--border))] bg-[var(--bg-menu)] px-3 py-2 text-[var(--font-size-label)] leading-relaxed text-[var(--red)] shadow-xl" role="alert">{{ appStore.workspaceApplicationError }}</p>
         </div>
         <button
           v-if="appStore.activePage === 'task'"

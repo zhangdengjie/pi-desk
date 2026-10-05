@@ -697,7 +697,7 @@ onBeforeUnmount(() => {
         </aside>
       </nav>
       <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--composer-overlay-reserve': `${composerHeight}px` }" @scroll="onTimelineScroll" @wheel="onTimelineWheel" @pointerdown="markReaderInput" @keydown="markReaderInput">
-      <div v-if="appStore.activeSessionOperation === 'Compacting'" class="conversation-operation-banner mb-4 inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-xs text-[var(--text-secondary)] shadow-sm" role="status" aria-live="polite">
+      <div v-if="appStore.activeSessionOperation === 'Compacting'" class="conversation-operation-banner mb-4 inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-[var(--font-size-label)] text-[var(--text-secondary)] shadow-sm" role="status" aria-live="polite">
         <LoadingRing :size="14" />
         <span>{{ tr("topbar.compacting") }}</span>
       </div>
@@ -707,11 +707,11 @@ onBeforeUnmount(() => {
         <LoadingRing v-if="appStore.transcriptStateByThread[appStore.activeThread.id] === 'loading'" :size="22" />
 <!--        <History v-else-if="appStore.activeThread.sessionFile" :size="22" />
         <CircleDot v-else :size="22" />-->
-        <strong class="font-display text-lg font-semibold tracking-[-0.02em] text-[var(--text)]">{{ appStore.activeThread.sessionFile ? tr("conversation.previous") : tr("conversation.startIn", { workspace: appStore.activeThread.workspace }) }}</strong>
-        <span class="max-w-[60ch] text-sm leading-relaxed">{{ appStore.activeThread.messageCount ? tr("conversation.savedMessages", { count: appStore.activeThread.messageCount }) : appStore.activeThread.trust === "approve" ? tr("conversation.resourcesEnabled") : tr("conversation.resourcesDisabled") }}</span>
+        <strong class="font-display text-[var(--font-size-subheading)] font-semibold tracking-[-0.02em] text-[var(--text)]">{{ appStore.activeThread.sessionFile ? tr("conversation.previous") : tr("conversation.startIn", { workspace: appStore.activeThread.workspace }) }}</strong>
+        <span class="max-w-[60ch] text-[var(--font-size-body)] leading-relaxed">{{ appStore.activeThread.messageCount ? tr("conversation.savedMessages", { count: appStore.activeThread.messageCount }) : appStore.activeThread.trust === "approve" ? tr("conversation.resourcesEnabled") : tr("conversation.resourcesDisabled") }}</span>
         <button
           v-if="appStore.activeThread.sessionFile && appStore.transcriptStateByThread[appStore.activeThread.id] !== 'loading'"
-          class="text-button inline-flex h-9 items-center whitespace-nowrap rounded-lg border border-[var(--border-strong)] bg-[var(--bg-workspace)] px-3 text-sm font-medium text-[var(--text-secondary)] shadow-sm hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-[var(--text)]" :class="ui.button"
+          class="text-button inline-flex h-9 items-center whitespace-nowrap rounded-lg border border-[var(--border-strong)] bg-[var(--bg-workspace)] px-3 text-[var(--font-size-body)] font-medium text-[var(--text-secondary)] shadow-sm hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-[var(--text)]" :class="ui.button"
           type="button"
           @click="appStore.loadThreadTranscript(appStore.activeThread.id)"
         >

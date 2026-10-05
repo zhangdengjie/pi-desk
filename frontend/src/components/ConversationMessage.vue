@@ -546,8 +546,8 @@ watch(() => props.message.id, () => closeAnswerOutline());
             <FileDiff :size="17" />
           </span>
           <div class="min-w-0 flex-1">
-            <strong class="block truncate text-sm font-semibold text-[var(--text)]">{{ tr("conversation.filesChangedCount", { count: changedFiles.length }) }}</strong>
-            <span class="mt-1 flex items-center gap-1 font-mono text-xs" :aria-label="tr('conversation.changeTotals', changedTotals)">
+            <strong class="block truncate text-[var(--font-size-body)] font-semibold text-[var(--text)]">{{ tr("conversation.filesChangedCount", { count: changedFiles.length }) }}</strong>
+            <span class="mt-1 flex items-center gap-1 font-mono text-[var(--font-size-label)]" :aria-label="tr('conversation.changeTotals', changedTotals)">
               <span class="text-[var(--diff-add-text)]">+{{ changedTotals.additions }}</span>
               <span class="text-[var(--diff-delete-text)]">-{{ changedTotals.deletions }}</span>
             </span>
@@ -556,7 +556,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
         <ul class="m-0 list-none p-0">
           <li v-for="file in shownChangedFiles" :key="file.absolutePath" class="border-b border-[var(--border)] last:border-b-0">
             <button
-              class="flex min-h-10 w-full min-w-0 items-center gap-3 border-0 bg-transparent px-3 py-2 text-left text-sm text-[var(--text-secondary)] enabled:hover:bg-[var(--bg-hover)] enabled:hover:text-[var(--text)] enabled:active:bg-[var(--bg-active)] focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus)] disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11 aria-current:bg-[var(--bg-selected)]"
+              class="flex min-h-10 w-full min-w-0 items-center gap-3 border-0 bg-transparent px-3 py-2 text-left text-[var(--font-size-body)] text-[var(--text-secondary)] enabled:hover:bg-[var(--bg-hover)] enabled:hover:text-[var(--text)] enabled:active:bg-[var(--bg-active)] focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus)] disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-11 aria-current:bg-[var(--bg-selected)]"
               type="button"
               :title="file.relativePath"
               :aria-label="tr('conversation.openChangedFile', { path: file.relativePath })"
@@ -567,7 +567,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
             >
               <span class="min-w-0 flex-1 truncate"><span class="text-[var(--text-activity)]">{{ file.relativePath.slice(0, -file.name.length) }}</span>{{ file.name }}</span>
               <LoadingRing v-if="appStore.activePanelTab?.source === message.id && appStore.activeRepositoryDiffPath === file.relativePath && appStore.activeRepositoryDiffLoading" :size="13" />
-              <span v-else class="flex shrink-0 items-center gap-1 font-mono text-xs" :aria-label="tr('conversation.changeTotals', { additions: file.additions, deletions: file.deletions })">
+              <span v-else class="flex shrink-0 items-center gap-1 font-mono text-[var(--font-size-label)]" :aria-label="tr('conversation.changeTotals', { additions: file.additions, deletions: file.deletions })">
                 <span class="text-[var(--diff-add-text)]">+{{ file.additions }}</span>
                 <span class="text-[var(--diff-delete-text)]">-{{ file.deletions }}</span>
               </span>
@@ -576,7 +576,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
         </ul>
         <button
           v-if="changedFiles.length > 3"
-          class="flex min-h-10 w-full items-center gap-2 border-0 border-t border-[var(--border)] bg-transparent px-3 py-2 text-left text-xs font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus)] pointer-coarse:min-h-11"
+          class="flex min-h-10 w-full items-center gap-2 border-0 border-t border-[var(--border)] bg-transparent px-3 py-2 text-left text-[var(--font-size-label)] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--focus)] pointer-coarse:min-h-11"
           type="button"
           :aria-expanded="changedFilesExpanded"
           @click="changedFilesExpanded = !changedFilesExpanded"

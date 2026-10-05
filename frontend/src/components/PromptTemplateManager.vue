@@ -236,8 +236,8 @@ onMounted(() => { void loadTemplates(); });
           <button v-if="isExisting" class="text-button danger mr-auto" :class="ui.buttonDanger" type="button" :disabled="saving" @click="void deleteTemplate()"><Trash2 :size="14" />{{ deleteArmed ? tr("settings.confirmDeletePrompt") : tr("settings.deletePrompt") }}</button>
           <div class="group relative">
             <button class="icon-button" :class="ui.iconButton" type="button" :aria-label="tr('settings.promptUsageTitle')" aria-describedby="prompt-usage-tooltip"><CircleHelp :size="14" /></button>
-            <aside id="prompt-usage-tooltip" class="pointer-events-none absolute bottom-[calc(100%+8px)] right-0 z-20 hidden w-[min(420px,calc(100vw-64px))] rounded-lg border border-[var(--border)] bg-[var(--bg-menu)] p-3 text-left text-xs leading-relaxed text-[var(--text-secondary)] shadow-xl group-hover:block group-focus-within:block" role="tooltip">
-              <strong class="mb-2 block text-sm text-[var(--text)]">{{ tr("settings.promptUsageTitle") }}</strong>
+            <aside id="prompt-usage-tooltip" class="pointer-events-none absolute bottom-[calc(100%+8px)] right-0 z-20 hidden w-[min(420px,calc(100vw-64px))] rounded-lg border border-[var(--border)] bg-[var(--bg-menu)] p-3 text-left text-[var(--font-size-label)] leading-relaxed text-[var(--text-secondary)] shadow-xl group-hover:block group-focus-within:block" role="tooltip">
+              <strong class="mb-2 block text-[var(--font-size-body)] text-[var(--text)]">{{ tr("settings.promptUsageTitle") }}</strong>
               <ul class="m-0 grid list-disc gap-1.5 pl-4">
                 <li>{{ tr("settings.promptUsageInvoke") }}</li>
                 <li>{{ tr("settings.promptUsageMetadata", { required: "<required>", optional: "[optional]" }) }}</li>

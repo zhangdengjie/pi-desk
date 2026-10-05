@@ -79,7 +79,7 @@ defineExpose({
         v-model="draft"
         :class="ui.input"
         autocomplete="off"
-        class="search-popover-input min-w-0 flex-1 border-0 bg-transparent text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
+        class="search-popover-input min-w-0 flex-1 border-0 bg-transparent text-[var(--font-size-body)] text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
         :placeholder="placeholder ?? tr('conversation.searchPlaceholder')"
         :aria-label="placeholder ?? tr('conversation.searchPlaceholder')"
         type="search"
