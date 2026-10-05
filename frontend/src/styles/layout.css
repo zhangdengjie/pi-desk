@@ -8207,11 +8207,16 @@ article.mcp-server-row {
   flex: 0 0 16px;
 }
 
-/* The transcript tint row (Settings > 外观 > 对话底色). The rule above sizes *every* input in a
-   settings row to a 16px checkbox, which would flatten both the colour swatch and the strength
-   slider, so each control re-states its own box here - and with a `.setting-row` prefix, because an
-   unadorned class selector would lose that fight on specificity. Geometry stays out of the template
-   (AGENTS §4.2). */
+/* The transcript tint row (Settings > 外观 > 对话底色). Two things own geometry here:
+   1. `.setting-row input` above sizes every input in a settings row to a 16px checkbox, so each
+      control re-states its own box - with a `.setting-row` prefix, because a bare class selector
+      would lose that fight on specificity.
+   2. `ui.settingsControls` puts `!h-[34px] !px-2.5 !text-[…]` on `input:not(checkbox):not(radio)`.
+      An `!important` utility inside `@layer utilities` cannot be beaten from this unlayered sheet
+      (AGENTS §4.3), which is why the colour well and the range are now excluded by that selector -
+      10px of inline padding inside a 26px box is what rendered the swatch as a 6px vertical lens.
+      The hex field stays under the utility, so its height and size below match what that rule
+      produces rather than pretending to override it. Geometry stays out of the template (AGENTS §4.2). */
 .transcript-tint-controls {
   display: flex;
   align-items: center;
@@ -8219,9 +8224,9 @@ article.mcp-server-row {
 }
 
 .setting-row .transcript-tint-swatch {
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
   padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 50%;
@@ -8245,16 +8250,16 @@ article.mcp-server-row {
 }
 
 .setting-row .transcript-tint-hex {
-  width: 78px;
-  height: 26px;
-  flex: 0 0 78px;
+  width: 104px;
+  height: 34px;
+  flex: 0 0 104px;
   padding: 0 7px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--bg-app);
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: var(--font-size-label);
+  font-size: var(--font-size-body);
   text-transform: lowercase;
 }
 
@@ -8275,13 +8280,13 @@ article.mcp-server-row {
 }
 
 .transcript-tint-reset {
-  height: 24px;
-  padding: 0 9px;
+  height: 34px;
+  padding: 0 12px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--bg-app);
   color: var(--text-secondary);
-  font-size: var(--font-size-label);
+  font-size: var(--font-size-body);
   cursor: pointer;
 }
 
@@ -8295,16 +8300,19 @@ article.mcp-server-row {
   gap: 6px;
 }
 
-/* The chip paints the mixed result, not the raw hue: what the reader would actually get at the
-   default strength on the theme they are looking at. A swatch of the pure colour would promise
-   something the ground never becomes. */
+/* The chip paints the mixed result, not the raw hue: what the reader would actually get on the theme
+   they are looking at. A swatch of the pure colour would promise something the ground never becomes.
+   The percentage is a literal rather than `var(--transcript-tint-strength)` on purpose: that property
+   is `0%` until a pick exists, which made every chip paint itself the colour of the ground and vanish -
+   invisible buttons in the one row that is about colour. It previews the default strength, and the
+   readout beside the slider carries the real one. */
 .transcript-tint-preset {
   width: 22px;
   height: 22px;
   padding: 0;
   border: 1px solid var(--border-strong);
   border-radius: 50%;
-  background: color-mix(in oklab, var(--bg-conversation) calc(100% - var(--transcript-tint-strength, 40%)), var(--tint-swatch));
+  background: color-mix(in oklab, var(--bg-conversation) 60%, var(--tint-swatch));
   cursor: pointer;
 }
 

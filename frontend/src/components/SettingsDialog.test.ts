@@ -46,16 +46,16 @@ describe("SettingsDialog", () => {
     expect(wrapper.get(".settings-page").classes()).toEqual(expect.arrayContaining([
       "[&_.text-button]:!h-[34px]",
       "[&_.text-button]:!min-h-[34px]",
-      "[&_.text-button]:!text-sm",
+      "[&_.text-button]:!text-[var(--font-size-body)]",
       "[&_.icon-button]:!size-7",
       "[&_.text-button_svg]:!size-3.5",
       "[&_select]:!h-[34px]",
-      "[&_select]:!text-sm",
-      "[&_input:not([type=checkbox]):not([type=radio])]:!h-[34px]",
+      "[&_select]:!text-[var(--font-size-body)]",
+      "[&_input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=range])]:!h-[34px]",
       "[&_input[type=checkbox]]:!size-3.5",
       "[&_.setting-row>input[type=checkbox]]:!h-[22px]",
       "[&_.setting-row>input[type=checkbox]]:!w-[38px]",
-      "[&_textarea]:!text-sm",
+      "[&_textarea]:!text-[var(--font-size-body)]",
     ]));
     expect(wrapper.get(".settings-sections").classes()).not.toContain("[&>section]:px-1");
     expect(wrapper.findAll(".settings-section-title")).toHaveLength(5);

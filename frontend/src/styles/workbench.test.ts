@@ -251,6 +251,46 @@ describe("responsive workbench layout", () => {
     expect(sidebar).toMatch(/text-\[var\(--font-size-label\)\]/);
   });
 
+  it("keeps every other chrome surface on the font-size ladder too", async () => {
+    // The same trap, measured across the rest of the shell once the sidebar fix was confirmed: any
+    // rem-based text utility in these files silently ignores 字体大小, so a row that scales ends up
+    // beside one that does not. The ladder tops out at `--font-size-hero` (18px + delta) for the single
+    // headline that needs to sit above it.
+    for (const path of [
+      "src/ui/classes.ts",
+      "src/components/AppTopbar.vue",
+      "src/components/ConversationMessage.vue",
+      "src/components/ConversationPane.vue",
+      "src/components/ExtensionDialog.vue",
+      "src/components/InspectorPanel.vue",
+      "src/components/McpManager.vue",
+      "src/components/NewTaskDialog.vue",
+      "src/components/PromptTemplateManager.vue",
+      "src/components/SearchPopover.vue",
+    ]) {
+      const source = await textAt(path);
+      expect(source, `${path} still carries a rem text utility`).not.toMatch(/[^-]\btext-(xs|sm|base|lg|xl)\b/);
+    }
+  });
+
+  it("previews the tint presets at a strength that actually exists", async () => {
+    const css = await textAt("src/styles/layout.css");
+    const preset = css.match(/\.transcript-tint-preset\s*{[^}]*}/)?.[0] ?? "";
+    // `--transcript-tint-strength` is `0%` on the root until a pick exists, so mixing the chip with it
+    // painted every preset the colour of the ground - invisible buttons in the row that is about colour.
+    expect(preset).toContain("color-mix(in oklab, var(--bg-conversation) 60%, var(--tint-swatch))");
+    expect(preset).not.toContain("--transcript-tint-strength");
+  });
+
+  it("keeps the shared control sizing off the colour well and the range", async () => {
+    const classes = await textAt("src/ui/classes.ts");
+    // `ui.settingsControls` gives every text-ish input `!h-[34px] !px-2.5`. An `!important` utility in
+    // `@layer utilities` cannot be answered from an unlayered sheet, so the only way the tint row's
+    // 26px colour well survives is by not matching that selector: 10px of inline padding each side
+    // left a 6px content box, and WebKit painted the swatch inside it - a vertical lens.
+    expect(classes).toContain("input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=range])");
+  });
+
   it("moves the conversation search popover clear of the inspector overlay", async () => {
     const css = await workbenchText();
     const pane = await vueText("src/components/ConversationPane.vue");
