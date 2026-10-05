@@ -476,6 +476,31 @@ describe("transcript line breaks", () => {
     expect(message).toContain("white-space: pre-wrap");
     expect(text.indexOf(".markdown-body p")).toBeGreaterThan(text.indexOf(".message-content p"));
   });
+
+  it("lets one token own the transcript's leading", async () => {
+    const [layout, workbench, tokens] = await Promise.all([
+      layoutText(), readStyle("workbench.css"), readStyle("tokens.css"),
+    ]);
+    // Moving 设置 > 外观 > 正文行高 used to change the lists while every paragraph held still:
+    // measured 19.44px for the paragraph against 18.00 / 19.20 / 20.40px for the <li> across
+    // tight / compact / relaxed. The cause was a second leading token, `--line-height-reading: 1.62`,
+    // read by the one rule that paints the transcript's prose. A literal here is that bug returning.
+    expect(layout).not.toMatch(/line-height:\s*1\.62/);
+    expect(tokens).not.toMatch(/--line-height-reading\s*:/);
+    // The rule that owns it - and its narrow-layout copy, which would otherwise put the literal back
+    // under the breakpoint.
+    expect(workbench.match(/\.message-content p,\s*\.markdown-body,\s*\.message-row\[data-role="user"\] \.markdown-body,\s*\.message-row\[data-role="user"\] \.message-content > p\s*{[^}]*}/g)?.[0])
+      .toContain("line-height: var(--transcript-line-height)");
+    expect((workbench.match(/line-height: var\(--line-height-reading\)/g) ?? []).length).toBe(0);
+    const paragraph = layout.match(/\.message-content p\s*{[^}]*}/s)?.[0] ?? "";
+    // A bare <p> does sit under `.message-content` (a system message, the edit error), so the rule for
+    // it cannot simply drop the property - it has to name the same token.
+    expect(paragraph).toContain("line-height: var(--transcript-line-height)");
+    // The file preview's own 1.7 was dead for prose, because the `.markdown-body` inside it wins. Two
+    // surfaces that each declare a leading are how one list read high in a pane and low in another.
+    const preview = workbench.match(/\.file-markdown-preview\s*{[^}]*}/s)?.[0] ?? "";
+    expect(preview).not.toMatch(/line-height/);
+  });
 });
 
 describe("pane drag cost", () => {

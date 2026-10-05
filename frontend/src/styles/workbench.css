@@ -796,12 +796,17 @@
   max-width: 100%;
 }
 
+/* The one rule that paints the transcript's prose, and therefore the one place 设置 > 外观 > 正文行高
+   has to be read. It used to read `--line-height-reading` (a second, unrelated 1.62 that no setting
+   drove), which is why moving 正文行高 changed the lists - `.markdown-body` gets the token two rules
+   below - while every paragraph held still: measured 19.44px for the paragraph against
+   18.00 / 19.20 / 20.40px for the <li> across tight / compact / relaxed. One leading, one token. */
 .message-content p,
 .markdown-body,
 .message-row[data-role="user"] .markdown-body,
 .message-row[data-role="user"] .message-content > p {
   font-size: var(--font-size-body);
-  line-height: var(--line-height-reading);
+  line-height: var(--transcript-line-height);
 }
 
 .message-content p + p,
@@ -1122,7 +1127,11 @@
   background: var(--bg-conversation);
   color: var(--text);
   font-size: calc(15px + var(--font-size-delta));
-  line-height: 1.7;
+  /* No leading declared here, on purpose. The rendered document is a `.markdown-body`, which carries
+     the transcript token, and this box's own 1.7 was therefore dead for every line of prose in the
+     pane - measured: the file preview's <li> computes to 18.00 / 19.20 / 20.40px as 正文行高 moves
+     through tight / compact / relaxed, exactly like the transcript's. Keeping the literal here is
+     what made the two surfaces disagree about what one line of text is worth. */
 }
 
 .file-markdown-preview h1 {
@@ -1928,12 +1937,14 @@
     padding: 26px 16px calc(var(--composer-overlay-reserve) + 18px);
   }
 
+  /* The narrow-layout copy of the rule above: same selectors, so it has to read the same token or a
+     pane under the breakpoint silently puts the paragraphs back to a literal. */
   .message-content p,
   .markdown-body,
   .message-row[data-role="user"] .markdown-body,
   .message-row[data-role="user"] .message-content > p {
     font-size: var(--font-size-body);
-    line-height: var(--line-height-reading);
+    line-height: var(--transcript-line-height);
   }
 
   .message-row[data-role="user"] .message-content {

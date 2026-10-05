@@ -1721,12 +1721,18 @@ html.is-resizing-pane .inspector {
   margin-left: auto;
 }
 
+/* Every literal leading the transcript used to spell out is gone from this file, and what remains
+   names the token instead. All three were already dead - `workbench.css` loads after this one and its
+   rules for the same selectors out-order them - but a dead 1.62 sitting next to a live
+   `--transcript-line-height` is how the next reader ends up chasing a rule that cannot be the cause.
+   The bare <p> under `.message-content` (a system message, the edit error above it) is the one case
+   that genuinely needs a declaration here rather than inheriting from `.markdown-body`. */
 .message-content p {
   margin: 0;
   color: var(--text);
   font-family: var(--font-reading);
   font-size: calc(14.5px + var(--font-size-delta));
-  line-height: 1.62;
+  line-height: var(--transcript-line-height);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -1821,7 +1827,6 @@ html.is-resizing-pane .inspector {
   color: var(--text);
   font-family: var(--font-reading);
   font-size: calc(14.5px + var(--font-size-delta));
-  line-height: 1.62;
   overflow-wrap: anywhere;
 }
 
@@ -9254,7 +9259,6 @@ article.mcp-server-row {
   font-family: var(--font-reading);
   font-size: calc(14.5px + var(--font-size-delta));
   font-weight: 400;
-  line-height: 1.62;
 }
 
 .message-meta span {
