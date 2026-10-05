@@ -329,24 +329,38 @@
 
 .workspace-application-split {
   display: inline-flex;
-  height: 28px;
+  /* The box lives here, not in the template. It used to be both: `h-8` (32px) as a utility beat this
+     rule's 28px, and the utility is `!important` inside `@layer utilities` so an unlayered sheet can
+     never answer it (AGENTS §4.3) - the 28px below was fiction. Now the template carries colour and
+     radius only, and these numbers are the ones that render. */
+  height: 32px;
   overflow: hidden;
   align-items: stretch;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   background: var(--bg-panel);
 }
 
 .topbar-actions .workspace-application-primary {
-  width: 28px;
-  height: 26px;
-  flex-basis: 28px;
+  /* 30px = the split's 32px minus its two 1px borders, so the child fills the inner box exactly and
+     `align-items: stretch` needs no margins to sit centred. `.icon-button` carries `flex: 0 0 28px`,
+     and in a flex row the basis - not `width` - is the main-axis size: that 2px deficit is what left
+     the toggle's highlight short of the rounded corner. */
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   border-radius: 0;
 }
 
 .workspace-application-toggle {
   display: inline-grid;
-  width: 18px;
+  /* Deterministic: 30 + 20 + the two 1px borders = the split's fit-content width of 52px, so the
+     toggle's highlight ends exactly where the curve begins. `flex-grow` was tried first and collapsed
+     the cell to 13px in a shrink-to-fit row - not worth the arithmetic it saves.
+     `width` is stated alongside the basis because WebKit sizes a shrink-to-fit flex container from the
+     item's *content* width when `width:auto` and only the basis says 20px: the split came out 45px and
+     the cells hung 7px past its right border, which is the same 2px-class gap in a new costume. */
+  width: 20px;
+  flex: 0 0 20px;
   padding: 0;
   border: 0;
   border-left: 1px solid var(--border);
@@ -359,6 +373,16 @@
 .workspace-application-primary:hover:not(:disabled),
 .workspace-application-toggle:hover:not(:disabled) {
   background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* The menu's own open state. The button has carried `aria-expanded` all along but no rule read it, so
+   the control looked the same with the list open as closed - the only paint was `:active`, i.e. while
+   the mouse was held down. `bg-transparent` had to leave the template for this to win at all: a
+   `!important` utility inside `@layer utilities` outranks an unlayered normal rule *and* an unlayered
+   important one (AGENTS §4.3), so the base colour belongs here with the rest of the box. */
+.workspace-application-toggle[aria-expanded="true"] {
+  background: var(--bg-active);
   color: var(--text);
 }
 
