@@ -921,44 +921,6 @@
    digits read a size larger than the sentence next to them. The column is a 5px cosmetic wobble;
    a marker overlapping the rail and the numbers shouting are not. */
 
-/* Ordered-list markers: mono, but shrunk to fit the column the list already reserves.
-
-   Two things are true at once here. (1) In the body font the digits' *ink* is not uniform - PingFang
-   draws "1" as a narrow stroke inside a full-width advance, so the marker's left edge wobbles 2.5pt
-   across 1..5 while `font-variant-numeric: tabular-nums` changes nothing (the advances are already
-   equal; it is the glyph shape that differs). A terminal cannot have that problem: one glyph, one
-   cell. (2) An outside marker is right-aligned to the content edge, so a *wider* glyph hangs out to
-   the left of the block - mono at 1em reached 25.5pt against a 32pt content edge, i.e. onto the
-   outline tick (its right edge is 8 + 18 = 26pt), and the digits read a size larger than the
-   sentence. That attempt is what bd781f1 reverted.
-
-   Measured in a real WKWebView with the block content edge pinned at 32pt and the text column at
-   54.5pt, which leaves the marker ~16pt of room before it hangs out of the block:
-     苹方 1em     ink 32.5-34.5pt, wobble 2.0pt, digit height 10.0pt   <- flush, ragged column
-     mono 1em     ink reaches 25.5pt                                    <- onto the tick, looks big
-     mono 0.9em   28.0-29.0pt                                           <- hangs out
-     mono 0.85em  30.0-30.5pt                                           <- hangs out
-     mono 0.8em   31.5-32.0pt in one run, 28.0-28.5pt in another         <- chosen, but marginal
-   0.8em is the largest mono size that came out flush in either pass, and its digits measure 9.0-9.5pt
-   tall against the body font's 10.0pt - so it does not shout. Two honest caveats, both left in on
-   purpose rather than hidden:
-   - the two runs disagree by 3.5pt, which is the width of the margin. The column is square (0.5pt
-     wobble across 1..5) but the hang-out is not settled; if the marker is ever widened again it goes
-     onto the tick, so re-measure rather than trust this line.
-   - a two-digit marker grows left of the block edge whatever the font (苹方 "10." measured 26.0pt,
-     mono 0.8em "10." 25.0pt). That predates this rule and is inherent to `list-style-position:
-     outside`, which right-aligns the marker box to the text column. The only construction that
-     bounds it is a fixed marker column (`list-style: none` + counters + an absolutely positioned
-     `::before`); it was considered and deferred because it also has to carry `<ol start="8">` through
-     the renderer, restore the list role that WebKit drops under `list-style: none`, and be checked
-     against copy.
-   `::marker` takes font properties, so as written this needs no counters: `<ol start="8">` still
-   numbers itself, copy carries no generated text, and VoiceOver still sees a list. */
-.markdown-body ol > li::marker {
-  font-family: var(--font-mono);
-  font-size: 0.8em;
-}
-
 .markdown-body code {
   /* The 1px border stays, but goes transparent: removing it would reflow every line that
      contains code, and the outline was the actual noise - a faint fill is enough to keep

@@ -223,19 +223,6 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.file-markdown-preview :is\(blockquote, li\) > :last-child\s*{[^}]*margin-bottom:\s*0/s);
   });
 
-  it("keeps the ordered-list marker a shrunk mono, not a full-size one", async () => {
-    const css = await workbenchText();
-    const marker = css.match(/\.markdown-body ol > li::marker\s*{([^}]*)}/s)?.[1];
-    expect(marker, "the marker rule is the only thing squaring off the digit column").toBeDefined();
-    expect(marker).toMatch(/font-family:\s*var\(--font-mono\)/);
-    // Mono at 1em measured 25.5pt of ink against a 32pt block edge: an outside marker grows leftward,
-    // so it hung out of the block and onto the outline tick's right edge (26pt), and the digits read
-    // a size larger than the sentence. bd781f1 reverted precisely that. Full size is a regression.
-    const size = Number(marker!.match(/font-size:\s*([\d.]+)em/)?.[1]);
-    expect(size).toBeGreaterThan(0);
-    expect(size).toBeLessThan(0.9);
-  });
-
   it("moves the conversation search popover clear of the inspector overlay", async () => {
     const css = await workbenchText();
     const pane = await vueText("src/components/ConversationPane.vue");
