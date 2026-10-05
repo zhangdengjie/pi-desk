@@ -5,6 +5,7 @@ import {
   contrastRatio,
   HEX_COLOR_PATTERN,
   hexToOklch,
+  legibleCodeColor,
   mixOklch,
   oklchToHex,
   TRANSCRIPT_TINT_ANCHOR,
@@ -99,5 +100,45 @@ describe("transcriptTint", () => {
     const strong = oklchToHex(mixOklch(ground, tint, 1));
     expect(contrastRatio(weak, strong)).toBeLessThan(1.25);
     expect(weak).not.toBe(strong);
+  });
+});
+
+describe("legibleCodeColor", () => {
+  const groundHex = (dark: boolean) =>
+    oklchToHex({ l: dark ? TRANSCRIPT_TINT_ANCHOR.dark : TRANSCRIPT_TINT_ANCHOR.light, c: 0, h: 0 });
+
+  // The picks that break a naive "just use what they chose": pure white and black, the two highest-
+  // luminance hues, and a mid grey that is legible on neither ground at its own lightness.
+  const EXTREMES = ["#ffffff", "#000000", "#ffff00", "#00ffff", "#ff00ff", "#8a8a8a", "#c98b3a", "#006400"];
+
+  it("clears AA against both theme grounds, for every extreme pick", () => {
+    for (const dark of [false, true]) {
+      for (const pick of EXTREMES) {
+        const out = legibleCodeColor(pick, dark);
+        expect(HEX_COLOR_PATTERN.test(out), `${pick} on ${dark ? "dark" : "light"}`).toBe(true);
+        expect(contrastRatio(out, groundHex(dark)), `${pick} on ${dark ? "dark" : "light"} -> ${out}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
+  it("leaves an already-legible pick alone", () => {
+    // Walking only starts when the pick fails, so the common case is the reader's exact colour.
+    expect(legibleCodeColor("#1f3a5f", false)).toBe("#1f3a5f");
+    expect(legibleCodeColor("#d8e6f7", true)).toBe("#d8e6f7");
+  });
+
+  it("moves lightness and not hue", () => {
+    const before = hexToOklch("#ffff00");
+    const after = hexToOklch(legibleCodeColor("#ffff00", false));
+    // Yellow stays yellow. A few degrees of drift is allowed because the walk round-trips through
+    // sRGB, and a saturated yellow pushed dark is outside the gamut.
+    expect(Math.abs(after.h - before.h)).toBeLessThan(6);
+    expect(after.l).toBeLessThan(before.l);
+  });
+
+  it("refuses anything that is not a full hex colour", () => {
+    expect(legibleCodeColor("", false)).toBe("");
+    expect(legibleCodeColor("red", false)).toBe("");
+    expect(legibleCodeColor("#fff", false)).toBe("");
   });
 });

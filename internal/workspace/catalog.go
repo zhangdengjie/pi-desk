@@ -102,6 +102,7 @@ type PreferencesRecord struct {
 	TranscriptLineHeight   string `json:"transcriptLineHeight,omitempty"`
 	TranscriptTint         string `json:"transcriptTint,omitempty"`
 	TranscriptTintStrength int    `json:"transcriptTintStrength,omitempty"`
+	CodeAccent             string `json:"codeAccent,omitempty"`
 	LightCodeTheme         string `json:"lightCodeTheme,omitempty"`
 	DarkCodeTheme          string `json:"darkCodeTheme,omitempty"`
 	ShowCodeLineNumbers    bool   `json:"showCodeLineNumbers,omitempty"`

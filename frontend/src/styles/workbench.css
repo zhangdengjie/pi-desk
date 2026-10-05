@@ -954,10 +954,14 @@
      contains code, and the outline was the actual noise - a faint fill is enough to keep
      `code` scannable without fragmenting the sentence into boxes. The colour is spelled out
      even though it resolves to the pre-existing --text-code: the role belongs to this set, and
-     pinning it here is what keeps a future mdHeading-style experiment from leaking into it. */
+     pinning it here is what keeps a future mdHeading-style experiment from leaking into it.
+     The two `--code-inline-*` fallbacks are Settings > 外观 > 行内代码: when the reader picks a
+     colour, App.vue writes it here along with a transparent ground, which is the TUI's idiom - a
+     token is coloured text, never a slab. Note that this rule, not layout.css's, is the one that
+     paints: workbench.css loads after it, so a token added only there would do nothing at all. */
   border-color: transparent;
-  background: var(--md-code-bg);
-  color: var(--md-code);
+  background: var(--code-inline-bg, var(--md-code-bg));
+  color: var(--code-inline-color, var(--md-code));
   font-size: 0.9em;
 }
 

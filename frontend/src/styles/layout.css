@@ -1961,10 +1961,13 @@ html.is-resizing-pane .inspector {
 
 .markdown-body code {
   padding: 1px 4px;
-  border: 1px solid var(--border);
+  /* The three `--code-inline-*` properties are written together by App.vue when the reader picks their
+     own colour (Settings > 外观 > 行内代码): text in that colour, no grey ground, no pill outline. With
+     nothing picked they fall back to the theme's own pill, so the default look does not move. */
+  border: 1px solid var(--code-inline-border, var(--border));
   border-radius: 4px;
-  background: var(--bg-code);
-  color: var(--text-code);
+  background: var(--code-inline-bg, var(--bg-code));
+  color: var(--code-inline-color, var(--text-code));
   font-family: "Cascadia Code", Consolas, monospace;
   font-size: calc(11.5px + var(--font-size-delta));
 }
@@ -8217,13 +8220,13 @@ article.mcp-server-row {
       10px of inline padding inside a 26px box is what rendered the swatch as a 6px vertical lens.
       The hex field stays under the utility, so its height and size below match what that rule
       produces rather than pretending to override it. Geometry stays out of the template (AGENTS §4.2). */
-.transcript-tint-controls {
+.appearance-color-controls {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.setting-row .transcript-tint-swatch {
+.setting-row .appearance-color-swatch {
   width: 34px;
   height: 34px;
   flex: 0 0 34px;
@@ -8240,16 +8243,16 @@ article.mcp-server-row {
 /* The native colour well is a rounded rectangle and CSS on the element cannot round it: WebKit paints
    the swatch itself, so the circle has to be drawn by the two pseudo-elements it exposes. Without
    `appearance: none` the well keeps its own bezel and the border-radius clips to a squircle. */
-.setting-row .transcript-tint-swatch::-webkit-color-swatch-wrapper {
+.setting-row .appearance-color-swatch::-webkit-color-swatch-wrapper {
   padding: 0;
 }
 
-.setting-row .transcript-tint-swatch::-webkit-color-swatch {
+.setting-row .appearance-color-swatch::-webkit-color-swatch {
   border: none;
   border-radius: 50%;
 }
 
-.setting-row .transcript-tint-hex {
+.setting-row .appearance-color-hex {
   width: 104px;
   height: 34px;
   flex: 0 0 104px;
@@ -8263,7 +8266,7 @@ article.mcp-server-row {
   text-transform: lowercase;
 }
 
-.setting-row .transcript-tint-range {
+.setting-row .appearance-color-range {
   width: 104px;
   height: 20px;
   flex: 0 0 104px;
@@ -8271,7 +8274,7 @@ article.mcp-server-row {
   cursor: pointer;
 }
 
-.transcript-tint-value {
+.appearance-color-value {
   min-width: 34px;
   color: var(--text-secondary);
   font-size: var(--font-size-label);
@@ -8279,7 +8282,7 @@ article.mcp-server-row {
   text-align: right;
 }
 
-.transcript-tint-reset {
+.appearance-color-reset {
   height: 34px;
   padding: 0 12px;
   border: 1px solid var(--border-strong);
@@ -8290,12 +8293,12 @@ article.mcp-server-row {
   cursor: pointer;
 }
 
-.transcript-tint-reset:disabled {
+.appearance-color-reset:disabled {
   cursor: default;
   opacity: .5;
 }
 
-.transcript-tint-preset-list {
+.appearance-color-preset-list {
   display: flex;
   gap: 6px;
 }
@@ -8306,7 +8309,7 @@ article.mcp-server-row {
    is `0%` until a pick exists, which made every chip paint itself the colour of the ground and vanish -
    invisible buttons in the one row that is about colour. It previews the default strength, and the
    readout beside the slider carries the real one. */
-.transcript-tint-preset {
+.appearance-color-preset {
   width: 22px;
   height: 22px;
   padding: 0;
@@ -8316,9 +8319,23 @@ article.mcp-server-row {
   cursor: pointer;
 }
 
-.transcript-tint-preset.is-active {
+.appearance-color-preset.is-active {
   outline: 2px solid var(--text);
   outline-offset: 2px;
+}
+
+/* The 行内代码 chips are foregrounds, so a chip shows its own colour; the ground-tint chips above mix
+   into the page because what they promise is what the page will look like. */
+.appearance-color-preset.code-accent-preset {
+  background: var(--tint-swatch);
+}
+
+.code-accent-preview {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+  font-weight: 600;
 }
 
 /* Settings > 外观 > 字体 > 自定义…: the field and its live sample share a row, and the sample is set in

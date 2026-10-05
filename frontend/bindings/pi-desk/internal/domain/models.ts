@@ -137,6 +137,12 @@ export interface DesktopPreferences {
     "transcriptLineHeight"?: string;
     "transcriptTint"?: string;
     "transcriptTintStrength"?: number;
+
+    /**
+     * CodeAccent is the reader's own colour for inline code spans ("" = keep the theme's pill). Like
+     * TranscriptTint it is stored raw and made safe where it meets CSS, in App.vue.
+     */
+    "codeAccent"?: string;
     "lightCodeTheme"?: string;
     "darkCodeTheme"?: string;
     "showCodeLineNumbers"?: boolean;

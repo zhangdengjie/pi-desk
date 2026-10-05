@@ -452,6 +452,7 @@ describe("app store", () => {
         transcriptFontWeight: "semibold",
         transcriptLineHeight: "compact",
         transcriptTint: "#4a86b8",
+        codeAccent: "#c98b3a",
         transcriptTintStrength: 14,
         lightCodeTheme: "vitesse-light",
         darkCodeTheme: "catppuccin-mocha",
@@ -475,7 +476,7 @@ describe("app store", () => {
     await store.initialize();
 
     expect(store).toMatchObject({
-      appearance: "dark", language: "en", interfaceFont: "serif", interfaceFontCustom: "苹方-简", interfaceFontSize: 16, transcriptFontWeight: "semibold", transcriptLineHeight: "compact", transcriptTint: "#4a86b8", transcriptTintStrength: 14,
+      appearance: "dark", language: "en", interfaceFont: "serif", interfaceFontCustom: "苹方-简", interfaceFontSize: 16, transcriptFontWeight: "semibold", transcriptLineHeight: "compact", transcriptTint: "#4a86b8", transcriptTintStrength: 14, codeAccent: "#c98b3a",
       lightCodeTheme: "vitesse-light", darkCodeTheme: "catppuccin-mocha", showCodeLineNumbers: false, wrapCodeLines: true, codeFontSize: 14,
       offlineMode: false, proxyEnabled: true, proxyURL: "http://127.0.0.1:7890",
       streamingBehavior: "followUp", sidebarCollapsed: true, sidebarWidth: 344,
@@ -484,7 +485,7 @@ describe("app store", () => {
     await store.persistDesktopState();
     expect(mocks.saveDesktopState).toHaveBeenCalledWith(expect.objectContaining({
       preferences: expect.objectContaining({
-        proxyUrl: "http://127.0.0.1:7890", streamingBehavior: "followUp", fontFamily: "serif", fontCustom: "苹方-简", fontSize: 16, transcriptFontWeight: "semibold", transcriptLineHeight: "compact", transcriptTint: "#4a86b8", transcriptTintStrength: 14,
+        proxyUrl: "http://127.0.0.1:7890", streamingBehavior: "followUp", fontFamily: "serif", fontCustom: "苹方-简", fontSize: 16, transcriptFontWeight: "semibold", transcriptLineHeight: "compact", transcriptTint: "#4a86b8", transcriptTintStrength: 14, codeAccent: "#c98b3a",
         lightCodeTheme: "vitesse-light", darkCodeTheme: "catppuccin-mocha", showCodeLineNumbers: false, wrapCodeLines: true, codeFontSize: 14,
         sidebarWidth: 344, inspectorOpen: false, inspectorWidth: 468, workspaceApplication: "vscode",
       }),

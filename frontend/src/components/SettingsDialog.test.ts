@@ -95,21 +95,21 @@ describe("SettingsDialog", () => {
     expect(wrapper.get("h1").text()).toBe("Appearance");
     expect(wrapper.get(".settings-section-title").text()).toBe("Appearance");
     expect(wrapper.find(".settings-card .settings-section-title").exists()).toBe(false);
-    expect(wrapper.findAll(".appearance-settings .settings-card .setting-row")).toHaveLength(13);
+    expect(wrapper.findAll(".appearance-settings .settings-card .setting-row")).toHaveLength(15);
     expect(wrapper.findAll(".appearance-select")).toHaveLength(9);
     // A row carrying four controls must not be a <label>: the engine forwards any click that lands on
     // the row - including one on the slider - to the first labelable descendant, which is the colour
     // well. That is how "the strength slider will not drag" gets reported.
-    expect(wrapper.get(".transcript-tint-row").element.tagName).toBe("DIV");
+    expect(wrapper.get(".appearance-color-row").element.tagName).toBe("DIV");
     expect(wrapper.findAll('select[aria-label="Light code theme"] option')).toHaveLength(10);
     await wrapper.get('select[aria-label="Theme"]').setValue("light");
     await wrapper.get('select[aria-label="Font"]').setValue("mono");
     await wrapper.get('select[aria-label="Font size"]').setValue("16");
     await wrapper.get('select[aria-label="Answer weight"]').setValue("medium");
     await wrapper.get('select[aria-label="Answer line height"]').setValue("compact");
-    await wrapper.get('.transcript-tint-preset[title="Cool mist"]').trigger("click");
-    await wrapper.get(".transcript-tint-hex").setValue("#123456");
-    await wrapper.get(".transcript-tint-range").setValue("70");
+    await wrapper.get('.appearance-color-preset[title="Cool mist"]').trigger("click");
+    await wrapper.get(".appearance-color-hex").setValue("#123456");
+    await wrapper.get(".appearance-color-range").setValue("70");
     await wrapper.get('select[aria-label="Light code theme"]').setValue("catppuccin-latte");
     await wrapper.get('select[aria-label="Dark code theme"]').setValue("catppuccin-mocha");
     await wrapper.get('select[aria-label="Code font size"]').setValue("14");
@@ -137,6 +137,39 @@ describe("SettingsDialog", () => {
     expect(store.appearanceChanged).toHaveBeenCalledOnce();
     await wrapper.get('[data-testid="settings-back"]').trigger("click");
     expect(store.closeSettings).toHaveBeenCalledOnce();
+  });
+
+  it("swaps the grey slab for the reader's own inline-code colour", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.settingsOpen = true;
+    store.preferencesChanged = vi.fn();
+    const wrapper = mount(SettingsDialog, { global: { plugins: [pinia] } });
+    await wrapper.findAll(".settings-nav button").find((button) => button.text() === "Appearance")!.trigger("click");
+
+    // The row shape is shared with the ground tint, and a row carrying several controls must never be a
+    // <label> - that is how "the slider will not drag" got reported in the first place.
+    expect(wrapper.get(".code-accent-row").element.tagName).toBe("DIV");
+    // No strength slider: a foreground is not mixed into anything.
+    expect(wrapper.find(".code-accent-row .appearance-color-range").exists()).toBe(false);
+
+    await wrapper.get('.code-accent-row input[type="color"]').setValue("#c98b3a");
+    expect(store.codeAccent).toBe("#c98b3a");
+    await wrapper.get(".code-accent-row .appearance-color-hex").setValue("#1f3a5f");
+    expect(store.codeAccent).toBe("#1f3a5f");
+
+    // The sample is painted in the colour that will actually reach the page - here the pick itself,
+    // which already clears AA, so nothing was walked.
+    expect(wrapper.get(".code-accent-preview").attributes("style")).toContain("#1f3a5f");
+    // White on the light ground cannot be painted as-is, and the row says so instead of lying.
+    await wrapper.get(".code-accent-row .appearance-color-hex").setValue("#ffffff");
+    expect(store.codeAccent).toBe("#ffffff");
+    expect(wrapper.get(".code-accent-preview").attributes("style")).not.toContain("#ffffff");
+
+    await wrapper.get(".code-accent-row .appearance-color-reset").trigger("click");
+    expect(store.codeAccent).toBe("");
+    expect(store.preferencesChanged).toHaveBeenCalled();
   });
 
   it("types a custom interface family and previews exactly what CSS will get", async () => {

@@ -6,7 +6,7 @@ import { computed, onMounted, ref } from "vue";
 import { PiMaintenanceAction, type PiMaintenanceResult } from "../../bindings/pi-desk/internal/domain";
 import { maintainPi } from "../services/desktop";
 import { CODE_THEME_OPTIONS, TRANSCRIPT_TINT_MAX_STRENGTH, useAppStore, type QueueMode, type SettingsSection, type SlashCommand, type StreamPanelMode } from "../stores/app";
-import { HEX_COLOR_PATTERN } from "../utils/transcriptTint";
+import { HEX_COLOR_PATTERN, legibleCodeColor } from "../utils/transcriptTint";
 import { FONT_FAMILY_INPUT_MAX, sanitizeFontFamilyList } from "../utils/fontFamily";
 import { tr } from "../i18n";
 import ModelManager from "./ModelManager.vue";
@@ -74,6 +74,49 @@ function applyTranscriptTintPreset(value: string) {
 
 function resetTranscriptTint() {
   appStore.transcriptTint = "";
+  appStore.preferencesChanged();
+}
+
+// Settings > 外观 > 行内代码: the same row shape as the ground tint, minus the strength slider - a
+// foreground is not mixed into anything, the reader wants that exact hue on the code spans.
+const CODE_ACCENT_FALLBACK = "#3f6db5";
+const CODE_ACCENT_PRESETS = [
+  { value: "#c98b3a", labelKey: "settings.accentAmber" },
+  { value: "#4a86b8", labelKey: "settings.accentBlue" },
+  { value: "#5c9a5e", labelKey: "settings.accentGreen" },
+  { value: "#8b6fc9", labelKey: "settings.accentViolet" },
+];
+
+// The swatch previews the colour that will actually be painted, i.e. after the AA lightness walk. On
+// `appearance: system` it can sit one step off the real thing, because the theme in force also depends
+// on the OS setting; the pick itself is always shown unchanged in the hex field.
+const codeAccentPreview = computed(() => legibleCodeColor(appStore.codeAccent, appStore.appearance === "dark") || "inherit");
+
+function pickCodeAccent(event: Event) {
+  appStore.codeAccent = (event.target as HTMLInputElement).value;
+  appStore.preferencesChanged();
+}
+
+function typeCodeAccentHex(event: Event) {
+  const field = event.target as HTMLInputElement;
+  const value = field.value.startsWith("#") ? field.value : `#${field.value}`;
+  field.value = value;
+  if (!HEX_COLOR_PATTERN.test(value)) return;
+  appStore.codeAccent = value.toLowerCase();
+  appStore.preferencesChanged();
+}
+
+function normalizeCodeAccentHex(event: Event) {
+  (event.target as HTMLInputElement).value = appStore.codeAccent;
+}
+
+function applyCodeAccentPreset(value: string) {
+  appStore.codeAccent = appStore.codeAccent === value ? "" : value;
+  appStore.preferencesChanged();
+}
+
+function resetCodeAccent() {
+  appStore.codeAccent = "";
   appStore.preferencesChanged();
 }
 const copied = ref(false);
@@ -329,20 +372,35 @@ function sourceIcon(source: SlashCommand["source"]) {
                   <option value="tight">{{ tr("settings.lineHeightTight") }}</option>
                 </select>
               </label>
-              <div class="setting-row transcript-tint-row" :class="ui.row">
+              <div class="setting-row appearance-color-row" :class="ui.row">
                 <span><strong>{{ tr("settings.transcriptTint") }}</strong><small>{{ tr("settings.transcriptTintHelp") }}</small></span>
-                <div class="transcript-tint-controls">
-                  <button type="button" class="transcript-tint-reset" :disabled="!appStore.transcriptTint" @click="resetTranscriptTint">{{ tr("settings.tintFollowTheme") }}</button>
-                  <input class="transcript-tint-swatch" type="color" :value="appStore.transcriptTint || TRANSCRIPT_TINT_FALLBACK" :aria-label="tr('settings.transcriptTint')" @input="pickTranscriptTint" @change="appStore.preferencesChanged()" />
-                  <input class="transcript-tint-hex" type="text" maxlength="7" spellcheck="false" autocomplete="off" :value="appStore.transcriptTint" :aria-label="tr('settings.tintHex')" :placeholder="tr('settings.tintHex')" @input="typeTranscriptTintHex" @blur="normalizeTranscriptTintHex" />
-                  <input class="transcript-tint-range" type="range" min="0" :max="TRANSCRIPT_TINT_MAX_STRENGTH" step="1" v-model.number="appStore.transcriptTintStrength" :aria-label="tr('settings.tintStrength')" @change="appStore.preferencesChanged()" />
-                  <span class="transcript-tint-value">{{ appStore.transcriptTint ? `${appStore.transcriptTintStrength}%` : "—" }}</span>
+                <div class="appearance-color-controls">
+                  <button type="button" class="appearance-color-reset" :disabled="!appStore.transcriptTint" @click="resetTranscriptTint">{{ tr("settings.tintFollowTheme") }}</button>
+                  <input class="appearance-color-swatch" type="color" :value="appStore.transcriptTint || TRANSCRIPT_TINT_FALLBACK" :aria-label="tr('settings.transcriptTint')" @input="pickTranscriptTint" @change="appStore.preferencesChanged()" />
+                  <input class="appearance-color-hex" type="text" maxlength="7" spellcheck="false" autocomplete="off" :value="appStore.transcriptTint" :aria-label="tr('settings.tintHex')" :placeholder="tr('settings.tintHex')" @input="typeTranscriptTintHex" @blur="normalizeTranscriptTintHex" />
+                  <input class="appearance-color-range" type="range" min="0" :max="TRANSCRIPT_TINT_MAX_STRENGTH" step="1" v-model.number="appStore.transcriptTintStrength" :aria-label="tr('settings.tintStrength')" @change="appStore.preferencesChanged()" />
+                  <span class="appearance-color-value">{{ appStore.transcriptTint ? `${appStore.transcriptTintStrength}%` : "—" }}</span>
                 </div>
               </div>
-              <div class="setting-row transcript-tint-presets" :class="ui.row">
+              <div class="setting-row appearance-color-presets" :class="ui.row">
                 <span><small>{{ tr("settings.tintPresets") }}</small></span>
-                <div class="transcript-tint-preset-list">
-                  <button v-for="preset in TRANSCRIPT_TINT_PRESETS" :key="preset.value" type="button" class="transcript-tint-preset" :class="{ 'is-active': appStore.transcriptTint === preset.value }" :style="{ '--tint-swatch': preset.value }" :title="tr(preset.labelKey)" :aria-label="tr(preset.labelKey)" @click="applyTranscriptTintPreset(preset.value)"></button>
+                <div class="appearance-color-preset-list">
+                  <button v-for="preset in TRANSCRIPT_TINT_PRESETS" :key="preset.value" type="button" class="appearance-color-preset" :class="{ 'is-active': appStore.transcriptTint === preset.value }" :style="{ '--tint-swatch': preset.value }" :title="tr(preset.labelKey)" :aria-label="tr(preset.labelKey)" @click="applyTranscriptTintPreset(preset.value)"></button>
+                </div>
+              </div>
+              <div class="setting-row appearance-color-row code-accent-row" :class="ui.row">
+                <span><strong>{{ tr("settings.codeAccent") }}</strong><small>{{ tr("settings.codeAccentHelp") }}</small></span>
+                <div class="appearance-color-controls">
+                  <button type="button" class="appearance-color-reset" :disabled="!appStore.codeAccent" @click="resetCodeAccent">{{ tr("settings.tintFollowTheme") }}</button>
+                  <input class="appearance-color-swatch" type="color" :value="appStore.codeAccent || CODE_ACCENT_FALLBACK" :aria-label="tr('settings.codeAccent')" @input="pickCodeAccent" @change="appStore.preferencesChanged()" />
+                  <input class="appearance-color-hex" type="text" maxlength="7" spellcheck="false" autocomplete="off" :value="appStore.codeAccent" :aria-label="tr('settings.tintHex')" :placeholder="tr('settings.tintHex')" @input="typeCodeAccentHex" @blur="normalizeCodeAccentHex" />
+                  <span class="code-accent-preview" :style="{ color: codeAccentPreview }">Aa</span>
+                </div>
+              </div>
+              <div class="setting-row appearance-color-presets code-accent-presets" :class="ui.row">
+                <span><small>{{ tr("settings.tintPresets") }}</small></span>
+                <div class="appearance-color-preset-list">
+                  <button v-for="preset in CODE_ACCENT_PRESETS" :key="preset.value" type="button" class="appearance-color-preset code-accent-preset" :class="{ 'is-active': appStore.codeAccent === preset.value }" :style="{ '--tint-swatch': preset.value }" :title="tr(preset.labelKey)" :aria-label="tr(preset.labelKey)" @click="applyCodeAccentPreset(preset.value)"></button>
                 </div>
               </div>
             </div>

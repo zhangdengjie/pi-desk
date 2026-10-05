@@ -132,3 +132,40 @@ export function mixOklch(ground: Oklch, tint: Oklch, tintShare: number): Oklch {
     h: (ground.h + dh * share + 360) % 360,
   };
 }
+
+/**
+ * The colour Settings > 外观 > 行内代码 writes.
+ *
+ * It lives beside the tint maths because it is the same problem pointed the other way: the reader picks
+ * any colour, and the theme owns the ground it has to be read against. A *background* tint is safe
+ * because it is mixed into the theme's own ground; a *foreground* cannot be mixed - the reader wants
+ * that exact hue on the code spans - so the only degree of freedom left is lightness, and the rule is
+ * "keep the hue, walk the lightness until it clears AA".
+ *
+ * The ground is `TRANSCRIPT_TINT_ANCHOR`, the same measured lightness of each theme's conversation
+ * surface, turned back into a hex so `contrastRatio` can do its job. Table cells sit on a zebra stripe
+ * a hair off that ground, which is well inside the margin the loop leaves.
+ */
+const CODE_MIN_CONTRAST = 4.5; // WCAG AA for body-size text; code spans are body size or smaller.
+const CODE_MAX_CHROMA = 0.19; // past this, oklch leaves sRGB and `oklchToHex` has to clamp hard.
+
+export function legibleCodeColor(hex: string, dark: boolean): string {
+  if (!HEX_COLOR_PATTERN.test(hex)) return "";
+  const groundLightness = dark ? TRANSCRIPT_TINT_ANCHOR.dark : TRANSCRIPT_TINT_ANCHOR.light;
+  const ground = oklchToHex({ l: groundLightness, c: 0, h: 0 });
+  // Return the pick untouched whenever it already clears AA. Reconstructing through oklch is not an
+  // identity - `#1f3a5f` comes back `#203b60` - and "your colour, unless it is unreadable" is the whole
+  // promise of the row.
+  if (contrastRatio(hex, ground) >= CODE_MIN_CONTRAST) return hex.toLowerCase();
+  const picked = hexToOklch(hex);
+  // Walk toward the far end of the scale: darker on a light theme, lighter on a dark one. Hue and
+  // chroma are the reader's choice and stay put.
+  const step = dark ? 0.02 : -0.02;
+  let l = picked.l;
+  let out = oklchToHex({ l, c: Math.min(picked.c, CODE_MAX_CHROMA), h: picked.h });
+  for (let i = 0; i < 60 && contrastRatio(out, ground) < CODE_MIN_CONTRAST; i++) {
+    l = Math.min(1, Math.max(0, l + step));
+    out = oklchToHex({ l, c: Math.min(picked.c, CODE_MAX_CHROMA), h: picked.h });
+  }
+  return out;
+}

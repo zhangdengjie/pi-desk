@@ -237,26 +237,29 @@ type DesktopPreferences struct {
 	TranscriptLineHeight   string `json:"transcriptLineHeight,omitempty"`
 	TranscriptTint         string `json:"transcriptTint,omitempty"`
 	TranscriptTintStrength int    `json:"transcriptTintStrength,omitempty"`
-	LightCodeTheme         string `json:"lightCodeTheme,omitempty"`
-	DarkCodeTheme          string `json:"darkCodeTheme,omitempty"`
-	ShowCodeLineNumbers    bool   `json:"showCodeLineNumbers,omitempty"`
-	WrapCodeLines          bool   `json:"wrapCodeLines,omitempty"`
-	CodeFontSize           int    `json:"codeFontSize,omitempty"`
-	OfflineMode            bool   `json:"offlineMode"`
-	ProxyEnabled           bool   `json:"proxyEnabled"`
-	ProxyURL               string `json:"proxyUrl,omitempty"`
-	StreamingBehavior      string `json:"streamingBehavior"`
-	SidebarCollapsed       bool   `json:"sidebarCollapsed"`
-	SidebarWidth           int    `json:"sidebarWidth,omitempty"`
-	InspectorOpen          bool   `json:"inspectorOpen"`
-	InspectorWidth         int    `json:"inspectorWidth,omitempty"`
-	InspectorTab           string `json:"inspectorTab"`
-	PanelState             string `json:"panelState,omitempty"`
-	HiddenSlashCommands    string `json:"hiddenSlashCommands,omitempty"`
-	NotificationsEnabled   bool   `json:"notificationsEnabled"`
-	UpdateChecksEnabled    bool   `json:"updateChecksEnabled"`
-	CloseToTray            bool   `json:"closeToTray"`
-	WorkspaceApplication   string `json:"workspaceApplication,omitempty"`
+	// CodeAccent is the reader's own colour for inline code spans ("" = keep the theme's pill). Like
+	// TranscriptTint it is stored raw and made safe where it meets CSS, in App.vue.
+	CodeAccent           string `json:"codeAccent,omitempty"`
+	LightCodeTheme       string `json:"lightCodeTheme,omitempty"`
+	DarkCodeTheme        string `json:"darkCodeTheme,omitempty"`
+	ShowCodeLineNumbers  bool   `json:"showCodeLineNumbers,omitempty"`
+	WrapCodeLines        bool   `json:"wrapCodeLines,omitempty"`
+	CodeFontSize         int    `json:"codeFontSize,omitempty"`
+	OfflineMode          bool   `json:"offlineMode"`
+	ProxyEnabled         bool   `json:"proxyEnabled"`
+	ProxyURL             string `json:"proxyUrl,omitempty"`
+	StreamingBehavior    string `json:"streamingBehavior"`
+	SidebarCollapsed     bool   `json:"sidebarCollapsed"`
+	SidebarWidth         int    `json:"sidebarWidth,omitempty"`
+	InspectorOpen        bool   `json:"inspectorOpen"`
+	InspectorWidth       int    `json:"inspectorWidth,omitempty"`
+	InspectorTab         string `json:"inspectorTab"`
+	PanelState           string `json:"panelState,omitempty"`
+	HiddenSlashCommands  string `json:"hiddenSlashCommands,omitempty"`
+	NotificationsEnabled bool   `json:"notificationsEnabled"`
+	UpdateChecksEnabled  bool   `json:"updateChecksEnabled"`
+	CloseToTray          bool   `json:"closeToTray"`
+	WorkspaceApplication string `json:"workspaceApplication,omitempty"`
 }
 
 type DesktopState struct {

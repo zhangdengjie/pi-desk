@@ -68,6 +68,22 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.app-shell\.is-mac\.is-sidebar-collapsed \.topbar-brand\s*{[^}]*padding-left:\s*0/s);
   });
 
+  it("lets the reader's colour replace the grey slab on inline code", async () => {
+    const css = await workbenchText();
+    // workbench.css loads after layout.css, so THIS `.markdown-body code` is the one that paints. The
+    // fallbacks were first added to the layout.css rule and measured to nothing at all in the real
+    // WKWebView - the reason this guard exists.
+    expect(css).toMatch(/\.markdown-body code\s*{[^}]*background:\s*var\(--code-inline-bg,\s*var\(--md-code-bg\)\)/);
+    expect(css).toMatch(/\.markdown-body code\s*{[^}]*color:\s*var\(--code-inline-color,\s*var\(--md-code\)\)/);
+    // Fenced blocks keep their syntax theme: the accent must not turn a whole block into one colour.
+    expect(css).toMatch(/\.markdown-body pre code\s*{\s*color:\s*var\(--text-secondary\)/);
+
+    const layout = await textAt("src/styles/layout.css");
+    expect(layout).toMatch(/\.markdown-body code\s*{[^}]*background:\s*var\(--code-inline-bg,\s*var\(--bg-code\)\)/);
+    // The code-accent chips are foregrounds, so a chip shows its own colour, not a mix into the ground.
+    expect(layout).toMatch(/\.appearance-color-preset\.code-accent-preset\s*{\s*background:\s*var\(--tint-swatch\)/);
+  });
+
   it("sizes the workspace-application split so the toggle's fill reaches the corner", async () => {
     const css = await workbenchText();
     const topbar = await topbarText();
@@ -296,7 +312,7 @@ describe("responsive workbench layout", () => {
 
   it("previews the tint presets at a strength that actually exists", async () => {
     const css = await textAt("src/styles/layout.css");
-    const preset = css.match(/\.transcript-tint-preset\s*{[^}]*}/)?.[0] ?? "";
+    const preset = css.match(/\.appearance-color-preset\s*{[^}]*}/)?.[0] ?? "";
     // `--transcript-tint-strength` is `0%` on the root until a pick exists, so mixing the chip with it
     // painted every preset the colour of the ground - invisible buttons in the row that is about colour.
     expect(preset).toContain("color-mix(in oklab, var(--bg-conversation) 60%, var(--tint-swatch))");
@@ -364,7 +380,9 @@ describe("responsive workbench layout", () => {
     const css = await workbenchText();
     const code = css.match(/\.markdown-body code\s*\{[^}]*\}/s)?.[0] ?? "";
     expect(code).toMatch(/border-color:\s*transparent/);
-    expect(code).toMatch(/color:\s*var\(--md-code\)/);
+    // The colour is spelled out on this rule rather than inherited - and it is spelled out as a
+    // fallback, so Settings > 外观 > 行内代码 can replace it without a second rule fighting this one.
+    expect(code).toMatch(/color:\s*var\(--code-inline-color,\s*var\(--md-code\)\)/);
     // ...and the same for the block: outline off, fill on. A whole block of hue would be a
     // syntax theme this app does not have.
     const pre = css.match(/\.markdown-body pre\s*\{[^}]*\}/s)?.[0] ?? "";

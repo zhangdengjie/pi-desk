@@ -20,7 +20,7 @@ import { tr } from "./i18n";
 import { onBrowserEvent } from "./services/browser";
 import { installGhostSelectionGuard } from "./services/ghostSelectionGuard";
 import { sanitizeFontFamilyList } from "./utils/fontFamily";
-import { anchoredTranscriptTint, TRANSCRIPT_TINT_ANCHOR } from "./utils/transcriptTint";
+import { anchoredTranscriptTint, legibleCodeColor, TRANSCRIPT_TINT_ANCHOR } from "./utils/transcriptTint";
 import {
   MAX_INSPECTOR_WIDTH,
   MAX_SIDEBAR_WIDTH,
@@ -150,6 +150,27 @@ watch(() => appStore.interfaceFontSize, syncDocumentFontSize, { immediate: true 
 watch(() => appStore.transcriptFontWeight, syncDocumentTranscriptWeight, { immediate: true });
 watch(() => appStore.transcriptLineHeight, syncDocumentTranscriptLineHeight, { immediate: true });
 watch(() => [appStore.transcriptTint, appStore.transcriptTintStrength, darkSurface.value] as const, ([tint, strength, dark]) => syncDocumentTranscriptTint(tint, strength, dark), { immediate: true });
+
+// The inline-code accent is a foreground, so it cannot be mixed into the theme the way the ground tint
+// is: the reader wants that exact hue on the code spans. `legibleCodeColor` therefore walks only its
+// lightness until it clears AA against the theme's own conversation ground, and the pill's grey ground
+// and outline are dropped here so the colour is the whole signal - that is the "只渲染成特定颜色" the
+// TUI does, where a token is coloured text and never a slab.
+function syncDocumentCodeAccent(accent: string, dark: boolean) {
+  const root = document.documentElement.style;
+  const color = accent ? legibleCodeColor(accent, dark) : "";
+  if (!color) {
+    root.removeProperty("--code-inline-color");
+    root.removeProperty("--code-inline-bg");
+    root.removeProperty("--code-inline-border");
+    return;
+  }
+  root.setProperty("--code-inline-color", color);
+  root.setProperty("--code-inline-bg", "transparent");
+  root.setProperty("--code-inline-border", "transparent");
+}
+
+watch(() => [appStore.codeAccent, darkSurface.value] as const, ([accent, dark]) => syncDocumentCodeAccent(accent, dark), { immediate: true });
 </script>
 
 <template>

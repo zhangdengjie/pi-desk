@@ -1079,6 +1079,10 @@ export const useAppStore = defineStore("app", {
     transcriptLineHeight: "relaxed" as TranscriptLineHeight,
     transcriptTint: "",
     transcriptTintStrength: TRANSCRIPT_TINT_DEFAULT_STRENGTH,
+    // The reader's own colour for inline code spans. Empty means leave the theme alone, which is the
+    // grey pill; a hex replaces the pill with that colour as text only. Stored raw - the lightness
+    // walk happens at paint time in App.vue, because it depends on which theme is in force.
+    codeAccent: "",
     lightCodeTheme: "github-light" as CodeTheme,
     darkCodeTheme: "github-dark" as CodeTheme,
     showCodeLineNumbers: true,
@@ -4126,6 +4130,9 @@ export const useAppStore = defineStore("app", {
         && transcriptTintStrength <= TRANSCRIPT_TINT_MAX_STRENGTH
         ? transcriptTintStrength
         : TRANSCRIPT_TINT_DEFAULT_STRENGTH;
+      this.codeAccent = /^#[0-9a-fA-F]{6}$/.test(desktop.preferences.codeAccent ?? "")
+        ? desktop.preferences.codeAccent as string
+        : "";
       const themes = CODE_THEME_OPTIONS.map(([value]) => value);
       const hasCodePreferences = themes.includes(desktop.preferences.lightCodeTheme as CodeTheme)
         || themes.includes(desktop.preferences.darkCodeTheme as CodeTheme)
@@ -4428,6 +4435,7 @@ export const useAppStore = defineStore("app", {
           transcriptFontWeight: this.transcriptFontWeight,
           transcriptLineHeight: this.transcriptLineHeight,
           transcriptTint: this.transcriptTint,
+          codeAccent: this.codeAccent,
           transcriptTintStrength: this.transcriptTintStrength,
           lightCodeTheme: this.lightCodeTheme,
           darkCodeTheme: this.darkCodeTheme,
