@@ -75,10 +75,14 @@ describe("responsive workbench layout", () => {
     // utilities outran the unlayered rules (`.icon-button`'s `flex: 0 0 28px` is what decided the
     // primary cell's width in a flex row, not `width`), leaving 48px of cells in a 50px inner box - so
     // the highlight stopped 2px short of the curve. The box is CSS-owned now, and the numbers add up:
-    // 30 + 20 + two 1px borders = the split's 52px fit-content width.
-    expect(css).toMatch(/\.workspace-application-split\s*{[^}]*height:\s*32px/);
-    expect(css).toMatch(/\.topbar-actions \.workspace-application-primary\s*{[^}]*flex:\s*0 0 30px/);
+    // 26 + 20 + two 1px borders = the split's 48px fit-content width, at the 28px the row's other
+    // icon buttons already are.
+    expect(css).toMatch(/\.workspace-application-split\s*{[^}]*height:\s*28px/);
+    expect(css).toMatch(/\.workspace-application-split\s*{[^}]*border-radius:\s*7px/);
+    expect(css).toMatch(/\.topbar-actions \.workspace-application-primary\s*{[^}]*flex:\s*0 0 26px/);
     expect(css).toMatch(/\.workspace-application-toggle\s*{[^}]*width:\s*20px;[^}]*flex:\s*0 0 20px/);
+    // Radius is CSS-owned too, so `rounded-lg` (12px, a stadium on a 28px box) must stay off it.
+    expect(topbar).not.toMatch(/workspace-application-split[^"]*rounded-/);
     // The open state has to be reachable at all: a `!important` utility would outrank it from any
     // layer, so the base colour cannot live in the template.
     expect(topbar).not.toMatch(/workspace-application-toggle[^"]*bg-transparent/);

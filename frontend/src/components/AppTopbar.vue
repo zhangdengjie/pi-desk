@@ -110,7 +110,7 @@ onBeforeUnmount(() => {
 
       <div class="topbar-actions flex shrink-0 items-center gap-1">
         <div v-if="appStore.activePage === 'task' && appStore.activeThread && !appStore.workspaceApplicationsLoading && activeWorkspaceApplication" class="menu-anchor topbar-menu-anchor workspace-application-anchor relative">
-          <div class="workspace-application-split inline-flex items-stretch overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-panel)] shadow-sm">
+          <div class="workspace-application-split inline-flex items-stretch overflow-hidden border border-[var(--border)] bg-[var(--bg-panel)] shadow-sm">
             <button
               class="icon-button workspace-application-primary inline-grid place-items-center rounded-none border-0 bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] active:bg-[var(--bg-active)] disabled:cursor-not-allowed disabled:opacity-50"
               type="button"

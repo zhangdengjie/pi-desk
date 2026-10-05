@@ -331,23 +331,28 @@
   display: inline-flex;
   /* The box lives here, not in the template. It used to be both: `h-8` (32px) as a utility beat this
      rule's 28px, and the utility is `!important` inside `@layer utilities` so an unlayered sheet can
-     never answer it (AGENTS §4.3) - the 28px below was fiction. Now the template carries colour and
-     radius only, and these numbers are the ones that render. */
-  height: 32px;
+     never answer it (AGENTS §4.3) - the 28px below was fiction. Now the template carries colour only,
+     and these numbers are the ones that render.
+     28px is the row's own rhythm: `.topbar-actions .icon-button` is 28x28 and the 上下文 chip beside it
+     measures ~26 - the 32px this control used to take is why it read as a fat pill. The radius matches
+     that chip's 7px rather than `rounded-lg`'s 12px, which on a 28px box is most of the way to a
+     stadium. */
+  height: 28px;
   overflow: hidden;
   align-items: stretch;
   border: 1px solid var(--border);
+  border-radius: 7px;
   background: var(--bg-panel);
 }
 
 .topbar-actions .workspace-application-primary {
-  /* 30px = the split's 32px minus its two 1px borders, so the child fills the inner box exactly and
+  /* 26px = the split's 28px minus its two 1px borders, so the child fills the inner box exactly and
      `align-items: stretch` needs no margins to sit centred. `.icon-button` carries `flex: 0 0 28px`,
      and in a flex row the basis - not `width` - is the main-axis size: that 2px deficit is what left
      the toggle's highlight short of the rounded corner. */
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
   border-radius: 0;
 }
 
