@@ -2110,6 +2110,35 @@ html:not(.is-resizing-pane) .topbar {
   opacity: 1;
 }
 
+/* The transcript and the composer are centred in whatever the inspector leaves them, and both
+   numbers come from the same class: `.timeline { padding: 24px var(--conversation-inline-space) }`
+   plus `.app-shell.is-inspector-open .timeline { padding-right: calc(--inspector-width + space) }`.
+   Animating only the panel therefore snapped the reading column ~290px sideways on frame 0 (the
+   user's screen recording, 2026-10-06 21:08), and at this window width the column also narrows from
+   its 880px cap to the leftover space, so every row re-wrapped in one frame - the "会话区域会跳动"
+   report. The left rail never showed this because its track *is* the animation.
+   Interpolating both paddings with the panel's own duration/easing keeps them in lockstep, and it is
+   free on the wide-window path: padding-left moves by +d while padding-right moves by -d, so their
+   sum - the content width - is constant at every frame. Only the narrow case re-wraps, and it now
+   does so progressively, which is what lets WebKit's scroll anchoring hold the visible line.
+   Same guard as the track: dragging the inspector divider rewrites --inspector-width per frame. */
+html:not(.is-resizing-pane) .timeline,
+html:not(.is-resizing-pane) .composer-wrap {
+  transition: padding-left var(--motion-panel) var(--ease-in-out),
+    padding-right var(--motion-panel) var(--ease-in-out);
+}
+
+/* Two absolutely placed controls whose inline position is inspector arithmetic: the search popover
+   (`right: calc(--inspector-width + 16px)`) and the jump-to-latest pill (`left: calc(50% -
+   --inspector-width / 2)`). They would otherwise stay put while the column they belong to slides. */
+html:not(.is-resizing-pane) .conversation-search {
+  transition: right var(--motion-panel) var(--ease-in-out);
+}
+
+html:not(.is-resizing-pane) .timeline-jump-latest {
+  transition: left var(--motion-panel) var(--ease-in-out);
+}
+
 /* Expanded = the panel covers the whole workspace (`inset: ... 0 var(--sidebar-width)`), so its left
    edge is the sidebar's right edge. Sliding that overlay in interpolates `left` and `transform`
    against each other and it overshoots past the window's left edge before settling (measured x

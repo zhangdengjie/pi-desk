@@ -485,6 +485,12 @@ describe("responsive workbench layout", () => {
     // sliding it interpolates against that inset and overshoots off-screen (measured in the sandbox:
     // x 1108 -> -135 -> 48). It has to appear at full size instead.
     expect(css).toMatch(/\.app-shell\.is-inspector-expanded \.inspector\s*{[^}]*transform:\s*none[^}]*transition:\s*none/s);
+    // The reading column has to move with the panel, not ahead of it: `.timeline` / `.composer-wrap`
+    // reserve the inspector's space through padding, so those paddings need the same duration.
+    expect(css).toMatch(/html:not\(\.is-resizing-pane\) \.timeline,\s*html:not\(\.is-resizing-pane\) \.composer-wrap\s*{[^}]*transition:\s*padding-left var\(--motion-panel\)[^}]*padding-right var\(--motion-panel\)/s);
+    // Two absolutely placed controls whose inline position is inspector arithmetic.
+    expect(css).toMatch(/html:not\(\.is-resizing-pane\) \.conversation-search\s*{[^}]*transition:\s*right var\(--motion-panel\)/s);
+    expect(css).toMatch(/html:not\(\.is-resizing-pane\) \.timeline-jump-latest\s*{[^}]*transition:\s*left var\(--motion-panel\)/s);
     // The wipe needs the rail's scroller to stop raising an inline scrollbar mid-slide.
     expect(css).toMatch(/\.sidebar-section\s*{[^}]*overflow-x:\s*hidden/s);
     // Reduced motion drops the pane slides entirely, not just shortens them.
