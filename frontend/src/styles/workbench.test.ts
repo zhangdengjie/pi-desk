@@ -471,4 +471,25 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.settings-dialog \.model-field > textarea\s*{[^}]*min-height:\s*96px !important/s);
     expect(css).toMatch(/\.settings-dialog \.model-editor-actions\s*{[^}]*padding:\s*var\(--space-md\) var\(--space-xl\)/s);
   });
+
+  it("animates the two section toggles and keeps the divider drag untransitioned", async () => {
+    const css = await workbenchText();
+    // Left rail: the shell's first grid track interpolates. `html:not(.is-resizing-pane)` is the
+    // guard - PaneResizer.vue puts that class on <html> for the whole drag, and a live transition
+    // would make the pane trail the pointer by --motion-panel.
+    expect(css).toMatch(/html:not\(\.is-resizing-pane\) \.app-shell,\s*html:not\(\.is-resizing-pane\) \.topbar\s*{[^}]*transition:\s*grid-template-columns var\(--motion-panel\)/s);
+    // Right panel: stowed off its own edge, parked by the reserving class.
+    expect(css).toMatch(/\.inspector\s*{[^}]*transform:\s*translateX\(100%\)[^}]*opacity:\s*0[^}]*transition:[^}]*transform var\(--motion-panel\)/s);
+    expect(css).toMatch(/\.app-shell\.is-inspector-open \.inspector\s*{[^}]*transform:\s*none[^}]*opacity:\s*1/s);
+    // The expanded panel covers the whole workspace, so its left edge IS the rail's right edge;
+    // sliding it interpolates against that inset and overshoots off-screen (measured in the sandbox:
+    // x 1108 -> -135 -> 48). It has to appear at full size instead.
+    expect(css).toMatch(/\.app-shell\.is-inspector-expanded \.inspector\s*{[^}]*transform:\s*none[^}]*transition:\s*none/s);
+    // The wipe needs the rail's scroller to stop raising an inline scrollbar mid-slide.
+    expect(css).toMatch(/\.sidebar-section\s*{[^}]*overflow-x:\s*hidden/s);
+    // Reduced motion drops the pane slides entirely, not just shortens them.
+    const reduced = css.match(/@media \(prefers-reduced-motion: reduce\)\s*{[^]*?transition:\s*none;[^]*?}/s)?.[0] ?? "";
+    expect(reduced).toMatch(/html:not\(\.is-resizing-pane\) \.app-shell/);
+    expect(reduced).toMatch(/\.inspector\s*{[^}]*transition:\s*none/s);
+  });
 });

@@ -30,7 +30,7 @@ describe("AppSidebar", () => {
     expect(store.sidebarCollapsed).toBe(false);
     expect(wrapper.find('button[aria-label="Open task search"]').exists()).toBe(true);
   });
-  it("keeps the expand action in the collapsed sidebar", async () => {
+  it("keeps the expand action in the collapsed sidebar, but only after the wipe finishes", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
@@ -41,11 +41,21 @@ describe("AppSidebar", () => {
     store.sidebarCollapsed = true;
     await wrapper.vm.$nextTick();
 
+    // The track animates for --motion-panel (220ms, utils/paneMotion.ts). The blocks stay mounted for
+    // that long so `.sidebar { overflow: hidden }` clips them instead of leaving an empty column.
+    expect(wrapper.find(".sidebar-expand-button").exists()).toBe(false);
+    expect(wrapper.find(".sidebar-section").exists()).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
     const expandButton = wrapper.get(".sidebar-expand-button");
     expect(expandButton.attributes("aria-label")).toBe("Expand sidebar");
+    expect(wrapper.find(".sidebar-section").exists()).toBe(false);
     await expandButton.trigger("click");
     expect(store.sidebarCollapsed).toBe(false);
     expect(wrapper.find(".sidebar-expand-button").exists()).toBe(false);
+    // Expanding leads rather than lags: the content is there on the first frame and the widening
+    // track reveals it.
+    expect(wrapper.find(".sidebar-section").exists()).toBe(true);
   });
 
   beforeEach(() => {
