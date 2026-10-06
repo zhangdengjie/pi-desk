@@ -19,6 +19,7 @@ import WindowControls from "./components/WindowControls.vue";
 import { tr } from "./i18n";
 import { onBrowserEvent } from "./services/browser";
 import { installGhostSelectionGuard } from "./services/ghostSelectionGuard";
+import { PANEL_SETTLE_MS } from "./utils/paneMotion";
 import { sanitizeFontFamilyList } from "./utils/fontFamily";
 import { anchoredTranscriptTint, legibleCodeColor, TRANSCRIPT_TINT_ANCHOR } from "./utils/transcriptTint";
 import {
@@ -97,6 +98,53 @@ function syncDocumentTranscriptLineHeight(height: string) {
   document.documentElement.dataset.transcriptLineHeight = height;
 }
 
+// Pane motion · the inspector (right: 文件 / 终端 / 变更 tabs).
+// `is-inspector-open` is what reserves the space (`workbench.css` puts `padding-right` on the
+// transcript and the composer from it) *and* what parks the panel at `transform: none`. So the class
+// cannot simply follow `inspectorOpen`:
+//   - on open, a node inserted while the class is already on it has no previous computed value to
+//     interpolate from, and no transition runs - hence the two-frame `inspectorReserve = false` hold.
+//     Holding it also stops the slide from replaying on every session switch (`:key` remounts the
+//     panel while the class never changes).
+//   - on close, the node has to outlive the class by one transition or the panel is unmounted before
+//     the first frame of its own slide-out - hence `inspectorMounted` + `PANEL_SETTLE_MS`.
+const inspectorVisible = computed(() => appStore.inspectorOpen && appStore.activePage === "task");
+const inspectorMounted = ref(inspectorVisible.value);
+const inspectorReserve = ref(inspectorVisible.value);
+let inspectorSettleTimer: number | undefined;
+let inspectorEnterToken = 0;
+const nextFrame = () => new Promise<void>((resolve) => {
+  requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+});
+
+function clearInspectorSettle() {
+  if (inspectorSettleTimer === undefined) return;
+  window.clearTimeout(inspectorSettleTimer);
+  inspectorSettleTimer = undefined;
+}
+
+async function playInspectorEnter(token: number) {
+  inspectorReserve.value = false;
+  inspectorMounted.value = true;
+  await nextFrame();
+  if (token !== inspectorEnterToken) return;
+  inspectorReserve.value = true;
+}
+
+watch(inspectorVisible, (visible) => {
+  clearInspectorSettle();
+  if (visible) {
+    void playInspectorEnter(++inspectorEnterToken);
+    return;
+  }
+  inspectorEnterToken += 1;
+  inspectorReserve.value = false;
+  inspectorSettleTimer = window.setTimeout(() => {
+    inspectorSettleTimer = undefined;
+    if (!inspectorVisible.value) inspectorMounted.value = false;
+  }, PANEL_SETTLE_MS);
+});
+
 // The reader's pick is anchored to the surface it is about to tint, then written onto the root as two
 // custom properties - an arbitrary colour has no closed set of values for a stylesheet to enumerate,
 // and removing both (the 跟随主题 state) falls back to the identity mix in tokens.css.
@@ -132,6 +180,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  clearInspectorSettle();
   disposeBrowserEvents?.();
   disposeGhostSelectionGuard?.();
   window.removeEventListener("beforeunload", persistDesktopState);
@@ -209,7 +258,7 @@ watch(() => [appStore.codeAccent, darkSurface.value] as const, ([accent, dark]) 
       'is-sidebar-collapsed': appStore.sidebarCollapsed,
       'is-inspector-closed': !appStore.inspectorOpen || appStore.activePage === 'scheduledTasks',
       'is-inspector-expanded': appStore.inspectorOpen && appStore.activePanel?.expanded && appStore.activePage === 'task',
-      'is-inspector-open': appStore.inspectorOpen && appStore.activePage === 'task',
+      'is-inspector-open': inspectorReserve,
       '[grid-template-columns:var(--sidebar-collapsed-width)_minmax(0,1fr)]': appStore.sidebarCollapsed,
       '[grid-template-columns:var(--sidebar-width)_minmax(0,1fr)]': !appStore.sidebarCollapsed,
     }"
@@ -230,9 +279,9 @@ watch(() => [appStore.codeAccent, darkSurface.value] as const, ([accent, dark]) 
       <ScheduledTasksPage v-if="appStore.activePage === 'scheduledTasks'" />
       <ConversationPane v-else />
     </main>
-    <InspectorPanel v-if="appStore.inspectorOpen && appStore.activePage === 'task'" :key="appStore.activeThreadId" v-show="!appStore.settingsOpen" />
+    <InspectorPanel v-if="inspectorMounted" :key="appStore.activeThreadId" v-show="!appStore.settingsOpen" />
     <PaneResizer
-      v-if="!appStore.settingsOpen && appStore.inspectorOpen && !appStore.activePanel?.expanded && appStore.activePage === 'task'"
+      v-if="!appStore.settingsOpen && inspectorReserve && !appStore.activePanel?.expanded && appStore.activePage === 'task'"
       side="right"
       :value="appStore.inspectorWidth"
       :min="MIN_INSPECTOR_WIDTH"

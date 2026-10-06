@@ -2063,3 +2063,70 @@
   }
 }
 
+
+/* ── Pane motion ────────────────────────────────────────────────────────────────
+   The two "hide a section" shortcuts on the home page used to cut: `.topbar-sidebar-toggle`
+   swapped `grid-template-columns` 264px -> 48px on the same frame, and `.inspector-toggle`
+   unmounted <InspectorPanel> on the same frame the reserving class left `.app-shell`.
+   Appended at the end of this file on purpose - `transform` / `opacity` on `.inspector` must not be
+   reachable by the older `.inspector` blocks above, and this file already beats `layout.css` by load
+   order (main.ts: tokens -> base -> layout -> workbench -> tailwind).
+
+   Engine evidence (.pi/bin/hitprobe/anim-battery.html, run through .pi/bin/hitprobe/animprobe):
+   WebKit interpolates `grid-template-columns` between two track lists of the SAME length
+   (264 -> 48 measured across 14 distinct widths in 220ms). It does not interpolate a track-count
+   change, which is a second reason the shell stays a 2-column grid here and the inspector stays an
+   overlay (`position: absolute; right: 0`) instead of becoming a third track.
+
+   Scoped to `html:not(.is-resizing-pane)` because dragging a divider rewrites `--sidebar-width` on
+   every pointermove (PaneResizer.vue puts that class on <html> for the duration): a live transition
+   would make the pane trail the pointer by 220ms.
+   The matching unmount/settle timings are in utils/paneMotion.ts, pinned to --motion-panel there. */
+html:not(.is-resizing-pane) .app-shell,
+html:not(.is-resizing-pane) .topbar {
+  transition: grid-template-columns var(--motion-panel) var(--ease-in-out);
+}
+
+/* The rail's own blocks are `v-if`-ed and stay mounted for PANEL_SETTLE_MS (AppSidebar.vue), so the
+   narrowing track clips them - a wipe, not a pop. `.sidebar-section` scrolls vertically, and a box
+   with `overflow-y: auto` and `overflow-x: visible` computes the inline axis to `auto`, which would
+   raise a horizontal scrollbar during the wipe; clipping it is what keeps the slide clean. */
+.sidebar-section {
+  overflow-x: hidden;
+}
+
+/* The inspector slides out of the edge it is docked to and back in. The base rule is the stowed
+   state, so the leave has something to interpolate to while App.vue keeps the node mounted for
+   PANEL_SETTLE_MS; the enter needs `is-inspector-open` to arrive two frames after the node does,
+   because a node inserted with its final value already applied has no previous computed value. */
+.inspector {
+  transform: translateX(100%);
+  opacity: 0;
+  transition: transform var(--motion-panel) var(--ease-in-out), opacity var(--motion-fast) linear;
+}
+
+.app-shell.is-inspector-open .inspector {
+  transform: none;
+  opacity: 1;
+}
+
+/* Expanded = the panel covers the whole workspace (`inset: ... 0 var(--sidebar-width)`), so its left
+   edge is the sidebar's right edge. Sliding that overlay in interpolates `left` and `transform`
+   against each other and it overshoots past the window's left edge before settling (measured x
+   1108 -> -135 -> 48 in .pi/bin/hitprobe/devPaneMotionProbe.ts s4.open). It appears at full size. */
+.app-shell.is-inspector-expanded .inspector {
+  transform: none;
+  opacity: 1;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* base.css caps every duration at 150ms; these two move a whole pane, so they drop out entirely
+     instead of playing a shorter slide. `transition: none` sets transition-property, which the
+     `!important` duration cap in base.css cannot re-enable. */
+  html:not(.is-resizing-pane) .app-shell,
+  html:not(.is-resizing-pane) .topbar,
+  .inspector {
+    transition: none;
+  }
+}
