@@ -9,6 +9,7 @@ import SearchPopover from "./SearchPopover.vue";
 import { useAppStore } from "../stores/app";
 import { CONVERSATION_VIRTUALIZATION_THRESHOLD, estimateMessageSize, shouldVirtualizeMessages } from "../utils/conversationVirtualization";
 import { isNearBottom, createSettleSnap, nestedScrollerCanGoUp, nextTailScroll, TAIL_PIN_OFFSET } from "../utils/scroll";
+import { PANEL_MOTION_MS, PANEL_SETTLE_MS } from "../utils/paneMotion";
 import { streamTuning } from "../utils/streamTuning";
 import { groupConversationTurns } from "../utils/conversationGrouping";
 import { tr } from "../i18n";
@@ -282,6 +283,54 @@ const settleSnap = createSettleSnap(1200);
 watch(streamLive, (live, wasLive) => {
   if (wasLive === true && !live) settleSnap.arm();
 });
+
+// A pane toggle re-wraps the entire transcript. Opening the inspector takes the reading column from
+// 1386px of content to 786px (measured in the sandbox window), so every visible row changes height on
+// every frame of the 220ms slide - and easing a tail chase against a height that is still landing is
+// precisely the overshoot-and-reverse a reader calls 跳动. Same shape as the end-of-run batch above,
+// so the same remedy: pin instead of ease, for as long as the motion plus the unmount settle lasts.
+// The metric is `gapReversals` in .pi/bin/hitprobe/devPaneJumpProbe.ts.keep - the number of times the
+// per-frame displacement of the transcript's bottom edge flips sign inside one toggle. Before this
+// window existed, one open measured 3 reversals and one rail expand measured 7.
+const paneMotionSnap = createSettleSnap(PANEL_MOTION_MS + PANEL_SETTLE_MS);
+
+// The snap band alone is not enough, and measuring why is what found the real cause: the follow is
+// only ever *invoked* from the row ResizeObserver, and during a 220ms re-wrap there are frames where
+// the document grows (a row further up crosses a line-count boundary) while none of the observed rows
+// changes size. The follow sits those frames out, the tail lands 18-54px short, and the next
+// correction overcompensates - a +-36px oscillation with 3 sign reversals inside one open
+// (devPaneJumpProbe s4.after.open). So for the duration of the motion the follow is driven by the
+// frame clock as well - and the frame clock that matters is the one that runs *after* layout.
+// A rAF pin was tried first and measured no better (rAF is before this frame's style recalc, so it
+// pins against the previous frame's box); a ResizeObserver callback is the after-layout, before-paint
+// hook, which is the same reason the row observer above exists.
+let paneMotionObserver: ResizeObserver | undefined;
+let paneMotionTimer = 0;
+function stopPaneMotionPin() {
+  paneMotionObserver?.disconnect();
+  paneMotionObserver = undefined;
+  if (paneMotionTimer) window.clearTimeout(paneMotionTimer);
+  paneMotionTimer = 0;
+}
+function pinTailThroughPaneMotion() {
+  const element = timeline.value;
+  stopPaneMotionPin();
+  if (!element) return;
+  paneMotionObserver = new ResizeObserver(() => {
+    if (appStore.paneResizing) return;
+    if (stickToBottom.value) followTail();
+  });
+  // The scroller's own content box is what the transition animates (`padding: 24px
+  // var(--conversation-inline-space)`), so this fires on every frame of the slide - unlike the row
+  // observer, which only wakes when one of the observed rows changes size.
+  paneMotionObserver.observe(element);
+  paneMotionTimer = window.setTimeout(stopPaneMotionPin, PANEL_MOTION_MS + PANEL_SETTLE_MS);
+}
+
+watch(() => [appStore.inspectorOpen, appStore.sidebarCollapsed] as const, () => {
+  paneMotionSnap.arm();
+  pinTailThroughPaneMotion();
+});
 // The row observer stands down during a pane drag; this is where the tail catches up once the
 // width has settled.
 watch(() => appStore.paneResizing, (resizing) => {
@@ -304,7 +353,12 @@ function stepTail(): boolean {
     element.scrollTop,
     element.scrollHeight,
     element.clientHeight,
-    settleSnap.limit(streamTuning.scroll.snapWithinPx),
+    // Either window pins: they are independent causes with the same remedy, and `limit` answers
+    // either the configured band or Infinity, so the wider one wins.
+    Math.max(
+      settleSnap.limit(streamTuning.scroll.snapWithinPx),
+      paneMotionSnap.limit(streamTuning.scroll.snapWithinPx),
+    ),
   );
   if (next !== element.scrollTop) {
     applyingTail = true;
@@ -590,6 +644,7 @@ watch(() => composerBar.value?.$el, (element, _previous, onCleanup) => {
   onCleanup(() => {
     observer.disconnect();
     cancelAnimationFrame(resizeFrame);
+    stopPaneMotionPin();
   });
 }, { flush: "post" });
 

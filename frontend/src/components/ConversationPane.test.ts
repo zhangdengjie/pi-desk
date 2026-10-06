@@ -90,6 +90,55 @@ describe("ConversationPane", () => {
     expect(wrapper.find("composer-bar-stub").exists()).toBe(true);
   });
 
+  it("re-pins the tail from an after-layout hook while a pane is sliding", async () => {
+    // Why this exists: `.timeline` sets `overflow-anchor: none` (layout.css) because the JS follow
+    // owns vertical stability. During a pane toggle the scroller's own content box animates and
+    // nothing observed it, so the follow only ran on frames where an observed row happened to change
+    // size: the tail landed 18-54px short and the next correction overcompensated. Measured in the
+    // sandbox before the fix - 36px max per-frame displacement, 3 sign reversals in one open
+    // (.pi/bin/hitprobe/devPaneJumpProbe.ts.keep -> maxJumpGap / gapReversals). After it: 0 and 0.
+    const observers: Array<{ callback: () => void; target?: Element; disconnect: () => void }> = [];
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.stubGlobal("ResizeObserver", class {
+      record: (typeof observers)[number];
+      constructor(callback: () => void) {
+        this.record = { callback, disconnect: vi.fn() };
+        observers.push(this.record);
+      }
+      observe(target: Element) { this.record.target = target; }
+      unobserve() {}
+      disconnect() { this.record.disconnect(); }
+    });
+    const wrapper = mountTranscript(4);
+    await flushPromises();
+    const store = useAppStore();
+    const timeline = wrapper.get(".timeline").element as HTMLElement;
+    const metrics = { scrollHeight: 1200, clientHeight: 400 };
+    Object.defineProperty(timeline, "scrollHeight", { configurable: true, get: () => metrics.scrollHeight });
+    Object.defineProperty(timeline, "clientHeight", { configurable: true, get: () => metrics.clientHeight });
+    timeline.scrollTop = 790;
+    await wrapper.get(".timeline").trigger("scroll");
+
+    const before = observers.length;
+    store.inspectorOpen = false;
+    await flushPromises();
+    const scrollerObserver = observers.slice(before).find((item) => item.target === timeline);
+    expect(scrollerObserver, "a pane toggle must observe the scroller itself").toBeDefined();
+
+    // The document grows 210px on a frame in the middle of the slide. Inside the pane-motion window
+    // the step closes the whole gap, so no painted frame ever shows the tail sitting short.
+    metrics.scrollHeight = 1400;
+    scrollerObserver!.callback();
+    frames.at(-1)?.(0);
+    await flushPromises();
+    expect(timeline.scrollTop).toBe(1400);
+
+    wrapper.unmount();
+    expect(scrollerObserver!.disconnect).toHaveBeenCalled();
+  });
+
   it("measures the composer stack and follows its growth only while pinned to the bottom", async () => {
     const observers: Array<{ callback: () => void; target?: Element; disconnect: () => void }> = [];
     const frames: FrameRequestCallback[] = [];
