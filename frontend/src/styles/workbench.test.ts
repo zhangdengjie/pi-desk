@@ -492,10 +492,24 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/html:not\(\.is-resizing-pane\) \.conversation-search\s*{[^}]*transition:\s*right var\(--motion-panel\)/s);
     expect(css).toMatch(/html:not\(\.is-resizing-pane\) \.timeline-jump-latest\s*{[^}]*transition:\s*left var\(--motion-panel\)/s);
     // The wipe needs the rail's scroller to stop raising an inline scrollbar mid-slide.
-    expect(css).toMatch(/\.sidebar-section\s*{[^}]*overflow-x:\s*hidden/s);
+    expect(css).toMatch(/\.sidebar-section\s*{[^}]*overflow-x:\s*clip/s);
     // Reduced motion drops the pane slides entirely, not just shortens them.
     const reduced = css.match(/@media \(prefers-reduced-motion: reduce\)\s*{[^]*?transition:\s*none;[^]*?}/s)?.[0] ?? "";
     expect(reduced).toMatch(/html:not\(\.is-resizing-pane\) \.app-shell/);
     expect(reduced).toMatch(/\.inspector\s*{[^}]*transition:\s*none/s);
+  });
+  it("keeps the shell from being scrollable, so a stowed panel cannot push the sidebar out", async () => {
+    const css = await workbenchText();
+    const shell = css.match(/\.app-shell\s*{[^}]*}/s)?.[0] ?? "";
+    expect(shell, "the shell must clip rather than hide: `hidden` still makes it scrollable").toMatch(/overflow:\s*clip/);
+    expect(shell).not.toMatch(/overflow:\s*hidden/);
+    // The stylesheet declaration loses to the !important utility, so the template is load-bearing.
+    const app = await vueText("src/App.vue");
+    const main = app.match(/class="app-shell relative[^"]*"/)?.[0] ?? "";
+    expect(main).toContain("overflow-clip");
+    expect(main).not.toContain("overflow-hidden");
+    // The rail's own list gets the same treatment: it is a scroll container on the block axis, so the
+    // inline axis has to be `clip` rather than `hidden` to stop it being scrolled sideways.
+    expect(css).toMatch(/\.sidebar-section\s*{[^}]*overflow-x:\s*clip/);
   });
 });

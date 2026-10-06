@@ -242,7 +242,7 @@ watch(() => [appStore.codeAccent, darkSurface.value] as const, ([accent, dark]) 
   </div>
   <div
     v-else
-    class="app-shell relative grid h-full w-full grid-rows-[var(--topbar-height)_minmax(0,1fr)] overflow-hidden bg-[var(--bg-app)] font-body text-[var(--text)] antialiased max-[760px]:[grid-template-columns:var(--sidebar-collapsed-width)_minmax(0,1fr)]"
+    class="app-shell relative grid h-full w-full grid-rows-[var(--topbar-height)_minmax(0,1fr)] overflow-clip bg-[var(--bg-app)] font-body text-[var(--text)] antialiased max-[760px]:[grid-template-columns:var(--sidebar-collapsed-width)_minmax(0,1fr)]"
     :data-theme="appStore.appearance"
     :data-code-theme="codeTheme"
     :data-code-line-numbers="appStore.showCodeLineNumbers ? 'show' : 'hide'"

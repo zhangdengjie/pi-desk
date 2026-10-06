@@ -130,7 +130,14 @@
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   grid-template-rows: var(--topbar-height) minmax(0, 1fr);
   background: var(--bg-app);
-  overflow: hidden;
+  /* `clip`, not `hidden`, and the template carries the same choice as `overflow-clip` because a
+     Tailwind utility is !important and this unlayered declaration would lose to it. The difference
+     is not cosmetic: `hidden` still makes the shell a *scroll container*, so its scrollable overflow
+     includes any descendant pushed outside by a transform - the stowed inspector's translateX(100%)
+     grew it by a full inspector width - and the focus that lands when the panel mounts scrolls that
+     overflow into view. Measured in the sandbox: `.app-shell`.scrollLeft 107 with the sidebar half
+     off-screen. `clip` clips the same pixels but cannot be scrolled by anything. */
+  overflow: clip;
   /* Chrome is not text. A native selection that spans the sidebar list, the tab bars and the
      virtualized transcript covers thousands of text nodes, and WebKit re-resolves and repaints
      that range on every frame - the whole-interface freeze users hit after an accidental or
@@ -2090,9 +2097,12 @@ html:not(.is-resizing-pane) .topbar {
 /* The rail's own blocks are `v-if`-ed and stay mounted for PANEL_SETTLE_MS (AppSidebar.vue), so the
    narrowing track clips them - a wipe, not a pop. `.sidebar-section` scrolls vertically, and a box
    with `overflow-y: auto` and `overflow-x: visible` computes the inline axis to `auto`, which would
-   raise a horizontal scrollbar during the wipe; clipping it is what keeps the slide clean. */
+   raise a horizontal scrollbar during the wipe; clipping it is what keeps the slide clean.
+   `clip` for the same reason as the shell two blocks up: `hidden` leaves the box scrollable, and the
+   list overflows it by ~21px even at rest (measured), so any focus that lands on a wide row could
+   scroll the thread list sideways and leave it there. */
 .sidebar-section {
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* The inspector slides out of the edge it is docked to and back in. The base rule is the stowed
