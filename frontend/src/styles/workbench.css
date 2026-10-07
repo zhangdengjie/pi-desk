@@ -38,6 +38,15 @@
 .panel-tab.is-preview > button[role="tab"] > span:first-of-type { font-style: italic; }
 .panel-tab .panel-tab-close { width: 26px; flex: 0 0 26px; padding: 0 6px; color: var(--panel-muted); }
 .panel-tab-kind { font-size: 11px; white-space: nowrap; opacity: .8; }
+/* Drag-to-reorder. The picked-up tab leaves its slot in place as a dim gap - the row must not reflow
+   mid-drag, that is what the ghost is for - and the slot under it shows where it will land. */
+.panel-tab.is-dragging { opacity: .35; }
+.panel-tab.is-drop-target { box-shadow: inset 0 0 0 1px var(--border-strong); }
+/* `pointer-events: none` is load-bearing twice: `elementFromPoint` has to see the tab underneath, and
+   the drag must not be handed to the ghost the moment it appears under the cursor. */
+.panel-tab-ghost { position: fixed; z-index: 150; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 12px; background: var(--panel-surface, var(--bg-menu)); color: var(--text); font-size: 13px; box-shadow: 0 6px 24px rgb(0 0 0 / 18%); pointer-events: none; user-select: none; }
+.panel-tab-ghost > svg { flex: 0 0 auto; }
+.panel-tab-ghost > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .panel-icon-button { display: inline-grid; width: 32px; height: 32px; flex: 0 0 32px; place-items: center; border: 0; border-radius: 10px; background: transparent; color: var(--panel-muted); cursor: pointer; }
 .panel-expand { margin-left: auto; }
 .panel-workbench button:hover, .panel-menu button:hover { background: var(--panel-selected, var(--bg-hover)); }

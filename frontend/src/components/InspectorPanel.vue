@@ -134,18 +134,79 @@ function onDocumentKeydown(event: KeyboardEvent) {
   if (panelMenu.value) panelMenu.value = undefined;
   else if (outlineOpen.value && !outlineIsRail.value) outlineChoice.value = false;
 }
-let tabDrag: { id: string; x: number; y: number } | undefined;
+/**
+ * Tab reordering by pointer drag.
+ *
+ * Once the reader has moved the button past `TAB_DRAG_SLOP`, the tab they picked up stops occupying
+ * its slot and travels under the cursor as a floating copy (`panel-tab-ghost`). The row itself only
+ * reflows on release: reordering live would re-key the `v-for` on every pixel, and Vue re-inserts the
+ * element `setPointerCapture` is bound to - which silently kills the rest of the drag.
+ */
+const TAB_DRAG_SLOP = 5;
+interface TabDrag {
+  id: string;
+  fromX: number;
+  fromY: number;
+  x: number;
+  y: number;
+  /** Where inside the tab the reader grabbed it, so the ghost does not jump to its own corner. */
+  grabX: number;
+  grabY: number;
+  width: number;
+  moved: boolean;
+  overId: string;
+}
+const tabDrag = ref<TabDrag>();
 let draggedClick = false;
+const draggedTab = computed(() => {
+  const drag = tabDrag.value;
+  return drag?.moved ? appStore.activePanel?.tabs.find((tab) => tab.id === drag.id) : undefined;
+});
+const ghostStyle = computed(() => {
+  const drag = tabDrag.value;
+  if (!drag?.moved) return undefined;
+  return { left: `${Math.round(drag.x - drag.grabX)}px`, top: `${Math.round(drag.y - drag.grabY)}px`, width: `${Math.round(drag.width)}px` };
+});
 function startTabDrag(event: PointerEvent, id: string) {
   if (event.button !== 0) return;
   draggedClick = false;
-  tabDrag = { id, x: event.clientX, y: event.clientY };
+  // The slot box, not the button: the close button sits inside the same slot and the ghost has to be
+  // as wide as the thing that was picked up.
+  const slot = (event.currentTarget as HTMLElement).closest<HTMLElement>("[data-panel-tab]");
+  const box = (slot ?? (event.currentTarget as HTMLElement)).getBoundingClientRect();
+  tabDrag.value = {
+    id,
+    fromX: event.clientX,
+    fromY: event.clientY,
+    x: event.clientX,
+    y: event.clientY,
+    grabX: event.clientX - box.left,
+    grabY: event.clientY - box.top,
+    width: box.width,
+    moved: false,
+    overId: "",
+  };
   (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
 }
+function moveTabDrag(event: PointerEvent) {
+  const drag = tabDrag.value;
+  if (!drag) return;
+  if (!drag.moved && Math.hypot(event.clientX - drag.fromX, event.clientY - drag.fromY) < TAB_DRAG_SLOP) return;
+  drag.moved = true;
+  drag.x = event.clientX;
+  drag.y = event.clientY;
+  // The ghost is `pointer-events: none`, so this hit-test sees the tab underneath it - that is the
+  // slot the reorder will land in when the reader lets go.
+  const over = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-panel-tab]")?.dataset.panelTab;
+  drag.overId = over && over !== drag.id ? over : "";
+}
 function finishTabDrag(event: PointerEvent) {
-  const start = tabDrag;
-  tabDrag = undefined;
-  if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) < 5) return;
+  const start = tabDrag.value;
+  tabDrag.value = undefined;
+  if (!start) return;
+  // `moveTabDrag` normally sets `moved`; a pointerup that travels far with no pointermove in between
+  // (synthetic events, some pen streams) still has to count as a drag.
+  if (!start.moved && Math.hypot(event.clientX - start.fromX, event.clientY - start.fromY) < TAB_DRAG_SLOP) return;
   draggedClick = true;
   const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-panel-tab]");
   if (target?.dataset.panelTab) appStore.reorderPanelTab(start.id, target.dataset.panelTab);
@@ -218,6 +279,9 @@ function toggleExpanded() {
   const panel = appStore.activePanel;
   if (panel) panel.expanded = !panel.expanded;
   appStore.scheduleDesktopStateSave();
+}
+function cancelTabDrag() {
+  tabDrag.value = undefined;
 }
 function onTabKey(event: KeyboardEvent, tab: PanelTab) {
   const tabs = appStore.activePanel?.tabs ?? [], index = tabs.indexOf(tab);
@@ -715,6 +779,7 @@ onMounted(() => {
   document.addEventListener("keydown", onDocumentKeydown);
 });
 onBeforeUnmount(() => {
+  cancelTabDrag();
   window.clearTimeout(rollbackArmTimer);
   window.removeEventListener("focus", refreshPreview);
   document.removeEventListener("visibilitychange", refreshPreviewWhenVisible);
@@ -735,7 +800,7 @@ watch(() => currentTab.value?.id, async () => {
   <aside ref="panelElement" class="inspector panel-workbench" :class="ui.root" :aria-label="tr('inspector.label')" :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--sidebar-width': `${appStore.sidebarWidth}px` }" @scroll.capture="saveScroll">
     <div class="panel-tabbar">
       <div class="panel-tabs" role="tablist" :aria-label="tr('inspector.workspaceTabs')">
-        <div v-for="tab in appStore.activePanel?.tabs" :key="tab.id" :data-panel-tab="tab.id" class="panel-tab" :class="{ 'is-active': currentTab?.id === tab.id, 'is-preview': tab.kind === 'file' && !tab.pinned }">
+        <div v-for="tab in appStore.activePanel?.tabs" :key="tab.id" :data-panel-tab="tab.id" class="panel-tab" :class="{ 'is-active': currentTab?.id === tab.id, 'is-preview': tab.kind === 'file' && !tab.pinned, 'is-dragging': tabDrag?.moved && tabDrag.id === tab.id, 'is-drop-target': tabDrag?.moved && tabDrag.overId === tab.id }">
           <input
             v-if="renamingID === tab.id"
             class="panel-tab-rename"
@@ -747,7 +812,7 @@ watch(() => currentTab.value?.id, async () => {
             @keydown.esc.prevent="cancelRename()"
             @blur="commitRename()"
           />
-          <button v-else type="button" role="tab" @pointerdown="startTabDrag($event, tab.id)" @pointerup="finishTabDrag" @pointercancel="tabDrag = undefined" :aria-selected="currentTab?.id === tab.id" :tabindex="currentTab?.id === tab.id ? 0 : -1" :title="tab.path || tab.url || tab.title" @click="clickTab(tab.id)" @dblclick="onTabDoubleClick(tab)" @keydown="onTabKey($event, tab)">
+          <button v-else type="button" role="tab" @pointerdown="startTabDrag($event, tab.id)" @pointermove="moveTabDrag" @pointerup="finishTabDrag" @pointercancel="cancelTabDrag" :aria-selected="currentTab?.id === tab.id" :tabindex="currentTab?.id === tab.id ? 0 : -1" :title="tab.path || tab.url || tab.title" @click="clickTab(tab.id)" @dblclick="onTabDoubleClick(tab)" @keydown="onTabKey($event, tab)">
             <component :is="tabIcon(tab)" :size="17" /><span>{{ tab.title }}</span><span v-if="tab.kind === 'diff'" class="panel-tab-kind">{{ tr('inspector.reviewBadge') }}</span>
           </button>
           <button class="panel-tab-close" type="button" :aria-label="tr('inspector.closeTab', { title: tab.title })" @click="void appStore.closePanelTab(tab.id)"><X :size="14" /></button>
@@ -886,5 +951,13 @@ watch(() => currentTab.value?.id, async () => {
       </div>
     </div>
     </div>
+
+    <!-- The tab in the reader's hand. Teleported because `.panel-tabs` is `overflow-x: auto`, which
+         would clip it the moment it drifts out of the visible run of tabs. -->
+    <Teleport to="body">
+      <div v-if="draggedTab && ghostStyle" class="panel-tab-ghost" :style="ghostStyle" aria-hidden="true">
+        <component :is="tabIcon(draggedTab)" :size="17" /><span>{{ draggedTab.title }}</span>
+      </div>
+    </Teleport>
   </aside>
 </template>

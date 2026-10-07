@@ -47,6 +47,52 @@ describe("InspectorPanel", () => {
     wrapper.unmount();
   });
 
+  it("lifts the dragged tab into a ghost that tracks the cursor, and only reflows on release", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.activeThreadId = "ghost";
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    store.scheduleDesktopStateSave = vi.fn();
+    store.openPanelTab({ id: "one", kind: "files", title: "One" });
+    store.openPanelTab({ id: "two", kind: "files", title: "Two" });
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    // jsdom reports every box as 0x0 at the origin, which would make the ghost's offset meaningless.
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 150, y: 10, left: 150, top: 10, width: 120, height: 32, right: 270, bottom: 42, toJSON: () => ({}),
+    } as DOMRect);
+    const tabs = wrapper.findAll(".panel-tab");
+    const tab = wrapper.findAll('[role="tab"]')[1];
+    tab.element.setPointerCapture = vi.fn();
+    const point = vi.spyOn(document, "elementFromPoint").mockReturnValue(tabs[0].element);
+    const ghost = () => document.body.querySelector(".panel-tab-ghost");
+
+    await tab.trigger("pointerdown", { button: 0, pointerId: 1, clientX: 200, clientY: 20 });
+    expect(ghost()).toBeNull(); // a press is not a drag yet - no flicker on a plain click
+
+    await tab.trigger("pointermove", { pointerId: 1, clientX: 203, clientY: 20 });
+    expect(ghost()).toBeNull(); // still inside the 5px slop
+
+    await tab.trigger("pointermove", { pointerId: 1, clientX: 300, clientY: 60 });
+    // Grabbed 50px into a 120px slot, so the ghost trails the cursor by exactly that.
+    expect(ghost()?.getAttribute("style")).toContain("left: 250px");
+    expect(ghost()?.getAttribute("style")).toContain("top: 50px");
+    expect(ghost()?.getAttribute("style")).toContain("width: 120px");
+    expect(ghost()?.textContent).toContain("Two");
+    expect(tabs[1].classes()).toContain("is-dragging");
+    expect(tabs[0].classes()).toContain("is-drop-target");
+    // Nothing has moved yet: the row only reflows when the reader lets go.
+    expect(store.activePanel?.tabs.map((tab) => tab.id)).toEqual(["one", "two"]);
+
+    await tab.trigger("pointerup", { pointerId: 1, clientX: 300, clientY: 60 });
+    expect(ghost()).toBeNull();
+    expect(store.activePanel?.tabs.map((tab) => tab.id)).toEqual(["two", "one"]);
+
+    point.mockRestore();
+    rect.mockRestore();
+    wrapper.unmount();
+  });
+
   it("opens the + menu as a box that belongs to the button, and dismisses it again", async () => {
     // Regression: the menu used to be a native `popover` placed by CSS anchor positioning. WKWebView
     // does not resolve the anchor for a top-layer box, so it opened in the viewport's top-left corner,
