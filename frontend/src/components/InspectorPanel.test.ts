@@ -93,6 +93,61 @@ describe("InspectorPanel", () => {
     wrapper.unmount();
   });
 
+  it("scrolls the tab strip under the cursor while a tab is dragged to its edge", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.activeThreadId = "edge";
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    store.scheduleDesktopStateSave = vi.fn();
+    store.openPanelTab({ id: "one", kind: "files", title: "One" });
+    store.openPanelTab({ id: "two", kind: "files", title: "Two" });
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    const strip = wrapper.get(".panel-tabs").element;
+    Object.defineProperty(strip, "clientWidth", { configurable: true, value: 200 });
+    // The strip's own box, away from the tabs': the edge band is measured against it.
+    vi.spyOn(strip, "getBoundingClientRect").mockReturnValue({
+      x: 900, y: 10, left: 900, top: 10, width: 200, height: 32, right: 1100, bottom: 42, toJSON: () => ({}),
+    } as DOMRect);
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 150, y: 10, left: 150, top: 10, width: 120, height: 32, right: 270, bottom: 42, toJSON: () => ({}),
+    } as DOMRect);
+    const tab = wrapper.findAll('[role="tab"]')[1];
+    tab.element.setPointerCapture = vi.fn();
+    const point = vi.spyOn(document, "elementFromPoint").mockReturnValue(wrapper.findAll(".panel-tab")[0].element);
+    const frames = (n: number) => new Promise<void>((resolve) => {
+      let left = n;
+      const tick = () => (--left <= 0 ? resolve() : requestAnimationFrame(tick));
+      requestAnimationFrame(tick);
+    });
+
+    await tab.trigger("pointerdown", { button: 0, pointerId: 1, clientX: 200, clientY: 20 });
+    Object.defineProperty(strip, "scrollWidth", { configurable: true, value: 200 });
+    await tab.trigger("pointermove", { pointerId: 1, clientX: 1095, clientY: 26 });
+    await frames(4);
+    expect(strip.scrollLeft).toBe(0); // 没溢出就不动 —— 否则光标在边缘时条带会自己跳
+
+    Object.defineProperty(strip, "scrollWidth", { configurable: true, value: 520 });
+    point.mockClear();
+    await tab.trigger("pointermove", { pointerId: 1, clientX: 1094, clientY: 26 });
+    await frames(3);
+    expect(strip.scrollLeft).toBeGreaterThan(20); // 距右端 6px → 每帧 ~10px
+    // 光标没动但 tab 在它底下滚过去了 → 落点必须每帧重算，不能等下一次 pointermove
+    expect(point.mock.calls.length).toBeGreaterThanOrEqual(3);
+
+    const scrolled = strip.scrollLeft;
+    await tab.trigger("pointerup", { pointerId: 1, clientX: 1094, clientY: 26 });
+    point.mockClear();
+    await frames(4);
+    expect(strip.scrollLeft).toBe(scrolled); // 松手就停，不能接着滑
+    expect(point.mock.calls.length).toBe(0); // rAF 循环真的被摘掉了，不是“停在原地空转”
+    expect(store.activePanel?.tabs.map((tab) => tab.id)).toEqual(["two", "one"]);
+
+    point.mockRestore();
+    rect.mockRestore();
+    wrapper.unmount();
+  });
+
   it("opens the + menu as a box that belongs to the button, and dismisses it again", async () => {
     // Regression: the menu used to be a native `popover` placed by CSS anchor positioning. WKWebView
     // does not resolve the anchor for a top-layer box, so it opened in the viewport's top-left corner,

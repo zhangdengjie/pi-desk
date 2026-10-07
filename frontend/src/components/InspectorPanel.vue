@@ -158,6 +158,53 @@ interface TabDrag {
 }
 const tabDrag = ref<TabDrag>();
 let draggedClick = false;
+/**
+ * Edge auto-scroll while a tab is in the hand.
+ *
+ * `.panel-tabs` is `overflow-x: auto`, so once the run of tabs is wider than the panel the drop
+ * target can be off-screen - and a cursor that cannot reach it cannot reorder onto it. Within
+ * `TAB_SCROLL_EDGE` of either end the strip scrolls under the ghost, faster the deeper the cursor
+ * sits in that band. Every frame re-runs the hit-test: a still cursor is no longer a still target
+ * once the tabs start moving under it.
+ */
+const panelTabs = ref<HTMLElement>();
+const TAB_SCROLL_EDGE = 32;
+const TAB_SCROLL_MAX = 12;
+let tabScrollRaf: number | undefined;
+let tabScrollDir = 0;
+let tabScrollStep = 1;
+function stopTabScroll() {
+  tabScrollDir = 0;
+  if (tabScrollRaf === undefined) return;
+  cancelAnimationFrame(tabScrollRaf);
+  tabScrollRaf = undefined;
+}
+function pumpTabScroll() {
+  tabScrollRaf = undefined;
+  const strip = panelTabs.value, drag = tabDrag.value;
+  if (!strip || !drag?.moved || !tabScrollDir) return;
+  const before = strip.scrollLeft;
+  strip.scrollLeft = before + tabScrollDir * tabScrollStep;
+  if (strip.scrollLeft === before) return; // 已经滚到头：停下来，不要空转 rAF
+  const over = document.elementFromPoint(drag.x, drag.y)?.closest<HTMLElement>("[data-panel-tab]")?.dataset.panelTab;
+  drag.overId = over && over !== drag.id ? over : "";
+  tabScrollRaf = requestAnimationFrame(pumpTabScroll);
+}
+function scrollTabsTowardsCursor(event: PointerEvent) {
+  const strip = panelTabs.value;
+  if (!strip || strip.scrollWidth <= strip.clientWidth + 1) return stopTabScroll();
+  const rect = strip.getBoundingClientRect();
+  // 光标离开条带上下就不滚：拖进编辑器里松手是“换不了位”，不是“往右翻”。
+  if (event.clientY < rect.top - TAB_SCROLL_EDGE || event.clientY > rect.bottom + TAB_SCROLL_EDGE) return stopTabScroll();
+  const fromLeft = event.clientX - rect.left, fromRight = rect.right - event.clientX;
+  const dir = fromLeft < TAB_SCROLL_EDGE ? -1 : fromRight < TAB_SCROLL_EDGE ? 1 : 0;
+  if (!dir) return stopTabScroll();
+  const near = dir < 0 ? fromLeft : fromRight;
+  const depth = Math.min(1, Math.max(0, (TAB_SCROLL_EDGE - near) / TAB_SCROLL_EDGE));
+  tabScrollStep = Math.max(1, Math.round(TAB_SCROLL_MAX * depth));
+  tabScrollDir = dir;
+  if (tabScrollRaf === undefined) tabScrollRaf = requestAnimationFrame(pumpTabScroll);
+}
 const draggedTab = computed(() => {
   const drag = tabDrag.value;
   return drag?.moved ? appStore.activePanel?.tabs.find((tab) => tab.id === drag.id) : undefined;
@@ -199,10 +246,12 @@ function moveTabDrag(event: PointerEvent) {
   // slot the reorder will land in when the reader lets go.
   const over = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-panel-tab]")?.dataset.panelTab;
   drag.overId = over && over !== drag.id ? over : "";
+  scrollTabsTowardsCursor(event);
 }
 function finishTabDrag(event: PointerEvent) {
   const start = tabDrag.value;
   tabDrag.value = undefined;
+  stopTabScroll();
   if (!start) return;
   // `moveTabDrag` normally sets `moved`; a pointerup that travels far with no pointermove in between
   // (synthetic events, some pen streams) still has to count as a drag.
@@ -282,6 +331,7 @@ function toggleExpanded() {
 }
 function cancelTabDrag() {
   tabDrag.value = undefined;
+  stopTabScroll();
 }
 function onTabKey(event: KeyboardEvent, tab: PanelTab) {
   const tabs = appStore.activePanel?.tabs ?? [], index = tabs.indexOf(tab);
@@ -779,7 +829,7 @@ onMounted(() => {
   document.addEventListener("keydown", onDocumentKeydown);
 });
 onBeforeUnmount(() => {
-  cancelTabDrag();
+  cancelTabDrag(); // 它也负责停掉边缘自动滚动
   window.clearTimeout(rollbackArmTimer);
   window.removeEventListener("focus", refreshPreview);
   document.removeEventListener("visibilitychange", refreshPreviewWhenVisible);
@@ -799,7 +849,7 @@ watch(() => currentTab.value?.id, async () => {
 <template>
   <aside ref="panelElement" class="inspector panel-workbench" :class="ui.root" :aria-label="tr('inspector.label')" :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--sidebar-width': `${appStore.sidebarWidth}px` }" @scroll.capture="saveScroll">
     <div class="panel-tabbar">
-      <div class="panel-tabs" role="tablist" :aria-label="tr('inspector.workspaceTabs')">
+      <div ref="panelTabs" class="panel-tabs" role="tablist" :aria-label="tr('inspector.workspaceTabs')">
         <div v-for="tab in appStore.activePanel?.tabs" :key="tab.id" :data-panel-tab="tab.id" class="panel-tab" :class="{ 'is-active': currentTab?.id === tab.id, 'is-preview': tab.kind === 'file' && !tab.pinned, 'is-dragging': tabDrag?.moved && tabDrag.id === tab.id, 'is-drop-target': tabDrag?.moved && tabDrag.overId === tab.id }">
           <input
             v-if="renamingID === tab.id"
