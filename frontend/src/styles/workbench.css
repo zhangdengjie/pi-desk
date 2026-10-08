@@ -910,6 +910,18 @@
   margin-top: 12px;
 }
 
+/* The seam of a streaming block. `components/MarkdownBody.vue` renders "settled prefix + live tail"
+   into two wrappers so a revealed frame re-parses only the tail; the price is that the first block
+   of the tail is no longer a *sibling* of the last settled block, and the rhythm rule above cannot
+   reach across it - measured in a real WKWebView, two paragraphs went from 12px apart to 0px.
+
+   `is-seamed` is set by that component from the two rendered elements it actually has, on exactly
+   the four pairs above. A class is unavoidable here: no combinator can name "whatever came last in
+   the previous wrapper". 12px and not the 9px in `layout.css:1850`, which this file overrides. */
+.markdown-body > .md-tail.is-seamed > :first-child {
+  margin-top: 12px;
+}
+
 /* Ordered-list markers: a column this app owns, not one the browser places.
 
    The browser right-aligns an outside marker to the text column, so every attempt to square off the

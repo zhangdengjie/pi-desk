@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasBackwardReference, splitSettledMarkdown } from "./markdownSettled";
+import { hasBackwardReference, seamNeedsSpacing, splitSettledMarkdown } from "./markdownSettled";
 import { renderMarkdownDocument } from "./markdownRenderer";
 
 /**
@@ -171,3 +171,20 @@ describe("the settled prefix's HTML is final", () => {
 function settledLengthAdvanced(settled: string, soFar: number): boolean {
   return settled.length > soFar;
 }
+
+describe("seamNeedsSpacing", () => {
+  // A transcription of the four sibling selectors in styles/workbench.css. Each row is one of those
+  // selectors (true) or a pair it deliberately does not cover (false).
+  it.each([
+    ["P", "P", true], ["UL", "P", true], ["OL", "P", true], ["PRE", "P", true],
+    ["BLOCKQUOTE", "P", true], ["H1", "P", true], ["H2", "P", true], ["H4", "P", true],
+    ["P", "UL", true], ["P", "OL", true], ["P", "PRE", true], ["P", "BLOCKQUOTE", true],
+    // Not covered: a heading followed by a list gets its own margins, not the rhythm margin; two
+    // lists are not a rhythm pair; and nothing on either side means there is no seam to space.
+    ["H2", "UL", false], ["UL", "UL", false], ["OL", "OL", false], ["BLOCKQUOTE", "UL", false],
+    ["H2", "H3", false], ["P", "H2", false], ["DIV", "P", false],
+    [undefined, "P", false], ["P", undefined, false],
+  ])("%s + %s -> %s", (before, after, expected) => {
+    expect(seamNeedsSpacing(before, after)).toBe(expected);
+  });
+});

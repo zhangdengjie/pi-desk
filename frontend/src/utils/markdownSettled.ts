@@ -215,3 +215,25 @@ export function hasBackwardReference(text: string): boolean {
   }
   return false;
 }
+
+/**
+ * Whether the two blocks that meet at a render seam need the paragraph-rhythm margin.
+ *
+ * `styles/workbench.css` gives 12px between finished blocks via four sibling selectors
+ * (`p + p`, `p + ul|ol|pre|blockquote`, `ul|ol|pre|blockquote + p`, `h1-h4 + p`). Splitting a
+ * document into a settled prefix and a live tail destroys the *sibling* relation across the cut, so
+ * the component has to restate that rule from the two tags it can actually see - which is what this
+ * is. It is a transcription, not an invention: if the CSS changes, this changes with it.
+ *
+ * Drift is caught by measurement, not by a unit test: `.pi/bin/mdshot` renders both arrangements
+ * through the compiled stylesheet in a real WKWebView and compares the gaps.
+ */
+const SEAM_AFTER_BLOCK = /^(UL|OL|PRE|BLOCKQUOTE)$/;
+const SEAM_BEFORE_ANY = /^(P|UL|OL|PRE|BLOCKQUOTE|H[1-4])$/;
+
+export function seamNeedsSpacing(before?: string, after?: string): boolean {
+  if (!before || !after) return false;
+  if (after === "P") return SEAM_BEFORE_ANY.test(before);
+  if (SEAM_AFTER_BLOCK.test(after)) return before === "P";
+  return false;
+}

@@ -400,14 +400,91 @@ describe("MarkdownBody streaming split", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(wrapper.text()).toContain("still arriving");
 
-    const html = wrapper.get(".markdown-body").element.innerHTML;
+    const root = wrapper.get(".markdown-body").element;
     const uid = wrapper.get(".markdown-body").attributes("data-markdown-uid");
+    // The seam wrapper is structure, not content: take the two pieces out of the live DOM and
+    // concatenate them. That is only equal to one whole pass if the split changed nothing - not the
+    // heading numbering across the seam, not a whitespace, not a block boundary.
+    const settledEl = root.querySelector(".md-settled");
+    const tailEl = root.querySelector(".md-tail");
+    expect(settledEl).not.toBeNull();
+    expect(tailEl).not.toBeNull();
+    const html = settledEl!.innerHTML + tailEl!.innerHTML;
     wrapper.unmount();
     vi.useRealTimers();
 
     // Heading ids carry the per-instance prefix, so the reference has to render under the same one.
     expect(uid).toBeTruthy();
     expect(html).toBe(renderMarkdownDocument(text, { slugCounts: new Map() }, uid ?? ""));
+  });
+
+  it("leaves the settled nodes in place while only the tail grows", async () => {
+    // The point of the seam. `v-html` used to be bound to the whole block, so every revealed frame
+    // destroyed and re-parsed every paragraph above it. The source here keeps growing inside a
+    // fence that never closes, so the settled region cannot advance at all - and a paragraph marked
+    // before the growth must still be the same node afterwards.
+    //
+    // Fed in two explicit steps rather than by waiting on the reveal: `utils/streamPacer.ts` steps
+    // on elapsed time, not per frame, so a fake-timer window can dump the whole backlog at once and
+    // the growth assertion would be timing-dependent.
+    vi.useFakeTimers();
+    const prose = streamedDoc();
+    const open = "\n\n\`\`\`ts\n" + "const line = 1;\n".repeat(400);
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text: prose + open });
+    await vi.advanceTimersByTimeAsync(200);
+    await flushPromises();
+    const root = () => wrapper.get(".markdown-body").element;
+    const first = root().querySelector<HTMLElement>(".md-settled p");
+    expect(first).not.toBeNull();
+    first!.dataset.marker = "pinned";
+    const tailBefore = root().querySelector(".md-tail")!.innerHTML.length;
+    expect(tailBefore).toBeGreaterThan(0);
+
+    await wrapper.setProps({ text: prose + open + "const line = 2;\n".repeat(400) });
+    await vi.advanceTimersByTimeAsync(200);
+    await flushPromises();
+    const tailAfter = root().querySelector(".md-tail")!.innerHTML.length;
+    expect(tailAfter).toBeGreaterThan(tailBefore); // the block really did grow
+    expect(root().querySelector<HTMLElement>(".md-settled p")!.dataset.marker).toBe("pinned"); // nothing above was rebuilt
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("marks the seam exactly where the sibling rule would have fired", async () => {
+    // The rhythm rule is `styles/workbench.css`'s four sibling selectors (12px), not layout.css's
+    // older 9px one, and it covers a heading followed by a paragraph. The full pair matrix is
+    // `seamNeedsSpacing` in utils/markdownSettled.test.ts; these two cases pin that the component
+    // actually consults it on the rendered DOM.
+    vi.useFakeTimers();
+    const prose = Array.from({ length: 20 }, (_, index) =>
+      `Paragraph ${index}: the quick brown fox jumps over the lazy dog while the platform reports a status code and a short note about it.`).join("\n\n");
+
+    const first = mountMarkdown("seed", { streaming: true });
+    await first.wrapper.setProps({ text: `${prose}\n\nthe last paragraph is still arriving` });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await flushPromises();
+    expect(first.wrapper.get(".md-tail").classes()).toContain("is-seamed"); // p above, p below
+    first.wrapper.unmount();
+
+    const second = mountMarkdown("seed", { streaming: true });
+    await second.wrapper.setProps({ text: streamedDoc() });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await flushPromises();
+    // settled ends on `## Setup` (an h2), the tail starts on a paragraph: `h1-h4 + p` is a pair.
+    expect(second.wrapper.get(".md-tail").classes()).toContain("is-seamed");
+    second.wrapper.unmount();
+
+    const third = mountMarkdown("seed", { streaming: true });
+    await third.wrapper.setProps({ text: `${prose}\n\n## A heading\n\nand a line after it` });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await flushPromises();
+    // p above, h2 below: no rule fires in the whole-document render either, so no class.
+    // (The heading has to be a *terminated* line with something after it, or the cut stays above it -
+    // utils/markdownSettled.ts only cuts in front of a line it can no longer be wrong about.)
+    expect(third.wrapper.get(".md-tail").classes()).not.toContain("is-seamed");
+    third.wrapper.unmount();
+    vi.useRealTimers();
   });
 
   it("keeps heading ids unique across the seam", async () => {

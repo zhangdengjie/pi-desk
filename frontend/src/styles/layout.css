@@ -1855,6 +1855,21 @@ html.is-resizing-pane .inspector {
   margin-top: 9px;
 }
 
+/* A streaming block renders in two pieces: `.md-settled` holds the blocks that can no longer
+   change, `.md-tail` holds the one being written, and only the tail is re-parsed per frame.
+
+   The sibling rules keep working untouched - they are descendant selectors (`.markdown-body p + p`),
+   not child selectors, so they still match inside a wrapper. Two relationships are lost and get an
+   explicit counterpart here; the seam itself is handled in `workbench.css`, next to the paragraph
+   rhythm rule it has to reproduce. */
+.markdown-body > .md-settled > :first-child {
+  margin-top: 0;
+}
+
+.markdown-body > .md-tail > :last-child {
+  margin-bottom: 0;
+}
+
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3,

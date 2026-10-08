@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { computed, getCurrentInstance, ref } from "vue";
+import { computed, getCurrentInstance, ref, watchPostEffect } from "vue";
 import { useAppStore } from "../stores/app";
 import { useRevealedText } from "../composables/useRevealedText";
 import type { WorkspaceFileLink } from "../utils/fileLinks";
 import { slugifyHeading } from "../utils/markdown";
 import { renderMarkdownDocument } from "../utils/markdownRenderer";
-import { splitSettledMarkdown } from "../utils/markdownSettled";
+import { seamNeedsSpacing, splitSettledMarkdown } from "../utils/markdownSettled";
 import { collectMarkdownOutline, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import FileLinkContextMenu from "./FileLinkContextMenu.vue";
 
@@ -87,6 +87,8 @@ const split = computed(() => (incremental.value
 const settledMemo: { env: string; chars: number; html: string; slugs: [string, number][] } =
   { env: "", chars: 0, html: "", slugs: [] };
 
+const NO_PIECES = { shell: "", tail: "" };
+
 function highlightRenderedHtml(html: string, query: string, active: boolean, activeIndex: number | null = null): string {
   const needle = query.trim();
   if (!needle || typeof document === "undefined") return html;
@@ -145,8 +147,8 @@ function highlightRenderedHtml(html: string, query: string, active: boolean, act
   return template.innerHTML;
 }
 
-const rendered = computed(() => {
-  if (!renderMarkdown.value) return "";
+const pieces = computed(() => {
+  if (!renderMarkdown.value) return NO_PIECES;
   const env = {
     workspacePath: workspacePath.value,
     baseDir: linkBaseDir.value,
@@ -179,8 +181,12 @@ const rendered = computed(() => {
       settledMemo.chars = settledLength;
       settledMemo.slugs = [...slugCounts.entries()];
     }
-    return settledMemo.html
-      + renderMarkdownDocument(tail, { ...env, preserveSlugs: true }, instanceUid, false);
+    // Two separate elements, two separate writes: a frame that only reveals more text touches
+    // `.md-tail` and leaves every settled node exactly where it is - no re-parse, no re-layout.
+    return {
+      shell: settledMemo.html,
+      tail: renderMarkdownDocument(tail, { ...env, preserveSlugs: true }, instanceUid, false),
+    };
   }
   settledMemo.chars = 0;
   settledMemo.html = "";
@@ -188,11 +194,41 @@ const rendered = computed(() => {
   // A settled block is the one a virtualized scroll unmounts and remounts, so it is the one worth a
   // lookup; a streaming block changes every frame and must not enter the cache at all.
   const html = renderMarkdownDocument(shownText.value, env, instanceUid, props.streaming !== true);
-  return highlightRenderedHtml(html, props.searchQuery ?? "", props.searchActive ?? false,
-    props.searchActiveIndex ?? null);
+  return {
+    shell: highlightRenderedHtml(html, props.searchQuery ?? "", props.searchActive ?? false,
+      props.searchActiveIndex ?? null),
+    tail: "",
+  };
 });
 
+/** What `v-html` binds on the whole-block path. It changes only when the settled region advances. */
+const rendered = computed(() => pieces.value.shell);
+/** The live tail's HTML, bound to its own element so a reveal frame touches nothing else. */
+const tailHtml = computed(() => pieces.value.tail);
+/** Whether this render is in two pieces. False for a settled block, a search, or a refused cut. */
+const seam = computed(() => pieces.value.tail !== "");
+
 const bodyElement = ref<HTMLElement>();
+
+/**
+ * Writes the live tail into its own element, after the shell has been patched.
+ *
+ * `watchPostEffect` because the placeholder is created by the same update: pre-flush would run
+ * against the previous DOM and find nothing to write.
+ *
+ * The `is-seamed` class is decided from the DOM rather than from the Markdown source on purpose -
+ * "what are the two blocks that meet at the seam" is a question the rendered tree answers exactly,
+ * and the CSS rule it feeds has to fire on the same conditions `.markdown-body p + p` fires on.
+ */watchPostEffect(() => {
+  const placeholder = bodyElement.value?.querySelector(".md-tail");
+  if (!placeholder) return;
+  // The two blocks that actually meet at the seam. Read from the DOM, not from the Markdown source:
+  // "what is the last settled block" has a single honest answer, and it is the one the CSS above
+  // would have tested had the wrapper not been there.
+  const before = placeholder.previousElementSibling?.lastElementChild ?? null;
+  const after = placeholder.firstElementChild;
+  placeholder.classList.toggle("is-seamed", seamNeedsSpacing(before?.tagName, after?.tagName));
+});
 
 function anchorSelector(anchor: string): string {
   return anchor.replace(/["\\\s]/g, "");
@@ -292,8 +328,10 @@ function openContextMenu(event: MouseEvent) {
 </script>
 
 <template>
+  <!-- One pass: the whole block in a single v-html. This is the settled shape every layout.css rule
+       was written against, and it is what a non-streaming block keeps using. -->
   <div
-    v-if="renderMarkdown"
+    v-if="renderMarkdown && !seam"
     ref="bodyElement"
     v-bind="$attrs"
     class="markdown-body"
@@ -303,6 +341,24 @@ function openContextMenu(event: MouseEvent) {
     @click="openPreview"
     @contextmenu="openContextMenu"
   />
+  <!-- Two pieces while the source is still arriving: the settled prefix is written once per
+       completed block, the tail once per frame. Each is a v-html on its own element so Vue's own
+       prop diff decides whether to touch it - an imperative innerHTML on the root would have to be
+       compared against a string that already contains the tail, and would rewrite everything every
+       frame (measured: it did). -->
+  <div
+    v-else-if="renderMarkdown"
+    ref="bodyElement"
+    v-bind="$attrs"
+    class="markdown-body"
+    :class="[ui.root, { streaming }]"
+    :data-markdown-uid="instanceUid"
+    @click="openPreview"
+    @contextmenu="openContextMenu"
+  >
+    <div class="md-settled" v-html="rendered" />
+    <div class="md-tail" v-html="tailHtml" />
+  </div>
   <pre v-else v-bind="$attrs" class="oversized-message" :class="ui.code">{{ text }}</pre>
   <FileLinkContextMenu
     v-if="contextMenu && workspacePath"
