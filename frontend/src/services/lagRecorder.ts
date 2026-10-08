@@ -48,6 +48,12 @@ let started = false;
 let ring: Frame[] = [];
 let capture: Capture | null = null;
 let observer: MutationObserver | null = null;
+/**
+ * Whether the DOM-write probe is actually running. `mutations: 0` alone cannot tell "the page did no
+ * DOM work" from "nobody was watching", and the second one was true for 51 records in a row while
+ * the first was being believed (`lag-2026-10-08.jsonl`, 2026-10-08).
+ */
+let witness: "ok" | "no-root" | "no-api" = "no-api";
 let lastPost = 0;
 let posts = 0;
 let stopped = false;
@@ -86,6 +92,30 @@ function openCapture(reason: string, worstGap = 0, hiddenMs = 0) {
     capture.hiddenMs = Math.max(capture.hiddenMs, hiddenMs);
   }
   if (observer) return;
+  attachMutationWitness();
+}
+
+/**
+ * Watches every DOM write under the app root, for the life of the page.
+ *
+ * Two things this deliberately does *not* do, both learned the hard way:
+ *
+ *   - it is not created lazily on the first slow frame. That made every write before the first
+ *     reported frame invisible, and coupled "is the witness running" to "has the page been slow";
+ *   - it is never disconnected. `flush()` used to call `observer?.disconnect()`, and nothing
+ *     re-attached it (`openCapture` bails on `if (observer) return`), so the witness went blind
+ *     permanently after its first record and every later `mutations: 0` was an artifact.
+ *
+ * The callback only adds up integers, so the cost of leaving it attached is one microtask per
+ * mutation batch - which is the price of the numbers being true.
+ */
+function attachMutationWitness(): void {
+  if (typeof MutationObserver !== "function") return;
+  const root = q("#app");
+  if (!root) {
+    witness = "no-root";
+    return;
+  }
   observer = new MutationObserver((records) => {
     for (const record of records) {
       counters.muts += 1;
@@ -110,8 +140,8 @@ function openCapture(reason: string, worstGap = 0, hiddenMs = 0) {
       }
     }
   });
-  const root = q("#app");
-  if (root) observer.observe(root, { childList: true, subtree: true, characterData: true });
+  observer.observe(root, { childList: true, subtree: true, characterData: true });
+  witness = "ok";
 }
 
 function topPaths(paths: Record<string, number>, n: number) {
@@ -200,7 +230,8 @@ function summarise(frames: Frame[]) {
 async function flush(frames: Frame[]) {
   const captureState = capture;
   capture = null;
-  observer?.disconnect();
+  // Not `observer.disconnect()`: that ran here once and nothing re-attached the observer, so every
+  // record after the first reported `mutations: 0` and `nativeStall: true` as if they were facts.
   const now = Date.now();
   if (posts >= MAX_POSTS_PER_SESSION || now - lastPost < POST_MIN_INTERVAL_MS) return;
   const body = {
@@ -210,8 +241,10 @@ async function flush(frames: Frame[]) {
     /** Set on a resume window: the away period, kept out of `worstGapMs`/`maxMs` on purpose so a
      * 40-minute lock is never read as a 40-minute freeze. */
     hiddenMs: Math.round(captureState?.hiddenMs ?? 0),
-    /** A gap over STALL_MS with no work in it is the native event loop or a hidden page. */
+    /** A gap over STALL_MS with no work in it is the native event loop or a hidden page - only
+     * meaningful while `witness` says the probe was watching. */
     nativeStall: (captureState?.worstGap ?? 0) > STALL_MS && (captureState?.muts ?? 0) < 5,
+    witness,
     ...summarise(frames),
     ...(captureState ? { mutationsTop: topPaths(captureState.paths, 6), longtaskPeaks: captureState.long.slice(-6) } : {}),
     gestures: gestures.slice(-12),
@@ -275,6 +308,9 @@ function onGesture(type: string) {
 export function startLagRecorder(): void {
   if (started || typeof window === "undefined" || typeof requestAnimationFrame !== "function") return;
   started = true;
+  // Before the first frame, not on the first slow one: writes that happen while everything looks
+  // fine are exactly the ones a later slow frame has to be explained against.
+  attachMutationWitness();
   try {
     if (typeof PerformanceObserver === "function") {
       const observer = new PerformanceObserver((list) => {

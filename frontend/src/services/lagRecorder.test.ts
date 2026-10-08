@@ -215,3 +215,53 @@ it("describes a placeholder comment instead of throwing the record away", async 
   const top = (posts[0].body.mutationsTop ?? []) as string[];
   expect(top.join(" ")).toContain("div.timeline");
 });
+
+it("counts DOM writes that happened before anything was slow", async () => {
+  // The witness used to be created inside `openCapture`, i.e. on the first slow frame. Everything
+  // written before that - startup, and the first seconds of a stream - was invisible, while the
+  // record still said `mutations: 0` as if the page had done nothing.
+  await start();
+  const row = document.querySelector(".message-row")!;
+  row.innerHTML = "<p>arrived while frames were fine</p>";
+  for (let i = 0; i < 5; i++) await Promise.resolve(); // MutationObserver delivers in a microtask
+  pump(140);
+  for (let i = 0; i < 90; i++) {
+    pump(16);
+    await Promise.resolve();
+  }
+  expect(posts.length).toBe(1);
+  expect(posts[0].body.witness).toBe("ok");
+  expect(posts[0].body.mutations).toBeGreaterThan(0);
+});
+
+it("is still watching after a record lands", async () => {
+  // `flush()` used to call `observer.disconnect()` and nothing re-attached it (`openCapture` bails on
+  // `if (observer) return`), so from the second record on `mutations` was permanently 0 - and
+  // `nativeStall`, computed from the same counters, was permanently true. 51 records of
+  // lag-2026-10-08.jsonl were produced that way and read as "the page did no DOM work".
+  await start();
+  pump(140);
+  for (let i = 0; i < 90; i++) {
+    pump(16);
+    await Promise.resolve();
+  }
+  expect(posts.length).toBe(1);
+
+  // The post throttle is real time, not the pumped clock, so step past POST_MIN_INTERVAL_MS.
+  const realNow = Date.now;
+  Date.now = () => realNow() + 5_000;
+  const row = document.querySelector(".message-row")!;
+  row.innerHTML = "<p>the second stream</p><p>and a second paragraph</p>";
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  pump(120);
+  for (let i = 0; i < 90; i++) {
+    pump(16);
+    await Promise.resolve();
+  }
+  Date.now = realNow;
+
+  expect(posts.length).toBe(2);
+  expect(posts[1].body.witness).toBe("ok");
+  expect(posts[1].body.mutations).toBeGreaterThan(0);
+  expect(posts[1].body.addedChars).toBeGreaterThan(0);
+});
