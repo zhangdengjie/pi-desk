@@ -60,7 +60,7 @@ func serveSessionTranscript(writer http.ResponseWriter, request *http.Request, s
 	if err == nil {
 		var snapshot sessionindex.Snapshot
 		if snapshot, err = source.Snapshot(path); err == nil {
-			writeTranscriptBody(writer, request, snapshot)
+			writeTranscriptBody(writer, request, snapshot, path)
 			return
 		}
 	}
@@ -69,8 +69,8 @@ func serveSessionTranscript(writer http.ResponseWriter, request *http.Request, s
 	http.Error(writer, "session transcript not available", http.StatusNotFound)
 }
 
-func writeTranscriptBody(writer http.ResponseWriter, request *http.Request, snapshot sessionindex.Snapshot) {
-	body, err := json.Marshal(snapshotResult(snapshot))
+func writeTranscriptBody(writer http.ResponseWriter, request *http.Request, snapshot sessionindex.Snapshot, path string) {
+	body, err := json.Marshal(snapshotResult(snapshot, path))
 	if err != nil {
 		http.Error(writer, "encode session transcript", http.StatusInternalServerError)
 		return

@@ -641,6 +641,10 @@
   /* 400 here made "the Pi process is alive" invisible - which is why the one dot in the row read as a
      selection marker when it meant 未读. Weight plus the green ring in ThreadRowMarks is the pair. */
   font-weight: 600;
+  /* 1.2.0's own way of saying "this session is running" was a colour utility on the span; the row
+     already carries `text-[var(--sidebar-thread-text)]`, so the colour lives here with the weight
+     that means the same thing. A declaration on the span beats the inherited one from the row. */
+  color: var(--sidebar-thread-active-text);
 }
 
 .active-session-toggle {

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
 import { streamTuning } from "../utils/streamTuning";
-import { ArrowLeft, BarChart3, BookOpen, Boxes, Copy, Database, Download, ExternalLink, FileText, Info, Palette, PlugZap, Puzzle, RefreshCw, RotateCw, Search, Settings2 } from "lucide-vue-next";
+import { ArrowLeft, BarChart3, BookOpen, Boxes, Copy, Database, Download, ExternalLink, FileArchive, FileText, Info, Palette, PlugZap, Puzzle, RefreshCw, RotateCw, Search, Settings2 } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 import { PiMaintenanceAction, type PiMaintenanceResult } from "../../bindings/pi-desk/internal/domain";
-import { maintainPi } from "../services/desktop";
+import { exportDiagnostics, maintainPi } from "../services/desktop";
 import { CODE_THEME_OPTIONS, TRANSCRIPT_TINT_MAX_STRENGTH, useAppStore, type QueueMode, type SettingsSection, type SlashCommand, type StreamPanelMode } from "../stores/app";
 import { HEX_COLOR_PATTERN, legibleCodeColor } from "../utils/transcriptTint";
 import { FONT_FAMILY_INPUT_MAX, sanitizeFontFamilyList } from "../utils/fontFamily";
@@ -132,6 +132,9 @@ const maintenanceAction = ref<PiMaintenanceAction | null>(null);
 const maintenanceLoading = ref(false);
 const maintenanceError = ref("");
 const maintenanceResult = ref<PiMaintenanceResult | null>(null);
+const diagnosticsLoading = ref(false);
+const diagnosticsError = ref("");
+const diagnosticsPath = ref("");
 const filteredResources = computed(() => {
   const query = resourceQuery.value.trim().toLocaleLowerCase();
   return appStore.activeCommands.filter((command) => {
@@ -205,6 +208,20 @@ async function copyUserConfigPath() {
 
 async function checkForUpdates() {
   await appStore.checkForUpdates();
+}
+
+async function exportDiagnosticBundle() {
+  if (diagnosticsLoading.value) return;
+  diagnosticsLoading.value = true;
+  diagnosticsError.value = "";
+  diagnosticsPath.value = "";
+  try {
+    diagnosticsPath.value = await exportDiagnostics(appStore.bootstrap?.workingDirectory ?? "") ?? "";
+  } catch (cause) {
+    diagnosticsError.value = cause instanceof Error ? cause.message : String(cause);
+  } finally {
+    diagnosticsLoading.value = false;
+  }
 }
 
 function maintenanceActionLabel(action: PiMaintenanceAction) {
@@ -593,6 +610,15 @@ function sourceIcon(source: SlashCommand["source"]) {
                   <small class="whitespace-nowrap" :class="{ 'text-[var(--amber)]': appStore.updateCheckResult?.status === 'available', 'text-[var(--red)]': appStore.updateCheckResult?.status === 'error' }">{{ updateMessage() }}</small>
                   <a v-if="appStore.updateCheckResult?.url" class="text-button" :class="ui.button" :href="appStore.updateCheckResult.url" target="_blank" rel="noreferrer"><ExternalLink :size="14" />{{ tr("settings.release") }}</a>
                 </div>
+              </div>
+              <div data-testid="diagnostics-export-row" class="setting-row" :class="ui.row">
+                <span>
+                  <strong>{{ tr("settings.diagnostics") }}</strong>
+                  <small>{{ tr("settings.diagnosticsHelp") }}</small>
+                  <small v-if="diagnosticsPath" class="text-[var(--green)] break-all" role="status">{{ tr("settings.diagnosticsExported", { path: diagnosticsPath }) }}</small>
+                  <small v-if="diagnosticsError" class="text-[var(--red)] break-all" role="alert">{{ diagnosticsError }}</small>
+                </span>
+                <button class="text-button" :class="ui.button" type="button" :disabled="diagnosticsLoading" :aria-busy="diagnosticsLoading" @click="void exportDiagnosticBundle()"><FileArchive :size="14" />{{ diagnosticsLoading ? tr("settings.exportingDiagnostics") : tr("settings.exportDiagnostics") }}</button>
               </div>
             </div>
           </section>

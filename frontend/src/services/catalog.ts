@@ -1,4 +1,6 @@
 import { CatalogService } from "../../bindings/pi-desk/internal/appservice";
+import type { CancellablePromise } from "@wailsio/runtime";
+import type { SessionSearchText } from "../../bindings/pi-desk/internal/domain";
 import { fetchSessionSnapshot } from "../utils/sessionTranscript";
 import type { DeletedSession, DesktopState, SessionSnapshot, SessionSummary, SessionUsageSummary, WorkspaceApplication, WorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
 
@@ -13,6 +15,10 @@ function validWorkspaceApplication(application: WorkspaceApplication): boolean {
 }
 
 export const catalogService = {
+  async cacheComposerImage(data: string, mimeType: string): Promise<string> {
+    return await CatalogService.CacheComposerImage({ type: "image", data, mimeType });
+  },
+  async readComposerImage(key: string): Promise<string> { return await CatalogService.ReadComposerImage(key); },
   async listWorkspaces(): Promise<WorkspaceSummary[]> {
     return (await CatalogService.ListWorkspaces()) ?? [];
   },
@@ -51,6 +57,9 @@ export const catalogService = {
       mint: (sessionPath) => CatalogService.SessionSnapshotRef({ path: sessionPath }),
       bridge: () => CatalogService.GetSessionSnapshot({ path }),
     });
+  },
+  searchSessionText(path: string): CancellablePromise<SessionSearchText> {
+    return CatalogService.SearchSessionText({ path });
   },
   async getSessionUsage(workspacePath?: string): Promise<SessionUsageSummary> {
     return await CatalogService.GetSessionUsage({ workspacePath });

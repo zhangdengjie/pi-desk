@@ -139,6 +139,22 @@ describe("ConversationPane", () => {
     expect(scrollerObserver!.disconnect).toHaveBeenCalled();
   });
 
+  it("opens an already selected conversation at its latest message", async () => {
+    const wrapper = mountTranscript(4);
+    const timeline = wrapper.get(".timeline").element as HTMLElement;
+    Object.defineProperty(timeline, "scrollHeight", { configurable: true, value: 1200 });
+    timeline.scrollTop = 300;
+
+    await flushPromises();
+
+    // Not `toBe(1200)`: the pin writes an oversized offset and lets the engine clamp it (see
+    // TAIL_PIN_OFFSET), and neither jsdom nor the probe harness clamps - jsdom stores what it is
+    // given. What the contract actually says is "the tail is at or past the bottom", which is what
+    // both real engines land on. Measured boundary: utils/scroll.ts keeps the write under 2^31
+    // because WebKit drops anything larger at 0 (docs: .pi/plans, 2026-09-28).
+    expect(timeline.scrollTop).toBeGreaterThanOrEqual(1200);
+  });
+
   it("measures the composer stack and follows its growth only while pinned to the bottom", async () => {
     const observers: Array<{ callback: () => void; target?: Element; disconnect: () => void }> = [];
     const frames: FrameRequestCallback[] = [];

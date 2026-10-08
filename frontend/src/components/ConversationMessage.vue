@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4 */
 import { ui } from "../ui/classes";
-import { ArrowUp, BrainCircuit, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Copy, FileDiff, GitFork, List, Pencil, RefreshCw, Save, Sparkles, Trash2, TriangleAlert, X } from "lucide-vue-next";
+import { ArrowUp, BrainCircuit, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Copy, FileDiff, GitFork, List, MessageSquareOff, Pencil, RefreshCw, Save, Sparkles, Trash2, TriangleAlert, X } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import type { ExecutionStep, StreamPanelMode, TimelineMessage, ToolDiff } from "../stores/app";
 import { useAppStore } from "../stores/app";
@@ -40,6 +40,8 @@ const editText = ref("");
 const editError = ref("");
 const editSubmitting = ref(false);
 const confirmingDelete = ref(false);
+const confirmingContextExclusion = ref(false);
+const contextError = ref("");
 const copied = ref(false);
 const previewImage = ref<PreparedImage>();
 const changedFilesExpanded = ref(false);
@@ -63,9 +65,15 @@ const sessionBusy = computed(() => (
   || Boolean(appStore.activeSessionOperation)
 ));
 const showActions = computed(() => actionable.value && !props.message.streaming);
+const contextActionAvailable = computed(() => (
+  appStore.contextEditsAvailable
+  && Boolean(props.message.entryId)
+  && !props.message.contextExcluded
+));
 const persistedActionsDisabled = computed(() => (
   !props.message.entryId
   || sessionBusy.value
+  || Boolean(appStore.sessionMutationErrorByThread?.[appStore.activeThreadId])
 ));
 const latestUserMessage = computed(() => (
   props.message.role === "user"
@@ -74,6 +82,7 @@ const latestUserMessage = computed(() => (
 const showMessageMeta = computed(() => (
   Boolean(props.message.delivery)
   || (props.message.role === "user" && Boolean(props.message.timestamp))
+  || Boolean(props.message.contextExcluded)
   || showActions.value
 ));
 const runNotice = computed(() => {
@@ -245,6 +254,7 @@ async function beginEdit() {
   editError.value = "";
   editing.value = true;
   confirmingDelete.value = false;
+  confirmingContextExclusion.value = false;
   await nextTick();
   editBox.value?.focus();
 }
@@ -271,6 +281,17 @@ async function submitEdit() {
 
 async function deleteMessage() {
   if (await appStore.deleteMessage(props.message.id)) confirmingDelete.value = false;
+}
+
+async function excludeEntryFromContext(entryId: string): Promise<boolean> {
+  return appStore.excludeFromContext(entryId);
+}
+
+async function excludeMessageFromContext() {
+  if (!props.message.entryId) return;
+  contextError.value = "";
+  if (await excludeEntryFromContext(props.message.entryId)) confirmingContextExclusion.value = false;
+  else contextError.value = appStore.activeThread?.error || tr("conversation.excludeFailed");
 }
 
 function stepThinking(step: ExecutionStep): string {
@@ -440,6 +461,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
       'message-row--editing': editing,
       'message-row--compaction': Boolean(message.compaction),
       'message-row--search-active': searchActive,
+      'message-row--context-excluded': message.contextExcluded,
     }]"
     :data-role="message.role"
     :data-message-id="message.id"
@@ -499,7 +521,16 @@ watch(() => props.message.id, () => closeAnswerOutline());
               />
             </details>
             <template v-else-if="step.kind === 'tools'">
-              <ToolCallPanel v-for="tool in step.tools" :key="tool.id" :tool="tool" :allow-live="livePanelsAllowed" :panel-mode="panelMode" :run-is-live="everLive" />
+              <ToolCallPanel
+                v-for="tool in step.tools"
+                :key="tool.id"
+                :tool="tool"
+                :allow-live="livePanelsAllowed"
+                :panel-mode="panelMode"
+                :run-is-live="everLive"
+                :context-busy="sessionBusy"
+                :exclude-from-context="appStore.contextEditsAvailable ? excludeEntryFromContext : undefined"
+              />
             </template>
             <MarkdownBody v-else-if="step.text" :text="step.text" :streaming="false" :search-query="searchQuery" />
           </template>
@@ -607,9 +638,19 @@ watch(() => props.message.id, () => closeAnswerOutline());
         <button type="button" @click="confirmingDelete = false">{{ tr('common.cancel') }}</button>
         <button class="is-danger" type="button" :disabled="Boolean(appStore.activeSessionOperation)" @click="void deleteMessage()">{{ tr('conversation.delete') }}</button>
       </div>
+      <div v-if="confirmingContextExclusion" class="message-delete-confirm" role="alert">
+        <span>{{ tr('conversation.excludeConfirm') }}</span>
+        <button type="button" @click="confirmingContextExclusion = false; contextError = ''">{{ tr('common.cancel') }}</button>
+        <button type="button" :disabled="Boolean(appStore.activeSessionOperation)" :aria-busy="Boolean(appStore.activeSessionOperation)" @click="void excludeMessageFromContext()">
+          <LoadingRing v-if="appStore.activeSessionOperation" :size="12" />
+          {{ tr('conversation.exclude') }}
+        </button>
+      </div>
+      <p v-if="contextError" class="error-text" role="alert">{{ contextError }}</p>
       <div v-if="showMessageMeta" class="message-meta">
         <span v-if="message.delivery" class="delivery-label">{{ message.delivery === "steer" ? tr('composer.steer') : tr('composer.followUp') }}</span>
         <time v-if="message.role === 'user' && message.timestamp" class="message-meta-time">{{ message.timestamp }}</time>
+        <span v-if="message.contextExcluded" class="context-excluded-label"><MessageSquareOff :size="12" aria-hidden="true" />{{ tr('conversation.excludedFromContext') }}</span>
         <div v-if="showActions" class="message-actions" role="toolbar" :aria-label="tr('conversation.actions')">
           <button class="message-action message-action--copy" type="button" :title="tr('conversation.copy')" @click="void copyMessage()">
             <Check v-if="copied" :size="13" />
@@ -618,7 +659,10 @@ watch(() => props.message.id, () => closeAnswerOutline());
           <button class="message-action" type="button" :title="tr('conversation.edit')" :disabled="persistedActionsDisabled" @click="void beginEdit()">
             <Pencil :size="13" />
           </button>
-          <button class="message-action" type="button" :title="tr('conversation.delete')" :disabled="persistedActionsDisabled" @click="confirmingDelete = !confirmingDelete; editing = false">
+          <button v-if="contextActionAvailable" class="message-action" type="button" :title="tr('conversation.excludeFromContext')" :disabled="persistedActionsDisabled" @click="confirmingContextExclusion = !confirmingContextExclusion; confirmingDelete = false; editing = false; contextError = ''">
+            <MessageSquareOff :size="13" />
+          </button>
+          <button class="message-action" type="button" :title="tr('conversation.delete')" :disabled="persistedActionsDisabled" @click="confirmingDelete = !confirmingDelete; confirmingContextExclusion = false; editing = false; contextError = ''">
             <Trash2 :size="13" />
           </button>
           <button class="message-action" type="button" :title="tr('conversation.fork')" :disabled="persistedActionsDisabled" @click="void appStore.forkFromMessage(message.id)">

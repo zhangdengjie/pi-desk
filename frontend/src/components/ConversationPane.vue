@@ -690,8 +690,15 @@ watch(searchMatches, (matches) => {
 
 onMounted(async () => {
   document.addEventListener("keydown", onDocumentKeydown, true);
+  // A thread that was already active when this pane mounted never runs the `activeThreadId` watcher
+  // below, so nothing pinned the tail and the transcript opened at the top. Same shape as the switch
+  // path - and deliberately without `measure()`: the row-height cache is keyed by `turnKey`, so the
+  // heights this row had last time it was on screen are still the right ones (see the note there).
+  stickToBottom.value = true;
+  openPinWindow();
   await nextTick();
   noteViewportHeight();
+  scrollToBottom();
   updateActiveNavigation();
 });
 onBeforeUnmount(() => {
@@ -752,6 +759,9 @@ onBeforeUnmount(() => {
         </aside>
       </nav>
       <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--composer-overlay-reserve': `${composerHeight}px` }" @scroll="onTimelineScroll" @wheel="onTimelineWheel" @pointerdown="markReaderInput" @keydown="markReaderInput">
+      <div v-if="appStore.sessionMutationErrorByThread?.[appStore.activeThreadId]" class="conversation-operation-banner mb-4 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-[var(--font-size-label)] text-[var(--text-secondary)]" role="status">
+        {{ tr("conversation.historyMutationLimit") }}
+      </div>
       <div v-if="appStore.activeSessionOperation === 'Compacting'" class="conversation-operation-banner mb-4 inline-flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-[var(--font-size-label)] text-[var(--text-secondary)] shadow-sm" role="status" aria-live="polite">
         <LoadingRing :size="14" />
         <span>{{ tr("topbar.compacting") }}</span>

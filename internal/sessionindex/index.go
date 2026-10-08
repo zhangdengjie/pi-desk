@@ -26,7 +26,7 @@ import (
 const (
 	maxConcurrentLoads = 10
 	maxSessionBytes    = 64 << 20
-	maxLineBytes       = 8 << 20
+	maxLineBytes       = 32 << 20
 	maxTitleRunes      = 80
 	// The first message is only ever shown as a tooltip or a single clamped line, so it can carry the
 	// whole prompt instead of a headline: Pi cuts its own session *name* short, and a reader hovering
@@ -512,7 +512,7 @@ func (index *Index) Snapshot(path string) (Snapshot, error) {
 	// Blanking each image's base64 before the line is parsed is what makes the first open of an
 	// image-heavy session cheap: the bytes are dropped here and only referenced, so nothing ever
 	// scans them (see blankImageData - 154ms -> 32ms on the 12.3MB session).
-	entries, err := readTranscriptEntriesWith(canonical, blankImageData)
+	entries, err := readTranscriptEntriesWith(context.Background(), canonical, blankImageData)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -537,6 +537,10 @@ func (index *Index) transcriptSnapshot(entries []rawEntry, path string) ([]json.
 	messages := make([]json.RawMessage, 0, len(entries))
 	count := 0
 	var model *Model
+	// A `context_edit` entry is what Pi records when the reader drops a message from the context it
+	// sends. The message stays in the transcript - only its context membership changes - so the
+	// snapshot keeps rendering it and marks it, which is what the row's strike-through reads.
+	excluded := contextExcludedIDs(entries)
 	for _, entry := range entries {
 		switch entry.Type {
 		case "model_change":
@@ -558,9 +562,7 @@ func (index *Index) transcriptSnapshot(entries []rawEntry, path string) ([]json.
 			continue
 		}
 		role := jsonString(envelope["role"])
-		switch role {
-		case "user", "assistant", "toolResult", "bashExecution":
-		default:
+		if !transcriptRoleVisible(role) {
 			continue
 		}
 		count++
@@ -569,12 +571,34 @@ func (index *Index) transcriptSnapshot(entries []rawEntry, path string) ([]json.
 				model = &Model{Provider: provider, ID: modelID}
 			}
 		}
-		message, err := index.renderTranscriptMessage(envelope, entry, path)
+		message, err := index.renderTranscriptMessage(envelope, entry, path, excluded[entry.ID])
 		if err == nil {
 			messages = append(messages, message)
 		}
 	}
 	return messages, count, model
+}
+
+// transcriptRoleVisible is the one list of roles the transcript renders. SearchText counts with it
+// so the number it reports cannot drift from the rows a snapshot actually produces.
+func transcriptRoleVisible(role string) bool {
+	switch role {
+	case "user", "assistant", "toolResult", "bashExecution":
+		return true
+	}
+	return false
+}
+
+// contextExcludedIDs collects the targets of `context_edit` entries in one pass over the raw lines,
+// so the snapshot loop never re-parses a message to find out whether it was dropped.
+func contextExcludedIDs(entries []rawEntry) map[string]bool {
+	excluded := make(map[string]bool)
+	for _, entry := range entries {
+		if entry.Type == "context_edit" && entry.TargetID != "" {
+			excluded[entry.TargetID] = bytes.Equal(bytes.TrimSpace(entry.Replacement), []byte("null"))
+		}
+	}
+	return excluded
 }
 
 func jsonString(raw json.RawMessage) string {
@@ -589,7 +613,7 @@ func jsonString(raw json.RawMessage) string {
 }
 
 // renderTranscriptMessage is the old messageWithEntryID, on an envelope that is already parsed.
-func (index *Index) renderTranscriptMessage(envelope map[string]json.RawMessage, entry rawEntry, path string) (json.RawMessage, error) {
+func (index *Index) renderTranscriptMessage(envelope map[string]json.RawMessage, entry rawEntry, path string, contextExcluded bool) (json.RawMessage, error) {
 	if content, changed, err := index.stripImageData(envelope["content"], path, entry.ID); err != nil {
 		return nil, err
 	} else if changed {
@@ -612,7 +636,97 @@ func (index *Index) renderTranscriptMessage(envelope map[string]json.RawMessage,
 			envelope["piDeskEntryId"] = encodedID
 		}
 	}
+	if contextExcluded {
+		envelope["piDeskContextExcluded"] = json.RawMessage("true")
+	}
 	return json.Marshal(envelope)
+}
+
+// SearchText returns only searchable text, never image payloads or tool arguments. It is the
+// history search's whole cost model: one cancellable read, one small struct per message, and no
+// re-marshalling, so a 12MB session does not pay for a snapshot it will throw away.
+func (index *Index) SearchText(ctx context.Context, path string) (string, int, error) {
+	canonical, err := index.ValidatePath(path)
+	if err != nil {
+		return "", 0, err
+	}
+	entries, err := readTranscriptEntriesWith(ctx, canonical, nil)
+	if err != nil {
+		return "", 0, err
+	}
+	entries = activeTranscriptPath(entries)
+	var text strings.Builder
+	count := 0
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return "", 0, err
+		}
+		if entry.Type == "compaction" {
+			if entry.Summary != "" {
+				text.WriteString(entry.Summary)
+				text.WriteByte('\n')
+			}
+			continue
+		}
+		if entry.Type != "message" || len(entry.Message) == 0 {
+			continue
+		}
+		var message struct {
+			Role    string          `json:"role"`
+			Command string          `json:"command"`
+			Output  string          `json:"output"`
+			Summary string          `json:"summary"`
+			Content json.RawMessage `json:"content"`
+		}
+		if json.Unmarshal(entry.Message, &message) != nil || !transcriptRoleVisible(message.Role) {
+			continue
+		}
+		count++
+		for _, value := range []string{message.Command, message.Output, message.Summary} {
+			if value != "" {
+				text.WriteString(value)
+				text.WriteByte('\n')
+			}
+		}
+		var value string
+		if json.Unmarshal(message.Content, &value) == nil {
+			text.WriteString(value)
+			text.WriteByte('\n')
+			continue
+		}
+		var blocks []struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Thinking string `json:"thinking"`
+		}
+		if json.Unmarshal(message.Content, &blocks) == nil {
+			for _, block := range blocks {
+				if block.Type == "text" {
+					text.WriteString(block.Text)
+					text.WriteByte('\n')
+				}
+				if block.Type == "thinking" {
+					text.WriteString(block.Thinking)
+					text.WriteByte('\n')
+				}
+			}
+		}
+	}
+	return text.String(), count, nil
+}
+
+// MutationError answers why a history change cannot be attempted for this session file, or ""
+// when it can. Reading and exporting stay available past the size bound, so the reason is scoped
+// to mutations.
+func MutationError(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "Session file is unavailable."
+	}
+	if info.Size() > maxSessionBytes {
+		return "Session exceeds 64 MiB; history changes are disabled. Reading and exporting remain available."
+	}
+	return ""
 }
 
 // TextEdit is one ordered old→new replacement recorded by an edit tool call.
@@ -896,44 +1010,6 @@ func compactionWithEntryID(entry rawEntry) (json.RawMessage, error) {
 	return json.RawMessage(encoded), nil
 }
 
-func messageWithEntryID(message json.RawMessage, entryID string, persisted bool, entryTimestamp string, index *Index, path string) (json.RawMessage, error) {
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(message, &envelope); err != nil {
-		return nil, err
-	}
-	if content, changed, err := index.stripImageData(envelope["content"], path, entryID); err != nil {
-		return nil, err
-	} else if changed {
-		envelope["content"] = content
-	}
-	if len(envelope["timestamp"]) == 0 && entryTimestamp != "" {
-		encodedTimestamp, err := json.Marshal(entryTimestamp)
-		if err != nil {
-			return nil, err
-		}
-		envelope["timestamp"] = encodedTimestamp
-	}
-	if entryID != "" {
-		encodedID, err := json.Marshal(entryID)
-		if err != nil {
-			return nil, err
-		}
-		envelope["piDeskDisplayId"] = encodedID
-	}
-	if persisted {
-		encodedID, err := json.Marshal(entryID)
-		if err != nil {
-			return nil, err
-		}
-		envelope["piDeskEntryId"] = encodedID
-	}
-	encoded, err := json.Marshal(envelope)
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(encoded), nil
-}
-
 func (index *Index) canonicalRoot() (string, error) {
 	root, err := filepath.Abs(index.root)
 	if err != nil {
@@ -988,8 +1064,12 @@ type rawEntry struct {
 	Name                 string          `json:"name"`
 	Provider             string          `json:"provider"`
 	ModelID              string          `json:"modelId"`
+	Model                string          `json:"model"`
+	Usage                *rawUsage       `json:"usage"`
 	Message              json.RawMessage `json:"message"`
 	Content              json.RawMessage `json:"content"`
+	TargetID             string          `json:"targetId"`
+	Replacement          json.RawMessage `json:"replacement"`
 	Summary              string          `json:"summary"`
 	TokensBefore         int64           `json:"tokensBefore"`
 	EstimatedTokensAfter *int64          `json:"estimatedTokensAfter"`
@@ -1032,38 +1112,47 @@ func readUsage(path string) (UsageSummary, string, bool) {
 	}
 	usage := UsageSummary{Sessions: 1, Models: []ModelUsage{}}
 	models := make(map[string]ModelUsage)
-	for _, entry := range activeTranscriptPath(entries) {
-		if entry.Type != "message" || len(entry.Message) == 0 {
-			continue
-		}
+	for _, entry := range entries {
 		var message rawMessage
-		if json.Unmarshal(entry.Message, &message) != nil {
-			continue
-		}
-		usage.Messages++
-		switch message.Role {
-		case "user":
-			usage.UserMessages++
-		case "assistant":
-			usage.AssistantMessages++
-			if message.Usage == nil {
+		switch entry.Type {
+		case "message":
+			if len(entry.Message) == 0 || json.Unmarshal(entry.Message, &message) != nil {
 				continue
 			}
-			tokens := tokensFromRaw(*message.Usage)
-			mergeTokens(&usage.Tokens, tokens)
-			usage.Cost += message.Usage.Cost.Total
-			provider := strings.TrimSpace(message.Provider)
-			modelID := strings.TrimSpace(message.Model)
-			key := provider + "\x00" + modelID
-			model := models[key]
-			model.Provider, model.Model = provider, modelID
-			model.AssistantMessages++
-			mergeTokens(&model.Tokens, tokens)
-			model.Cost += message.Usage.Cost.Total
-			models[key] = model
-		case "toolResult":
-			usage.ToolResults++
+			usage.Messages++
+			switch message.Role {
+			case "user":
+				usage.UserMessages++
+			case "assistant":
+				usage.AssistantMessages++
+			case "toolResult":
+				usage.ToolResults++
+			}
+		case "usage", "compaction", "branch_summary":
+			message = rawMessage{Provider: entry.Provider, Model: entry.Model, Usage: entry.Usage}
+		default:
+			continue
 		}
+		if message.Usage == nil {
+			continue
+		}
+		tokens := tokensFromRaw(*message.Usage)
+		mergeTokens(&usage.Tokens, tokens)
+		usage.Cost += message.Usage.Cost.Total
+		provider, modelID := strings.TrimSpace(message.Provider), strings.TrimSpace(message.Model)
+		// Tool and summary usage has no model attribution in the native transcript.
+		if provider == "" && modelID == "" {
+			continue
+		}
+		key := provider + "\x00" + modelID
+		model := models[key]
+		model.Provider, model.Model = provider, modelID
+		if message.Role == "assistant" {
+			model.AssistantMessages++
+		}
+		mergeTokens(&model.Tokens, tokens)
+		model.Cost += message.Usage.Cost.Total
+		models[key] = model
 	}
 	usage.Models = make([]ModelUsage, 0, len(models))
 	for _, model := range models {
@@ -1227,7 +1316,7 @@ func readSummary(path string) (Summary, bool) {
 }
 
 func readTranscriptEntries(path string) ([]rawEntry, error) {
-	return readTranscriptEntriesWith(path, nil)
+	return readTranscriptEntriesWith(context.Background(), path, nil)
 }
 
 // readTranscriptEntriesWith reads the transcript, optionally rewriting each line's bytes before it
@@ -1235,7 +1324,12 @@ func readTranscriptEntries(path string) ([]rawEntry, error) {
 // doing that before the JSON parse is the difference between scanning 12MB and scanning 1.5MB.
 // Mutations read through `readTranscriptEntries` and must keep seeing the real bytes, because they
 // write those messages back.
-func readTranscriptEntriesWith(path string, rewrite func([]byte) []byte) ([]rawEntry, error) {
+//
+// The context is checked per line so a history search over a large session stays cancellable.
+func readTranscriptEntriesWith(ctx context.Context, path string, rewrite func([]byte) []byte) ([]rawEntry, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("inspect session transcript: %w", err)
@@ -1254,6 +1348,9 @@ func readTranscriptEntriesWith(path string, rewrite func([]byte) []byte) ([]rawE
 	entries := make([]rawEntry, 0, 256)
 	lineNumber := 0
 	for scanner.Scan() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		lineNumber++
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 || !utf8.Valid(line) {
@@ -1279,6 +1376,9 @@ func readTranscriptEntriesWith(path string, rewrite func([]byte) []byte) ([]rawE
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("read session transcript: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	if len(entries) == 0 || entries[0].Type != "session" {
 		return nil, errors.New("session transcript is empty")

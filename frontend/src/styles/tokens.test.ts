@@ -35,7 +35,11 @@ describe("teleported dialog theme inheritance", () => {
     // And the mix has to be an identity when no tone is chosen, or the default appearance would move.
     expect(tokens).toMatch(/:root\s*{\s*--transcript-tint: transparent;\s*--transcript-tint-strength: 0%;/);
     expect(tokens).toContain("--bg-card: #ffffff");
-    expect(tokens).toContain("--bg-composer: var(--bg-card)");
+    expect(tokens).toContain("--bg-sidebar: #ececee");
+    expect(tokens).toContain("--bg-composer: #ffffff");
+    expect(tokens).toContain("--bg-user-message: #f3f3f3");
+    expect(tokens).toContain("--sidebar-workspace-text: #757576");
+    expect(tokens).toContain("--sidebar-thread-text: #262626");
   });
 
   it("keeps the tint anchor the stylesheet declares equal to the one TypeScript uses", async () => {

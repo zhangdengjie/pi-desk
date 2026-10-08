@@ -1,11 +1,16 @@
 package appservice
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -17,6 +22,7 @@ import (
 	"pi-desk/internal/workspace"
 	"pi-desk/internal/workspaceapp"
 
+	"github.com/natefinch/atomic"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -30,6 +36,9 @@ type sessionLister interface {
 	Snapshot(string) (sessionindex.Snapshot, error)
 	// TranscriptRef mints the asset-server reference for one session file (`sessionindex/transcriptrefs.go`).
 	TranscriptRef(string) (string, error)
+	// SearchText answers the history search with searchable text only - never image bytes or tool
+	// arguments (`sessionindex`). It is context-bound because a large session must be cancellable.
+	SearchText(context.Context, string) (string, int, error)
 }
 
 type folderPicker func(initialPath string) (string, error)
@@ -283,16 +292,20 @@ func (service *CatalogService) GetSessionSnapshot(request domain.SessionSnapshot
 	if err != nil {
 		return domain.SessionSnapshot{}, err
 	}
-	return snapshotResult(snapshot), nil
+	return snapshotResult(snapshot, strings.TrimSpace(request.Path)), nil
 }
 
 // snapshotResult is the one mapping from an indexed snapshot to the shape the frontend is typed
 // against. The asset-server route (`serveSessionTranscript`) marshals this same value, so the two
-// transports cannot drift into two different transcript models.
-func snapshotResult(snapshot sessionindex.Snapshot) domain.SessionSnapshot {
+// transports cannot drift into two different transcript models - which is why the mutation guard
+// travels through here as well: a transcript fetched over HTTP must report the same `mutationError`
+// as the same transcript fetched over the bridge, or the reader gets a control that silently does
+// nothing.
+func snapshotResult(snapshot sessionindex.Snapshot, path string) domain.SessionSnapshot {
 	result := domain.SessionSnapshot{
-		Messages:     snapshot.Messages,
-		MessageCount: snapshot.MessageCount,
+		Messages:      snapshot.Messages,
+		MessageCount:  snapshot.MessageCount,
+		MutationError: sessionindex.MutationError(path),
 	}
 	if snapshot.Model != nil {
 		result.Model = &domain.SessionModel{Provider: snapshot.Model.Provider, ID: snapshot.Model.ID}
@@ -326,6 +339,16 @@ func (service *CatalogService) SessionSnapshotRef(request domain.SessionSnapshot
 		return "", err
 	}
 	return ref, nil
+}
+
+func (service *CatalogService) SearchSessionText(ctx context.Context, request domain.SessionSnapshotRequest) (result domain.SessionSearchText, err error) {
+	finish := beginDiagnosticOperation("catalog/search")
+	defer func() { finish(err) }()
+	if _, err := service.resolveRegularSession(request.Path); err != nil {
+		return domain.SessionSearchText{}, err
+	}
+	text, count, err := service.index.SearchText(ctx, strings.TrimSpace(request.Path))
+	return domain.SessionSearchText{Text: text, MessageCount: count}, err
 }
 
 func (service *CatalogService) GetSessionUsage(request domain.ListSessionsRequest) (domain.SessionUsageSummary, error) {
@@ -372,7 +395,7 @@ func (service *CatalogService) DeleteSession(request domain.DeleteSessionRequest
 }
 
 func (service *CatalogService) resolveRegularSession(path string) (sessionindex.Summary, error) {
-	summary, err := service.index.Resolve(strings.TrimSpace(path))
+	summary, err := service.index.Header(strings.TrimSpace(path))
 	if err != nil {
 		return sessionindex.Summary{}, err
 	}
@@ -419,7 +442,7 @@ func (service *CatalogService) GetDesktopState() (domain.DesktopState, error) {
 	for _, thread := range record.Threads {
 		result.Threads = append(result.Threads, domain.DesktopThreadState{
 			ID: thread.ID, Title: thread.Title, WorkspaceID: thread.WorkspaceID, WorkspacePath: thread.WorkspacePath, Trust: thread.Trust,
-			Status: thread.Status, SessionPath: thread.SessionPath, Draft: thread.Draft,
+			Status: thread.Status, SessionPath: thread.SessionPath, Draft: thread.Draft, ComposerJSON: thread.ComposerJSON,
 			CreatedAt: thread.CreatedAt, UpdatedAt: thread.UpdatedAt, Unread: thread.Unread,
 		})
 	}
@@ -436,7 +459,9 @@ func (service *CatalogService) GetDesktopState() (domain.DesktopState, error) {
 	return result, nil
 }
 
-func (service *CatalogService) SaveDesktopState(state domain.DesktopState) error {
+func (service *CatalogService) SaveDesktopState(state domain.DesktopState) (err error) {
+	finish := beginDiagnosticOperation("catalog/save")
+	defer func() { finish(err) }()
 	record := workspace.DesktopRecord{
 		ActiveThreadID: strings.TrimSpace(state.ActiveThreadID),
 		Threads:        make([]workspace.ThreadRecord, 0, len(state.Threads)),
@@ -457,6 +482,9 @@ func (service *CatalogService) SaveDesktopState(state domain.DesktopState) error
 		}
 	}
 	for _, thread := range state.Threads {
+		if err := validateComposerJSON(thread.ComposerJSON); err != nil {
+			return err
+		}
 		workspaceID := strings.TrimSpace(thread.WorkspaceID)
 		workspacePath := strings.TrimSpace(thread.WorkspacePath)
 		var workspaceRecord workspace.Record
@@ -517,7 +545,7 @@ func (service *CatalogService) SaveDesktopState(state domain.DesktopState) error
 		mapped := workspace.ThreadRecord{
 			ID: strings.TrimSpace(thread.ID), Title: strings.TrimSpace(thread.Title), WorkspaceID: workspaceID, WorkspacePath: workspacePath,
 			Trust: strings.TrimSpace(thread.Trust), Status: strings.TrimSpace(thread.Status), SessionPath: sessionPath,
-			Draft: thread.Draft, CreatedAt: strings.TrimSpace(thread.CreatedAt), UpdatedAt: strings.TrimSpace(thread.UpdatedAt), Unread: thread.Unread,
+			Draft: thread.Draft, ComposerJSON: thread.ComposerJSON, CreatedAt: strings.TrimSpace(thread.CreatedAt), UpdatedAt: strings.TrimSpace(thread.UpdatedAt), Unread: thread.Unread,
 		}
 		record.Threads = append(record.Threads, mapped)
 	}
@@ -592,4 +620,106 @@ func trashSessionFile(path string) (string, error) {
 		return "", fmt.Errorf("move session to recovery file: %w", err)
 	}
 	return recoveryPath, nil
+}
+
+// Composer state stores only image references; payloads remain in a bounded local cache.
+type composerImage struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	MIMEType string `json:"mimeType"`
+	CacheKey string `json:"cacheKey"`
+}
+type composerState struct {
+	Attachments []composerImage `json:"attachments"`
+	Pending     []struct {
+		ID        string          `json:"id"`
+		Text      string          `json:"text"`
+		CreatedAt string          `json:"createdAt"`
+		Images    []composerImage `json:"images"`
+	} `json:"pending"`
+}
+
+func validComposerCacheKey(key string) bool {
+	decoded, err := hex.DecodeString(key)
+	return err == nil && len(decoded) == sha256.Size && key == strings.ToLower(key)
+}
+func validateComposerJSON(content string) error {
+	if content == "" {
+		return nil
+	}
+	if len(content) > 1<<20 {
+		return errors.New("composer metadata exceeds 1 MiB")
+	}
+	var state composerState
+	decoder := json.NewDecoder(strings.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&state); err != nil {
+		return errors.New("invalid composer metadata")
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return errors.New("invalid composer metadata")
+	}
+	if len(state.Pending) > 500 || len(state.Attachments) > maxAttachedImages {
+		return errors.New("too many queued prompts or images")
+	}
+	images := append([]composerImage{}, state.Attachments...)
+	for _, prompt := range state.Pending {
+		if len(prompt.Images) > maxAttachedImages {
+			return errors.New("too many queued images")
+		}
+		images = append(images, prompt.Images...)
+	}
+	for _, image := range images {
+		if !validComposerCacheKey(image.CacheKey) {
+			return errors.New("invalid composer image reference")
+		}
+		switch image.MIMEType {
+		case "image/png", "image/jpeg", "image/gif", "image/webp":
+		default:
+			return errors.New("unsupported cached image type")
+		}
+	}
+	return nil
+}
+func (service *CatalogService) CacheComposerImage(image domain.ImageContent) (string, error) {
+	if err := validateImages([]domain.ImageContent{image}); err != nil {
+		return "", err
+	}
+	data, _ := base64.StdEncoding.Strict().DecodeString(image.Data)
+	sum := sha256.Sum256(data)
+	key := hex.EncodeToString(sum[:])
+	directory := service.catalog.AttachmentDirectory()
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(directory, key)
+	if cached, err := service.ReadComposerImage(key); err == nil && cached == image.Data {
+		return key, nil
+	}
+	if err := atomic.WriteFile(path, bytes.NewReader(data)); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+func (service *CatalogService) ReadComposerImage(key string) (string, error) {
+	if !validComposerCacheKey(key) {
+		return "", errors.New("invalid composer image reference")
+	}
+	file, err := os.Open(filepath.Join(service.catalog.AttachmentDirectory(), key))
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxImageBytes+1))
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	if len(data) > maxImageBytes || hex.EncodeToString(sum[:]) != key {
+		return "", errors.New("cached image is corrupt or exceeds 10 MiB")
+	}
+	return base64.StdEncoding.EncodeToString(data), nil
 }

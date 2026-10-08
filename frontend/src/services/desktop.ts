@@ -1,5 +1,6 @@
 import { NotificationService } from "../../bindings/github.com/wailsapp/wails/v3/pkg/services/notifications";
 import { DesktopService, PiMaintenanceService } from "../../bindings/pi-desk/internal/appservice";
+import { Dialogs } from "@wailsio/runtime";
 import { SHIPPED } from "../utils/streamTuning";
 import type { BootstrapState, PiMaintenanceAction, PiMaintenanceResult, PiRuntimeStatus, UpdateCheckResult, UserConfigView } from "../../bindings/pi-desk/internal/domain";
 
@@ -44,6 +45,20 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
 
 export async function maintainPi(action: PiMaintenanceAction): Promise<PiMaintenanceResult> {
 	return PiMaintenanceService.MaintainPi({ action });
+}
+
+export async function exportDiagnostics(directory = ""): Promise<string | undefined> {
+  const outputPath = await Dialogs.SaveFile({
+    Title: "Export Pi Desk diagnostics",
+    Filename: `pi-desk-diagnostics-${new Date().toISOString().slice(0, 10)}.zip`,
+    Directory: directory,
+    CanCreateDirectories: true,
+    AllowsOtherFiletypes: false,
+    Filters: [{ DisplayName: "ZIP archive", Pattern: "*.zip" }],
+  });
+  if (!outputPath) return undefined;
+  await DesktopService.ExportDiagnostics(outputPath);
+  return outputPath;
 }
 
 export async function notifyDesktop(title: string, body: string): Promise<boolean> {

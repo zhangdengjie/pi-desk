@@ -16,12 +16,26 @@ async function openPanel(wrapper: ReturnType<typeof mount>) {
   await nextTick();
 }
 
-
   // The expansion memory is module-scoped, so a click in one case must not decide
   // the next one. The pinia is for MarkdownBody, which resolves file links through the store.
   beforeEach(() => {
     setActivePinia(createPinia());
     forgetPanelOpenStates();
+  });
+
+  it("renders nested tool disclosures and incomplete history without context actions", async () => {
+    const wrapper = mount(ToolCallPanel, { props: { tool: {
+      id: "parent", name: "codemode", output: "done", status: "complete", nestedCallsIncomplete: true,
+      children: [{ id: "child", name: "read", output: "child output", durationMs: 12, status: "complete" }],
+    } } });
+    // A closed panel builds no body at all (see bodyMounted) - the nested records are part of the
+    // body, so the reader has to open the call to see them. Driven the way a browser does it.
+    expect(wrapper.findAll("details.tool-call")).toHaveLength(1);
+    await openPanel(wrapper);
+    expect(wrapper.findAll("details.tool-call")).toHaveLength(2);
+    expect(wrapper.text()).toContain("12ms");
+    expect(wrapper.text()).toContain("Nested tool records are incomplete");
+    expect(wrapper.findAll(".tool-context-action")).toHaveLength(0);
   });
 
   it("summarizes commands and exposes input and output copy actions", async () => {
@@ -242,6 +256,26 @@ async function openPanel(wrapper: ReturnType<typeof mount>) {
     });
 
     await expect(wrapper.get('[aria-label="Copy tool output"]').trigger("click")).resolves.toBeUndefined();
+  });
+
+  it("excludes a persisted tool result from future context", async () => {
+    const excludeFromContext = vi.fn().mockResolvedValue(true);
+    const tool = { id: "tool-context", entryId: "result-entry", name: "read", output: "content", status: "complete" as const };
+    // The panel is opened first because this component's `<details>` is controlled: `:open` follows
+    // `panelOpenState`, so a summary click that jsdom answers without delivering `toggle` is simply
+    // reverted on the next render. Pinning it is what a real reader does.
+    pinPanelOpen("tool-context", true);
+    const wrapper = mount(ToolCallPanel, { props: { tool, excludeFromContext } });
+
+    await wrapper.get('[aria-label="Exclude from future context"]').trigger("click");
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    expect(wrapper.get(".tool-context-confirm").text()).toContain("tool result");
+    await wrapper.get(".tool-context-confirm button:last-child").trigger("click");
+    expect(excludeFromContext).toHaveBeenCalledWith("result-entry");
+
+    await wrapper.setProps({ tool: { ...tool, contextExcluded: true } });
+    expect(wrapper.get(".tool-context-badge").text()).toBe("Excluded from context");
+    expect(wrapper.find(".tool-context-action").exists()).toBe(false);
   });
 
   it("shows duration and a colored inline diff for edit and write tools", () => {
