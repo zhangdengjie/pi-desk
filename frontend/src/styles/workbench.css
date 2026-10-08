@@ -825,12 +825,10 @@
   line-height: var(--transcript-line-height);
 }
 
-.message-content p + p,
-.markdown-body p + p,
-.markdown-body p + ul,
-.markdown-body p + ol,
-.markdown-body ul + p,
-.markdown-body ol + p {
+/* User-message paragraphs, which render outside `.markdown-body` and keep the composer's own, tighter
+   rhythm. The five `.markdown-body` selectors that used to share this rule set the same margin as
+   the block rhythm further down and lost to it on file order - they are deleted, see the note there. */
+.message-content p + p {
   margin-top: 8px;
 }
 
@@ -868,6 +866,9 @@
      its 700, so the weight only lifts the prose, the list text and the inline code. */
   line-height: var(--transcript-line-height);
   font-weight: var(--transcript-font-weight);
+  /* The gap between two finished blocks. One number, read by the rhythm rule below and by the seam
+     rule after it - `src/styles/blockGap.test.ts` fails if a second copy appears. */
+  --md-block-gap: 12px;
 }
 
 .markdown-body :is(h1, h2, h3, h4) {
@@ -902,12 +903,18 @@
 }
 
 /* Paragraph rhythm: one soft break in the composer already produced a <br>, so this is the gap
-   between *blocks*, which is what Typora's spacing reads as. */
+   between *blocks*, which is what Typora's spacing reads as.
+
+   This is the ONLY owner of the block gap in the app. Two older copies of it used to live here and
+   in `layout.css` at 8px and 9px, both dead - overridden by this rule at equal specificity because
+   this file loads last - and they were still the first thing a reader greps for. That is exactly how
+   the seam rule below got written with 9px once: the measurement said 12. Both dead copies are
+   deleted, and `src/styles/blockGap.test.ts` keeps them from coming back. */
 .markdown-body p + p,
 .markdown-body p + :is(ul, ol, pre, blockquote),
 .markdown-body :is(ul, ol, pre, blockquote) + p,
 .markdown-body :is(h1, h2, h3, h4) + p {
-  margin-top: 12px;
+  margin-top: var(--md-block-gap);
 }
 
 /* The seam of a streaming block. `components/MarkdownBody.vue` renders "settled prefix + live tail"
@@ -915,11 +922,16 @@
    of the tail is no longer a *sibling* of the last settled block, and the rhythm rule above cannot
    reach across it - measured in a real WKWebView, two paragraphs went from 12px apart to 0px.
 
-   `is-seamed` is set by that component from the two rendered elements it actually has, on exactly
-   the four pairs above. A class is unavoidable here: no combinator can name "whatever came last in
-   the previous wrapper". 12px and not the 9px in `layout.css:1850`, which this file overrides. */
+   `is-seamed` is set by that component from the two rendered elements it actually has. A class is
+   unavoidable: `Element.matches("p + p")` is false without a real preceding sibling (verified in
+   WebKit), so the engine cannot answer "would these two have been spaced" for a pair it is not
+   looking at. What the class may NOT do is invent a number - hence `--md-block-gap` above.
+
+   The *pair set* is still a second copy of the four selectors, transcribed into
+   `seamNeedsSpacing()` in `utils/markdownSettled.ts`. `src/styles/blockGap.test.ts` parses this
+   rule and asserts the two agree, so editing one without the other fails the suite. */
 .markdown-body > .md-tail.is-seamed > :first-child {
-  margin-top: 12px;
+  margin-top: var(--md-block-gap);
 }
 
 /* Ordered-list markers: a column this app owns, not one the browser places.

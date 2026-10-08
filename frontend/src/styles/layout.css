@@ -1847,13 +1847,10 @@ html.is-resizing-pane .inspector {
   white-space: normal;
 }
 
-.markdown-body p + p,
-.markdown-body p + ul,
-.markdown-body p + ol,
-.markdown-body ul + p,
-.markdown-body ol + p {
-  margin-top: 9px;
-}
+/* The block gap has one owner: `--md-block-gap` in `workbench.css`, applied by its paragraph-rhythm
+   rule. A 9px copy of that rule lived here for a long time, dead at equal specificity against a file
+   that loads later - and it was still the first hit when you grep, which is how the seam spacing
+   below ended up written with the wrong number once. `src/styles/blockGap.test.ts` owns the check. */
 
 /* A streaming block renders in two pieces: `.md-settled` holds the blocks that can no longer
    change, `.md-tail` holds the one being written, and only the tail is re-parsed per frame.

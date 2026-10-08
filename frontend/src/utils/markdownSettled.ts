@@ -223,10 +223,14 @@ export function hasBackwardReference(text: string): boolean {
  * (`p + p`, `p + ul|ol|pre|blockquote`, `ul|ol|pre|blockquote + p`, `h1-h4 + p`). Splitting a
  * document into a settled prefix and a live tail destroys the *sibling* relation across the cut, so
  * the component has to restate that rule from the two tags it can actually see - which is what this
- * is. It is a transcription, not an invention: if the CSS changes, this changes with it.
+ * is. It is a transcription, not an invention, and it is checked against the stylesheet it mirrors:
+ * `src/styles/blockGap.test.ts` parses the rhythm rule out of `workbench.css` and asserts this
+ * predicate agrees on every tag pair. The gap *value* is not duplicated at all - both rules read
+ * `--md-block-gap`.
  *
- * Drift is caught by measurement, not by a unit test: `.pi/bin/mdshot` renders both arrangements
- * through the compiled stylesheet in a real WKWebView and compares the gaps.
+ * What a text-parsing test still cannot see is whether the two arrangements measure the same in a
+ * real engine. That stays with `.pi/bin/mdshot`, which is how the 9px-vs-12px mistake this guard now
+ * prevents got caught in the first place.
  */
 const SEAM_AFTER_BLOCK = /^(UL|OL|PRE|BLOCKQUOTE)$/;
 const SEAM_BEFORE_ANY = /^(P|UL|OL|PRE|BLOCKQUOTE|H[1-4])$/;
