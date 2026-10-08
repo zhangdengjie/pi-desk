@@ -15,7 +15,7 @@ import MarkdownBody from "./MarkdownBody.vue";
 
 const props = withDefaults(defineProps<{ tool: ToolExecution; allowLive?: boolean; panelMode?: StreamPanelMode; runIsLive?: boolean; contextBusy?: boolean; excludeFromContext?: (entryId: string) => Promise<boolean> }>(), { allowLive: true, panelMode: "auto", runIsLive: false });
 const copied = ref<"input" | "output" | "">("");
-const open = ref(props.tool.status === "running");
+const detailsEl = ref<HTMLDetailsElement>();
 const confirmingContextExclusion = ref(false);
 const excludingContext = ref(false);
 const contextError = ref("");
@@ -254,7 +254,16 @@ async function copyText(kind: "input" | "output", text: string) {
 }
 
 function requestContextExclusion() {
-  open.value = true;
+  // The confirm bar sits after `</summary>`, so a closed `<details>` hides it: flipping only the
+  // `v-if` paints nothing and reads to the reader as "the button does nothing". And the bar cannot
+  // be opened through the expansion registry either - `panelOpenState` is a plain Map on purpose
+  // (see `syncOpen`), so it is consulted once at mount and cannot wake a mounted element. The open
+  // therefore goes to the DOM, and the two things `syncOpen` would have recorded are recorded here:
+  // `everOpened` is the reactive half that mounts the body, the registry is the memory that keeps it
+  // open across a remount of the row.
+  if (detailsEl.value) detailsEl.value.open = true;
+  everOpened.value = true;
+  pinPanelOpen(props.tool.id, true);
   contextError.value = "";
   confirmingContextExclusion.value = !confirmingContextExclusion.value;
 }
@@ -283,7 +292,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <details class="tool-call" :data-state="tool.status" :open="panelOpen" @toggle="syncOpen">
+  <details ref="detailsEl" class="tool-call" :data-state="tool.status" :open="panelOpen" @toggle="syncOpen">
     <summary :class="ui.root">
       <ChevronRight class="disclosure-icon" :size="13" aria-hidden="true" />
       <Bot v-if="isSubagent" :size="15" aria-hidden="true" />

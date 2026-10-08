@@ -261,11 +261,11 @@ async function openPanel(wrapper: ReturnType<typeof mount>) {
   it("excludes a persisted tool result from future context", async () => {
     const excludeFromContext = vi.fn().mockResolvedValue(true);
     const tool = { id: "tool-context", entryId: "result-entry", name: "read", output: "content", status: "complete" as const };
-    // The panel is opened first because this component's `<details>` is controlled: `:open` follows
-    // `panelOpenState`, so a summary click that jsdom answers without delivering `toggle` is simply
-    // reverted on the next render. Pinning it is what a real reader does.
-    pinPanelOpen("tool-context", true);
+    // Mounted closed on purpose: the panel is collapsed by default, so this is the one assertion that
+    // catches the confirm bar being flipped visible inside a `<details>` nobody opened - which paints
+    // nothing and reads to the user as "the button does nothing".
     const wrapper = mount(ToolCallPanel, { props: { tool, excludeFromContext } });
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
 
     await wrapper.get('[aria-label="Exclude from future context"]').trigger("click");
     expect(wrapper.get("details").attributes("open")).toBeDefined();
