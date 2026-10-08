@@ -48,8 +48,21 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(document, "visibilityState");
   document.body.innerHTML = "";
 });
+
+/** The frame clock and `performance.now()` have to share a base for a resume to be measurable -
+ * the handler subtracts one from the other, and the stubbed rAF hands out the fake clock. */
+function linkClockToPerformance() {
+  vi.spyOn(performance, "now").mockImplementation(() => clock);
+}
+
+function setVisibility(state: "hidden" | "visible") {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
 
 async function start() {
   const { startLagRecorder } = await import("./lagRecorder");
@@ -128,6 +141,60 @@ it("is idempotent, so a hot reload cannot stack two samplers", async () => {
   expect(posts.length).toBe(1);
   // One sampler means one frame per pump; two would have doubled the ring and the gaps.
   expect((posts[0].body.frames as number) ?? 0).toBeGreaterThan(0);
+});
+
+it("witnesses the resume after the page comes back from hidden, with the away period out of band", async () => {
+  linkClockToPerformance();
+  await start();
+  pump(16);
+  setVisibility("hidden");
+  clock += 40_000; // a screen lock: rAF fires zero times while hidden
+  setVisibility("visible");
+  for (let i = 0; i < 90; i++) {
+    pump(16);
+    await Promise.resolve();
+  }
+  expect(posts.length).toBe(1);
+  const body = posts[0].body;
+  expect(String(body.reason)).toContain("resume-");
+  expect(body.hiddenMs as number).toBeGreaterThanOrEqual(40_000);
+  // The away period must not be laundered into a frame gap, or every lock reads as a freeze -
+  // that is what `nativeStall` was there to say, and a resume is not a stall in that sense.
+  expect(body.worstGapMs as number).toBeLessThan(2000);
+  expect(body.nativeStall).toBe(false);
+  // ...and the frames that follow the resume are the actual answer to "解锁后卡不卡".
+  expect(body.maxMs as number).toBeLessThan(33);
+});
+
+it("keeps silent for a blink too short to be a stall", async () => {
+  linkClockToPerformance();
+  await start();
+  setVisibility("hidden");
+  clock += 300;
+  setVisibility("visible");
+  for (let i = 0; i < 90; i++) {
+    pump(16);
+    await Promise.resolve();
+  }
+  expect(posts).toEqual([]);
+});
+
+it("still reports a real stutter that happens right after a resume", async () => {
+  linkClockToPerformance();
+  await start();
+  pump(16);
+  setVisibility("hidden");
+  clock += 40_000;
+  setVisibility("visible");
+  pump(16);
+  pump(260); // the re-rasterize / thread-switch cost, now inside the window
+  for (let i = 0; i < 90; i++) {
+    pump(16);
+    await Promise.resolve();
+  }
+  expect(posts.length).toBe(1);
+  expect(posts[0].body.hiddenMs as number).toBeGreaterThanOrEqual(40_000);
+  expect(posts[0].body.maxMs as number).toBeGreaterThan(200);
 });
 
 it("describes a placeholder comment instead of throwing the record away", async () => {

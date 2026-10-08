@@ -40,6 +40,8 @@ type Capture = {
   paths: Record<string, number>;
   long: number[];
   worstGap: number;
+  /** How long the document was hidden before this window opened. 0 unless a resume caused it. */
+  hiddenMs: number;
 };
 
 let started = false;
@@ -50,6 +52,7 @@ let lastPost = 0;
 let posts = 0;
 let stopped = false;
 let prev = 0;
+let hiddenAt = 0;
 const gestures: string[] = [];
 const counters = { muts: 0, nodes: 0, chars: 0, long: 0 };
 
@@ -74,12 +77,13 @@ function path(node: EventTarget | Node | null): string {
   return bits.join(">") || "?";
 }
 
-function openCapture(reason: string, worstGap = 0) {
+function openCapture(reason: string, worstGap = 0, hiddenMs = 0) {
   if (!capture) {
     gestures.push(`${reason}@${Math.round(performance.now())}`);
-    capture = { until: performance.now() + CAPTURE_MS, reason, muts: 0, nodes: 0, chars: 0, paths: {}, long: [], worstGap };
+    capture = { until: performance.now() + CAPTURE_MS, reason, muts: 0, nodes: 0, chars: 0, paths: {}, long: [], worstGap, hiddenMs };
   } else {
     capture.worstGap = Math.max(capture.worstGap, worstGap);
+    capture.hiddenMs = Math.max(capture.hiddenMs, hiddenMs);
   }
   if (observer) return;
   observer = new MutationObserver((records) => {
@@ -203,6 +207,9 @@ async function flush(frames: Frame[]) {
     at: new Date().toISOString(),
     reason: captureState?.reason ?? "window",
     worstGapMs: Math.round(captureState?.worstGap ?? 0),
+    /** Set on a resume window: the away period, kept out of `worstGapMs`/`maxMs` on purpose so a
+     * 40-minute lock is never read as a 40-minute freeze. */
+    hiddenMs: Math.round(captureState?.hiddenMs ?? 0),
     /** A gap over STALL_MS with no work in it is the native event loop or a hidden page. */
     nativeStall: (captureState?.worstGap ?? 0) > STALL_MS && (captureState?.muts ?? 0) < 5,
     ...summarise(frames),
@@ -284,11 +291,32 @@ export function startLagRecorder(): void {
   for (const type of ["pointerdown", "wheel", "keydown", "resize"] as const) {
     window.addEventListener(type, onGesture(type), { passive: true, capture: true });
   }
+  // Resume is the one case the frame clock cannot see, and it used to be thrown away on purpose.
+  // Why that was wrong (2026-10-08, iot "文档整理优化" thread): a user-reported post-unlock stutter
+  // produced no `lag-2026-10-08.jsonl` at all. Both reasons are structural - `tick()` only reports
+  // an over-STALL_MS gap while the document still claims to be visible, and the old handler reset
+  // `prev` on resume, so the enormous first frame never reached the ring either.
+  // Kept: the baseline reset, because the away gap genuinely is not a dropped frame. Added: a
+  // capture window over the frames that *follow* the resume, with the away period carried out of
+  // band as `hiddenMs`. Whether a screen lock fires `visibilitychange` at all (rather than only
+  // freezing rAF) is settled by the `reason` / `scene.visibility` pair on the record.
   document.addEventListener("visibilitychange", () => {
     gestures.push(`visibility ${document.visibilityState}`);
-    // Coming back from hidden produces one enormous "frame"; drop the baseline so it is not read
-    // as a stutter.
-    if (document.visibilityState === "visible") prev = 0;
+    if (stopped) return;
+    if (document.visibilityState === "hidden") {
+      hiddenAt = performance.now();
+      return;
+    }
+    const awayMs = hiddenAt ? Math.round(performance.now() - hiddenAt) : 0;
+    hiddenAt = 0;
+    // rAF never fires while hidden, so `prev` is still the last frame before the page went away:
+    // this difference is the away period plus whatever the resume itself cost.
+    const gapMs = prev ? Math.round(performance.now() - prev) : awayMs;
+    prev = 0;
+    if (Math.max(gapMs, awayMs) <= STALL_MS) return;
+    // `worstGap` stays 0 on purpose - the away period is explained by `hiddenMs`, and the number
+    // we actually want is the worst frame the next CAPTURE_MS produces.
+    openCapture(`resume-${gapMs}ms`, 0, awayMs);
   });
   requestAnimationFrame(tick);
   (window as unknown as { __pideskLag?: unknown }).__pideskLag = {
