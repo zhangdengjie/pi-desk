@@ -129,3 +129,22 @@ it("is idempotent, so a hot reload cannot stack two samplers", async () => {
   // One sampler means one frame per pump; two would have doubled the ring and the gaps.
   expect((posts[0].body.frames as number) ?? 0).toBeGreaterThan(0);
 });
+
+it("describes a placeholder comment instead of throwing the record away", async () => {
+  await start();
+  pump(16);
+  pump(140); // open a capture window
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  const timeline = document.querySelector(".timeline")!;
+  // Vue leaves a Comment node for every false `v-if`, and `addedNodes` hands it over as-is. It has
+  // no `tagName`, so `path()` threw inside the MutationObserver callback and the key never reached
+  // `capture.paths` - the record landed with an empty `mutationsTop`, i.e. the witness lied.
+  timeline.appendChild(document.createComment("v-if"));
+  for (let i = 0; i < 90; i++) {
+    pump(16);
+    await Promise.resolve();
+  }
+  expect(posts.length).toBe(1);
+  const top = (posts[0].body.mutationsTop ?? []) as string[];
+  expect(top.join(" ")).toContain("div.timeline");
+});

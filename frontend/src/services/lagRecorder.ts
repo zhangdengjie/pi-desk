@@ -58,11 +58,17 @@ const q = <T extends HTMLElement = HTMLElement>(sel: string) => document.querySe
 /** The shortest useful description of a DOM position: three ancestor tags/classes. */
 function path(node: EventTarget | Node | null): string {
   let el = node as Element | null;
-  if (el && el.nodeType === 3) el = el.parentElement;
+  // Anything that is not an Element has no `tagName`: a Text (3), a Comment (8) - which is what Vue
+  // leaves behind for every `v-if` / `v-for` / Teleport anchor, so it lands in `addedNodes` during
+  // ordinary re-renders - and a DocumentFragment (11). `path` also takes `event.target`, which is
+  // typed as a bare EventTarget and can be the Document. Walk to the parent instead of throwing:
+  // this runs inside the MutationObserver callback, and a throw there aborts the record being built.
+  if (el && el.nodeType !== 1) el = el.parentElement;
   const bits: string[] = [];
   while (el && bits.length < 3) {
+    const tag = typeof el.tagName === "string" ? el.tagName.toLowerCase() : "";
     const cls = typeof el.className === "string" ? el.className.split(/\s+/).filter(Boolean)[0] : "";
-    bits.push(cls ? `${el.tagName.toLowerCase()}.${cls}` : el.tagName.toLowerCase());
+    bits.push(tag ? (cls ? `${tag}.${cls}` : tag) : "?");
     el = el.parentElement;
   }
   return bits.join(">") || "?";
