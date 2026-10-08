@@ -56,6 +56,13 @@ export interface StreamPacer {
   reconcile(key: string, text: string, sink: (text: string) => void): void;
   /** Hand over everything that is pending, right now. */
   flush(key: string): void;
+  /**
+   * Reveal everything pending but **keep** the stream. `flush` deletes the record, which is only
+   * safe once the run owns the field: the next `append` after a delete rebuilds the stream from
+   * `committed = 0`, so the text on screen would collapse to a few characters and retype itself.
+   * A stream that is still growing needs this one instead.
+   */
+  catchUp(key?: string): void;
   /** Forget a stream without writing it: the caller is about to own the field. */
   drop(key: string): void;
   reset(): void;
@@ -164,6 +171,12 @@ export function createStreamPacer(options: StreamPacerOptions = {}): StreamPacer
       if (!stream) return;
       commit(stream, stream.target.length);
       streams.delete(key);
+    },
+    catchUp(key) {
+      for (const [name, stream] of Array.from(streams.entries())) {
+        if (key !== undefined && name !== key) continue;
+        commit(stream, stream.target.length);
+      }
     },
     drop(key) {
       streams.delete(key);

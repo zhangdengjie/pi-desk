@@ -160,4 +160,38 @@ describe("streamPacer", () => {
     expect(view.writes).toEqual([]);
     expect(pacer.pending()).toBe(0);
   });
+
+  it("catchUp reveals everything and keeps the stream, so the next delta continues the reveal", () => {
+    const { pacer, pump } = harness({ split: 1000, floor: 1, ceiling: 1 });
+    const view = collector();
+    pacer.append("a:text", "abc", view.sink);
+    pump(1);
+    expect(view.writes.at(-1)).toBe("a");
+
+    pacer.append("a:text", "def", view.sink);
+    pacer.catchUp("a:text");
+    expect(view.writes.at(-1)).toBe("abcdef");
+
+    // The record has to survive. A deleted stream rebuilds at committed = 0, so this next delta
+    // would write "g" over an answer that was already on screen.
+    pacer.append("a:text", "g", view.sink);
+    pump(1);
+    expect(view.writes.at(-1)).toBe("abcdefg");
+    expect(pacer.pending("a:text")).toBe(0);
+  });
+
+  it("flush forgets the stream - the hazard that is why a still-growing reveal uses catchUp", () => {
+    const { pacer, pump } = harness({ split: 1000, floor: 1, ceiling: 1 });
+    const view = collector();
+    pacer.append("a:text", "abc", view.sink);
+    pump(1);
+    pacer.flush("a:text");
+    expect(view.writes.at(-1)).toBe("abc");
+
+    pacer.append("a:text", "d", view.sink);
+    pump(1);
+    // Documented, not accidental: flush is only for a run that has stopped and handed the field
+    // back to its owner. Wiring it to the resume path would make an answer collapse and retype.
+    expect(view.writes.at(-1)).toBe("d");
+  });
 });

@@ -20,6 +20,12 @@ function harness(initial = "", live = true) {
   return { wrapper, source, animate };
 }
 
+/** jsdom reports `visible` and exposes no setter, so the getter is replaced for the case. */
+function setVisibility(state: "hidden" | "visible") {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
 describe("useRevealedText + streamTuning", () => {
   // The tuning is a module singleton; without this the case above decides how the next
   // one is paced.
@@ -69,5 +75,60 @@ describe("useRevealedText + streamTuning", () => {
   it("keeps the shipped numbers when nothing was applied", () => {
     expect(streamTuning.reveal).toEqual(SHIPPED.reveal);
     expect(streamTuning.scroll).toEqual(SHIPPED.scroll);
+  });
+
+  it("collapses the backlog into one write when the screen comes back", async () => {
+    vi.useFakeTimers();
+    // 1 character per frame, so replaying the backlog would take 19 more frames and be visible.
+    applyStreamTuning({ split: 1000, floor: 1, ceiling: 1 }, null);
+    const { wrapper, source } = harness("");
+    const backlog = "abcdefghij";
+    try {
+      source.value = backlog;
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(16);
+      expect(wrapper.text()).toBe("a");
+
+      // The screen locks: rAF stalls, so no frames are pumped at all while Pi keeps appending.
+      setVisibility("hidden");
+      source.value = backlog + backlog;
+      await flushPromises();
+      expect(wrapper.text()).toBe("a");
+
+      setVisibility("visible");
+      await flushPromises();
+      expect(wrapper.text()).toBe(backlog + backlog);
+
+      // And the run may still be going: the next delta must continue from the full prefix.
+      source.value = backlog + backlog + "z";
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(16);
+      expect(wrapper.text()).toBe(backlog + backlog + "z");
+    } finally {
+      wrapper.unmount();
+      Reflect.deleteProperty(document, "visibilityState");
+    }
+    vi.useRealTimers();
+  });
+
+  it("leaves a reveal that never went away alone", async () => {
+    vi.useFakeTimers();
+    applyStreamTuning({ split: 1000, floor: 1, ceiling: 1 }, null);
+    const { wrapper, source } = harness("");
+    try {
+      source.value = "abcdefghij";
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(16);
+      // A stray visibilitychange with no backlog must not jump the reveal ahead of the pacing.
+      setVisibility("visible");
+      await flushPromises();
+      expect(wrapper.text()).toBe("a");
+      await vi.advanceTimersByTimeAsync(16);
+      expect(wrapper.text()).toBe("ab");
+    } finally {
+      wrapper.unmount();
+      Reflect.deleteProperty(document, "visibilityState");
+    }
+    vi.useRealTimers();
   });
 });
