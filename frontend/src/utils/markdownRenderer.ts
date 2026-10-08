@@ -34,6 +34,12 @@ export interface MarkdownRenderEnv extends Env {
   baseDir?: string;
   /** Per-render heading-slug dedup. Cleared at the start of every render. */
   slugCounts: Map<string, number>;
+  /**
+   * Keep `slugCounts` as the caller left it. A document rendered in two pieces - a settled prefix
+   * and a live tail - must share one numbering pass, or a heading in the tail collides with an
+   * identical one above it and the outline points at whichever came first in the DOM.
+   */
+  preserveSlugs?: boolean;
 }
 
 /**
@@ -155,7 +161,7 @@ markdown.renderer.rules.td_close = (tokens, index, options, _env, self) =>
 
 /** Plain render, no cache: the source of truth for what a cached entry holds. */
 export function renderMarkdownHtml(text: string, env: MarkdownRenderEnv): string {
-  env.slugCounts.clear();
+  if (!env.preserveSlugs) env.slugCounts.clear();
   return markdown.render(normalizeMarkdownBreakTags(text), env);
 }
 
@@ -235,7 +241,9 @@ export const markdownRenderCache = createMarkdownRenderCache(renderMarkdownHtml)
  * the cache would hold nothing but dead intermediate HTML.
  */
 export function renderMarkdownDocument(text: string, env: MarkdownRenderEnv, uid: string, cacheable = true): string {
-  const html = cacheable && text.length >= MARKDOWN_CACHE_MIN_CHARS
+  // A preserved-slug render is a function of the caller's numbering state, which the cache key
+  // cannot see - two documents with the same tail and different prefixes would share an entry.
+  const html = cacheable && !env.preserveSlugs && text.length >= MARKDOWN_CACHE_MIN_CHARS
     ? markdownRenderCache.render(text, env)
     : renderMarkdownHtml(text, env);
   return html.includes(MARKDOWN_UID_PLACEHOLDER)

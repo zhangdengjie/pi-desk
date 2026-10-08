@@ -6,6 +6,7 @@ import { useRevealedText } from "../composables/useRevealedText";
 import type { WorkspaceFileLink } from "../utils/fileLinks";
 import { slugifyHeading } from "../utils/markdown";
 import { renderMarkdownDocument } from "../utils/markdownRenderer";
+import { splitSettledMarkdown } from "../utils/markdownSettled";
 import { collectMarkdownOutline, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import FileLinkContextMenu from "./FileLinkContextMenu.vue";
 
@@ -61,6 +62,30 @@ const slugCounts = new Map<string, number>();
 const shownText = useRevealedText(() => props.text, () => props.streaming === true);
 const renderMarkdown = computed(() => shownText.value.length
   <= (props.streaming === true ? STREAMING_MARKDOWN_CHARS : SETTLED_MARKDOWN_CHARS));
+
+/**
+ * Whether this block renders as "final prefix + live tail" instead of one whole document.
+ *
+ * Two conditions, both load-bearing. `streaming` because a settled block is what a virtualized
+ * scroll unmounts and remounts, and a split would only add work there. No search query because
+ * `highlightRenderedHtml` numbers matches across the whole document - rendering the halves apart
+ * would restart the ordinals in the tail and send "next match" to the wrong place.
+ */
+const incremental = computed(() => props.streaming === true && renderMarkdown.value
+  && !(props.searchQuery ?? "").trim());
+
+const split = computed(() => (incremental.value
+  ? splitSettledMarkdown(shownText.value)
+  : { settledLength: 0, settled: "", tail: shownText.value, reason: "ok" as const }));
+
+/**
+ * The settled region's HTML, accumulated between frames.
+ *
+ * Deliberately *not* a ref: a ref would schedule a second render pass every time the boundary
+ * moves, and the boundary moves inside the render that reads it.
+ */
+const settledMemo: { env: string; chars: number; html: string; slugs: [string, number][] } =
+  { env: "", chars: 0, html: "", slugs: [] };
 
 function highlightRenderedHtml(html: string, query: string, active: boolean, activeIndex: number | null = null): string {
   const needle = query.trim();
@@ -129,6 +154,37 @@ const rendered = computed(() => {
     // produce the same ids, otherwise an open outline would point at headings that no longer exist.
     slugCounts,
   };
+  const { settledLength, settled, tail } = split.value;
+  if (incremental.value && settledLength) {
+    // A moved workspace means different file links, and a *shorter* prefix means this block was
+    // handed a new answer. Both throw the accumulation away rather than append to stale HTML.
+    const envKey = `${env.workspacePath ?? ""}\u0000${env.baseDir ?? ""}`;
+    if (settledMemo.env !== envKey || settledLength < settledMemo.chars) {
+      settledMemo.env = envKey;
+      settledMemo.chars = 0;
+      settledMemo.html = "";
+      settledMemo.slugs = [];
+    }
+    // Roll the counters back to where the settled region left them. Without this, re-rendering an
+    // unchanged tail bumps its own heading ids to `-1`, `-2`, - and the anchor the reader is
+    // looking at changes identity every frame.
+    slugCounts.clear();
+    for (const [slug, count] of settledMemo.slugs) slugCounts.set(slug, count);
+    if (settledLength > settledMemo.chars) {
+      // Only the newly settled source is parsed. `utils/markdownSettled.ts` guarantees the cut lands
+      // between blocks that cannot reach backwards, and the property test there asserts this exact
+      // accumulation against one whole pass - so appending is not an approximation.
+      settledMemo.html += renderMarkdownDocument(
+        settled.slice(settledMemo.chars), { ...env, preserveSlugs: true }, instanceUid, false);
+      settledMemo.chars = settledLength;
+      settledMemo.slugs = [...slugCounts.entries()];
+    }
+    return settledMemo.html
+      + renderMarkdownDocument(tail, { ...env, preserveSlugs: true }, instanceUid, false);
+  }
+  settledMemo.chars = 0;
+  settledMemo.html = "";
+  settledMemo.slugs = [];
   // A settled block is the one a virtualized scroll unmounts and remounts, so it is the one worth a
   // lookup; a streaming block changes every frame and must not enter the cache at all.
   const html = renderMarkdownDocument(shownText.value, env, instanceUid, props.streaming !== true);

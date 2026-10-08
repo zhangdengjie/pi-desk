@@ -124,6 +124,13 @@ describe("the settled prefix's HTML is final", () => {
       let htmlSoFar = "";
       let advances = 0;
       let refusals = 0;
+      // The accumulation MarkdownBody.vue actually performs: append the render of the newly settled
+      // source, carrying the heading counters across pieces. Asserting against that - not just
+      // against "is it a prefix" - is what pins the component's equation, and it is what makes the
+      // cost O(newly settled chars) instead of O(whole prefix) per block.
+      let appended = "";
+      let appendedChars = 0;
+      let counters: [string, number][] = [];
       for (const cut of growthPoints(doc)) {
         const text = doc.slice(0, cut);
         const split = splitSettledMarkdown(text);
@@ -140,10 +147,19 @@ describe("the settled prefix's HTML is final", () => {
           expect(html.startsWith(htmlSoFar)).toBe(true);
           advances += 1;
         }
+        if (settledLengthAdvanced(settled, appendedChars)) {
+          const counts = new Map(counters);
+          appended += renderMarkdownDocument(settled.slice(appendedChars), { slugCounts: counts, preserveSlugs: true }, "u", false);
+          appendedChars = settled.length;
+          counters = [...counts.entries()];
+        }
         settledSoFar = settled;
         htmlSoFar = html;
       }
       expect(settledSoFar.length).toBeGreaterThan(0);
+      // The append-only path must land on exactly the same HTML as one whole pass over the final
+      // settled region - otherwise the component's cheap route and the reference route disagree.
+      expect(appended).toBe(render(settledSoFar));
       // Anti-vacuity: the prefix comparison has to have run several times, and the guards have to
       // have fired at least once - a fixture that settles every single step is not testing refusal.
       expect(advances).toBeGreaterThanOrEqual(3);
@@ -151,3 +167,7 @@ describe("the settled prefix's HTML is final", () => {
     });
   }
 });
+
+function settledLengthAdvanced(settled: string, soFar: number): boolean {
+  return settled.length > soFar;
+}

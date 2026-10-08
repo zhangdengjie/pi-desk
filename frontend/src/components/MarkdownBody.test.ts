@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
 import MarkdownBody from "./MarkdownBody.vue";
-import { markdownRenderCache } from "../utils/markdownRenderer";
+import { markdownRenderCache, renderMarkdownDocument } from "../utils/markdownRenderer";
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -363,5 +363,81 @@ describe("MarkdownBody remount cost", () => {
     expect(first.html()).toContain("id=\"md");
     expect(withoutUid(second.html())).toBe(withoutUid(first.html()));
     expect(markdownRenderCache.stats).toMatchObject({ misses: 1, hits: 1 });
+  });
+});
+
+/**
+ * A streaming block is rendered as "final prefix + live tail" so the prefix is parsed once per
+ * completed block instead of once per frame (`utils/markdownSettled.ts`). That is only a win if it
+ * is invisible, so these cases pin the output against the whole-document pass rather than against
+ * an expectation of what the split "should" produce.
+ */
+function streamedDoc(): string {
+  const parts: string[] = [];
+  for (let index = 0; index < 20; index += 1) {
+    parts.push(`Paragraph ${index}: the quick brown fox jumps over the lazy dog while the platform reports a status code and a short note about it.`);
+  }
+  parts.push("## Setup\n\nsteps to run it");
+  parts.push("- one\n- two");
+  parts.push("```ts\nconst a = 1;\n```");
+  parts.push("## Setup\n\nthe second heading must not steal the first one's id");
+  parts.push("tail paragraph still arriving");
+  return parts.join("\n\n");
+}
+
+describe("MarkdownBody streaming split", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    markdownRenderCache.clear();
+  });
+
+  it("renders a split streaming block byte-identically to one whole pass", async () => {
+    vi.useFakeTimers();
+    const text = streamedDoc();
+    expect(text.length).toBeGreaterThan(2_000); // below the floor nothing settles, so the case proves nothing
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(wrapper.text()).toContain("still arriving");
+
+    const html = wrapper.get(".markdown-body").element.innerHTML;
+    const uid = wrapper.get(".markdown-body").attributes("data-markdown-uid");
+    wrapper.unmount();
+    vi.useRealTimers();
+
+    // Heading ids carry the per-instance prefix, so the reference has to render under the same one.
+    expect(uid).toBeTruthy();
+    expect(html).toBe(renderMarkdownDocument(text, { slugCounts: new Map() }, uid ?? ""));
+  });
+
+  it("keeps heading ids unique across the seam", async () => {
+    vi.useFakeTimers();
+    const text = streamedDoc();
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text });
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const ids = wrapper.findAll("h2").map((node) => node.attributes("id") ?? "");
+    expect(ids).toHaveLength(2); // the same heading text, once above the seam and once below it
+    expect(ids[0]).not.toBe(ids[1]);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("renders the whole document in one pass while a search is active", async () => {
+    // Match ordinals are global. Highlighting the two halves separately would restart the count in
+    // the tail, so the active index would light a mark in each half at once.
+    vi.useFakeTimers();
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text: streamedDoc() });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await wrapper.setProps({ searchQuery: "Setup", searchActive: true, searchActiveIndex: 1 });
+
+    const active = wrapper.findAll("mark.is-active");
+    expect(active).toHaveLength(1);
+    expect(active[0].text()).toBe("Setup");
+    expect(wrapper.findAll("mark")).toHaveLength(2);
+    wrapper.unmount();
+    vi.useRealTimers();
   });
 });
