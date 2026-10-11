@@ -312,6 +312,9 @@ function onDrop(event: DragEvent) {
 
 function onKeydown(event: KeyboardEvent) {
   if (event.isComposing || event.keyCode === 229) return;
+  // Cmd+Enter (Ctrl+Enter on Windows/Linux) is the send chord. Shift+Enter is no longer one, so the
+  // menus must not swallow a chord that means "send".
+  const sendModifier = event.metaKey || event.ctrlKey;
 
   if (mentionMenuOpen.value) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -321,7 +324,7 @@ function onKeydown(event: KeyboardEvent) {
       mentionIndex.value = (mentionIndex.value + direction + matchingFiles.value.length) % matchingFiles.value.length;
       return;
     }
-    if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) {
+    if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey && !sendModifier)) {
       event.preventDefault();
       event.stopPropagation();
       chooseFileMention(matchingFiles.value[mentionIndex.value].path);
@@ -342,7 +345,7 @@ function onKeydown(event: KeyboardEvent) {
       commandIndex.value = (commandIndex.value + direction + matchingCommands.value.length) % matchingCommands.value.length;
       return;
     }
-    if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) {
+    if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey && !sendModifier)) {
       event.preventDefault();
       event.stopPropagation();
       chooseCommand(matchingCommands.value[commandIndex.value]);
@@ -356,8 +359,9 @@ function onKeydown(event: KeyboardEvent) {
       return;
     }
   }
-  if (event.key === "Enter" && event.shiftKey) {
-    // Shift+Enter sends; plain Enter is left alone so the textarea can insert its own "\n". An Enter
+  if (event.key === "Enter" && sendModifier) {
+    // Cmd+Enter sends; plain Enter and Shift+Enter are both left alone so the textarea inserts its
+    // own "\n" (Shift+Enter used to be the send chord and now behaves exactly like Enter). An Enter
     // that confirms an IME composition is not a send: the draft is still holding pinyin when this
     // fires, so let the key reach the field.
     if (event.isComposing || event.keyCode === 229) return;

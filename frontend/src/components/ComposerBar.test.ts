@@ -718,7 +718,7 @@ describe("ComposerBar", () => {
     expect(wrapper.get(".send-button").attributes("title")).toBe("Queue message");
   });
 
-  it("sends with Shift Enter, leaves plain Enter to the field, and ignores composition and repeats", async () => {
+  it("sends with Cmd Enter, leaves Enter and Shift Enter to the field, and ignores composition and repeats", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
@@ -742,17 +742,43 @@ describe("ComposerBar", () => {
     expect(store.sendActivePrompt).not.toHaveBeenCalled();
     expect(newline.defaultPrevented).toBe(false);
 
-    await editor.trigger("keydown", { key: "Enter", shiftKey: true });
+    await editor.trigger("keydown", { key: "Enter", metaKey: true });
     expect(store.sendActivePrompt).toHaveBeenCalledOnce();
 
-    await editor.trigger("keydown", { key: "Enter", shiftKey: true, repeat: true });
-    await editor.trigger("keydown", { key: "Enter", shiftKey: true, keyCode: 229 });
-    await editor.trigger("keydown", { key: "Enter", shiftKey: true, isComposing: true });
+    await editor.trigger("keydown", { key: "Enter", metaKey: true, repeat: true });
+    await editor.trigger("keydown", { key: "Enter", metaKey: true, keyCode: 229 });
+    await editor.trigger("keydown", { key: "Enter", metaKey: true, isComposing: true });
     await editor.trigger("keydown", { key: "Enter" });
     expect(store.sendActivePrompt).toHaveBeenCalledOnce();
   });
 
-  it("keeps a typed fence and list literal in the draft and sends on Shift Enter", async () => {
+  it("treats Shift Enter exactly like Enter: a newline in the field, never a send", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{
+        id: "thread-shift", title: "Shift", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: true, generation: 1,
+      }],
+      activeThreadId: "thread-shift",
+      draftsByThread: { "thread-shift": "Two lines" },
+    });
+    store.sendActivePrompt = vi.fn().mockResolvedValue(undefined);
+    const wrapper = mount(ComposerBar, { global: { plugins: [pinia] } });
+    await flushPromises();
+    const editor = wrapper.get<HTMLTextAreaElement>(".draft-input");
+
+    for (const chord of [{ key: "Enter" }, { key: "Enter", shiftKey: true }]) {
+      const event = new KeyboardEvent("keydown", { ...chord, bubbles: true, cancelable: true });
+      editor.element.dispatchEvent(event);
+      await flushPromises();
+      expect(event.defaultPrevented, `${chord.key}${"shiftKey" in chord ? "+Shift" : ""} must reach the field`).toBe(false);
+    }
+    expect(store.sendActivePrompt).not.toHaveBeenCalled();
+  });
+
+  it("keeps a typed fence and list literal in the draft and sends on Cmd Enter", async () => {
     // Option A of the composer swap: the draft is exactly what is typed. Converting ```lang into a
     // code block, continuing list items, and rendering pasted Markdown in the box all belonged to
     // the ProseMirror surface and are gone on purpose — Pi parses the same characters downstream,
@@ -771,7 +797,7 @@ describe("ComposerBar", () => {
     expect(editor.element.value).toBe("```ts\nconst a = 1;\n```");
     expect(editor.find("pre, code, li, strong").exists()).toBe(false);
 
-    await editor.trigger("keydown", { key: "Enter", shiftKey: true });
+    await editor.trigger("keydown", { key: "Enter", metaKey: true });
     expect(store.sendActivePrompt).toHaveBeenCalledOnce();
     wrapper.unmount();
   });
