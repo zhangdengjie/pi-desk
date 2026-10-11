@@ -4788,7 +4788,10 @@ html.is-resizing-pane .inspector {
 .file-tree-row {
   display: grid;
   min-height: 29px;
-  grid-template-columns: 18px 16px minmax(0, 1fr) 22px 26px;
+  /* Six columns for six cells: toggle/spacer, icon, name, change, rollback, mention. A row that
+     renders fewer cells than this must add a spacer (see `.file-tree-rollback-spacer`), because
+     overflow does not disappear - it auto-places into an implicit second row. */
+  grid-template-columns: 18px 16px minmax(0, 1fr) 22px 26px 26px;
   align-items: center;
   gap: 4px;
   padding: 0 4px;
@@ -4909,6 +4912,11 @@ html.is-resizing-pane .inspector {
 
 .file-tree-change-spacer {
   width: 22px;
+}
+
+/* Keeps a row without a rollback button at six grid cells, so the `@` button stays in column 6. */
+.file-tree-rollback-spacer {
+  width: 26px;
 }
 
 .file-tree-mention,

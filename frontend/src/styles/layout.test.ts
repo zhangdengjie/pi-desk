@@ -436,7 +436,7 @@ describe("repository file tree hierarchy", () => {
     const layout = await layoutText();
     const row = firstRuleBody(layout, ".file-tree-row");
     expect(row).toMatch(/display:\s*grid/);
-    expect(row).toMatch(/grid-template-columns:\s*18px 16px minmax\(0, 1fr\) 22px 26px/);
+    expect(row).toMatch(/grid-template-columns:\s*18px 16px minmax\(0, 1fr\) 22px 26px 26px/);
     expect(row).toMatch(/color:\s*var\(--text-muted\)/);
     expect(firstRuleBody(layout, ".file-tree-row:hover")).toMatch(/color:\s*var\(--text-secondary\)/);
   });

@@ -99,6 +99,10 @@ function forwardExpand(path: string, value: boolean) {
       >
         <Undo2 :size="13" />
       </button>
+      <!-- Every row must hand the grid exactly as many cells as `.file-tree-row` declares columns
+           (layout.css): a 6th item in a 5-column grid auto-places into an implicit second row, which
+           is what dropped the `@` button under the filename for changed files. -->
+      <span v-else class="file-tree-rollback-spacer" />
       <button class="file-tree-mention" type="button" :title="node.directory ? tr('files.mentionFolder') : tr('files.mentionFile')" @click="emit('mention', node.path, node.directory)">
         <AtSign :size="13" />
       </button>
