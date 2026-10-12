@@ -296,6 +296,11 @@ function saveScroll(event: Event) {
   if (!tab || !(target instanceof HTMLElement)) return;
   const selector = scrollSelectors.find((selector) => target.matches(selector));
   if (selector) {
+    // A write we made ourselves echoes back as a `scroll` event, and while the content is still
+    // loading the engine clamps it to 0. Capturing that echo used to overwrite the offset we were
+    // about to re-apply - the restored position was destroyed before the retry could land. Pending
+    // selectors are exactly the ones still waiting for their content, so their echoes get dropped.
+    if (unrestoredOffsets.value.some(([pending]) => pending === selector)) return;
     (tab.scroll ??= {})[selector] = [target.scrollLeft, target.scrollTop];
     appStore.scheduleDesktopStateSave();
     if (selector === ".file-markdown-preview" && outlineOpen.value) markOutlineActive(target.scrollTop);
@@ -303,10 +308,28 @@ function saveScroll(event: Event) {
 }
 async function restoreScroll() {
   await nextTick();
-  for (const [selector, [left, top]] of Object.entries(currentTab.value?.scroll ?? {})) {
-    const element = panelElement.value?.querySelector(selector);
-    if (element) { element.scrollLeft = left; element.scrollTop = top; }
+  applyScrollOffsets();
+}
+// A restored offset is only useful once the content it points into exists. On a cold start the tab's
+// `scroll` map is read before the repository snapshot arrives, so `.panel-file-tree` is either not
+// mounted yet or holds nothing but the loading spinner - both used to drop the restore in silence,
+// which is why a reopened tree jumped back to the top. Keep whatever did not land and retry when the
+// listing renders; stop as soon as it does.
+const unrestoredOffsets = ref<Array<[string, number, number]>>([]);
+function applyScrollOffsets() {
+  const pending = currentTab.value?.scroll;
+  if (!pending) { unrestoredOffsets.value = []; return; }
+  const stillWaiting: Array<[string, number, number]> = [];
+  for (const [selector, [left, top]] of Object.entries(pending)) {
+    const element = panelElement.value?.querySelector(selector) as HTMLElement | undefined;
+    if (!element) { stillWaiting.push([selector, left, top]); continue; }
+    element.scrollLeft = left;
+    element.scrollTop = top;
+    // An empty container clamps the write back to 0; jsdom keeps it, so this only bites in the real
+    // engine - which is exactly the case that needs the retry.
+    if (top && element.scrollTop === 0 && element.scrollHeight <= element.clientHeight) stillWaiting.push([selector, left, top]);
   }
+  unrestoredOffsets.value = stillWaiting;
 }
 function tabIcon(tab: PanelTab) {
   return { files: FolderOpen, file: FileCode2, diff: FileDiff, browser: Globe, terminal: Terminal }[tab.kind];
@@ -673,6 +696,11 @@ const fileMatches = computed(() => {
 const visibleFiles = computed(() => fileMatches.value.slice(0, FILE_LIST_LIMIT));
 const fileListTruncated = computed(() => fileMatches.value.length > visibleFiles.value.length || Boolean(repository.value?.truncated));
 const fileTree = computed(() => buildRepositoryTree(visibleFiles.value));
+// The one retry the cold start needs: the listing is what makes the tree scrollable, and the tree
+// column itself only exists once `treeOpen` is on - an offset that could not be applied while either
+// was missing is applied here. Deliberately not a general re-apply: once an offset lands,
+// `unrestoredOffsets` empties, so a repository refresh never yanks the pane back.
+watch([fileTree, () => currentTab.value?.treeOpen], () => { if (unrestoredOffsets.value.length) applyScrollOffsets(); }, { flush: "post" });
 
 // Every directory path currently rendered, depth-first. Drives the expand-all / collapse-all pair in
 // the same row as the git-ignored checkbox: those buttons write this list into the per-workspace

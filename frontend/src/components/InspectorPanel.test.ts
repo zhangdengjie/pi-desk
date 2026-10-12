@@ -1247,4 +1247,27 @@ describe("InspectorPanel", () => {
     expect((wrapper.get(".panel-file-tree").element as HTMLElement).scrollTop).toBe(640);
   });
 
+  it("applies a restored tree offset when the tree column only mounts later", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{ id: "thread-late", title: "Late", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
+      activeThreadId: "thread-late",
+      repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } },
+      inspectorByThread: { "thread-late": { tabs: [{ id: "late-diff", kind: "diff", title: "diff", path: "", treeOpen: false, scroll: { ".panel-file-tree": [0, 1200] } }], activeId: "late-diff", open: true, width: 600, expanded: false } },
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    store.scheduleDesktopStateSave = vi.fn();
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    // The tree column does not exist yet, so the offset cannot have landed - and must not be forgotten.
+    expect(wrapper.find(".panel-file-tree").exists()).toBe(false);
+
+    await wrapper.get(`[aria-label="${tr("inspector.fileTree")}"]`).trigger("click");
+    await flushPromises();
+    expect((wrapper.get(".panel-file-tree").element as HTMLElement).scrollTop).toBe(1200);
+  });
+
 });
