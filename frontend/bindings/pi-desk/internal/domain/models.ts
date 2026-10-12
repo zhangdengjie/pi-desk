@@ -158,6 +158,12 @@ export interface DesktopPreferences {
     "inspectorWidth"?: number;
     "inspectorTab": string;
     "panelState"?: string;
+
+    /**
+     * TreeExpanded carries the file tree's per-workspace expansion record as an opaque JSON string.
+     * Same contract as PanelState: the frontend owns the shape, this layer only moves it.
+     */
+    "treeExpanded"?: string;
     "hiddenSlashCommands"?: string;
     "notificationsEnabled": boolean;
     "updateChecksEnabled": boolean;

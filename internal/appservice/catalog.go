@@ -435,6 +435,7 @@ func (service *CatalogService) GetDesktopState() (domain.DesktopState, error) {
 			InspectorOpen: record.Preferences.InspectorOpen, InspectorWidth: record.Preferences.InspectorWidth,
 			InspectorTab:         record.Preferences.InspectorTab,
 			PanelState:           record.Preferences.PanelState,
+			TreeExpanded:         record.Preferences.TreeExpanded,
 			NotificationsEnabled: record.Preferences.NotificationsEnabled, UpdateChecksEnabled: record.Preferences.UpdateChecksEnabled,
 			CloseToTray: record.Preferences.CloseToTray, WorkspaceApplication: record.Preferences.WorkspaceApplication,
 		}
@@ -477,6 +478,7 @@ func (service *CatalogService) SaveDesktopState(state domain.DesktopState) (err 
 			InspectorOpen: state.Preferences.InspectorOpen, InspectorWidth: state.Preferences.InspectorWidth,
 			InspectorTab:         strings.TrimSpace(state.Preferences.InspectorTab),
 			PanelState:           state.Preferences.PanelState,
+			TreeExpanded:         state.Preferences.TreeExpanded,
 			NotificationsEnabled: state.Preferences.NotificationsEnabled, UpdateChecksEnabled: state.Preferences.UpdateChecksEnabled,
 			CloseToTray: state.Preferences.CloseToTray, WorkspaceApplication: strings.TrimSpace(state.Preferences.WorkspaceApplication),
 		}

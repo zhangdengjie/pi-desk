@@ -627,6 +627,20 @@ function repositoryKey(thread: ThreadSummary): string {
   return thread.workspaceId || pathKey(thread.workspacePath);
 }
 
+/** The file tree's expansion buckets, shrunk to what is worth writing to disk.
+ *  Only the open directories are kept: the default for an unrecorded directory is collapsed, so a
+ *  stored `false` would say nothing new. The one place where the two differ is a directory that is
+ *  an ancestor of the file being previewed - `FileTreeNode` auto-reveals those - and after a restart
+ *  that tab comes back through `panelState` anyway, so the same folders end up open either way. */
+function packTreeExpanded(buckets: Record<string, Record<string, boolean>>): string {
+  const kept: Record<string, string[]> = {};
+  for (const [key, record] of Object.entries(buckets)) {
+    const open = Object.keys(record).filter((directory) => record[directory] === true);
+    if (open.length) kept[key] = open;
+  }
+  return Object.keys(kept).length ? JSON.stringify(kept) : "";
+}
+
 function repositoryReference(thread: ThreadSummary): RepositoryWorkspaceReference {
   return thread.workspaceId ? { workspaceId: thread.workspaceId } : thread.workspacePath;
 }
@@ -4378,6 +4392,22 @@ export const useAppStore = defineStore("app", {
           }
         }
       } catch { /* Older or invalid panel state starts empty. */ }
+      // The file tree's expansion state rides along as its own opaque blob (see `packTreeExpanded`).
+      // Buckets are keyed by `repositoryKey`, which is stable across restarts because the catalog
+      // keeps `workspaceId` - so a repository opened under a new thread still gets its own folders.
+      try {
+        const packed = JSON.parse(desktop.preferences.treeExpanded || "{}");
+        if (packed && typeof packed === "object" && !Array.isArray(packed)) {
+          for (const [key, directories] of Object.entries(packed as Record<string, unknown>)) {
+            if (!key || !Array.isArray(directories)) continue;
+            const record: Record<string, boolean> = {};
+            for (const directory of directories) {
+              if (typeof directory === "string" && directory) record[directory] = true;
+            }
+            if (Object.keys(record).length) this.repositoryTreeExpandedByWorkspace[key] = record;
+          }
+        }
+      } catch { /* Older or invalid tree state starts fully collapsed. */ }
       this.notificationsEnabled = desktop.preferences.notificationsEnabled ?? true;
       this.hiddenSlashCommands = desktop.preferences.hiddenSlashCommands || "";
       this.updateChecksEnabled = desktop.preferences.updateChecksEnabled ?? true;
@@ -4685,6 +4715,7 @@ export const useAppStore = defineStore("app", {
               panelState: JSON.stringify(Object.fromEntries(Object.entries(this.inspectorByThread).map(([id, panel]) => [
                 id, { ...panel, tabs: panel.tabs.filter(tab => !tab.browserTemporary).map(({ preview, diff, loading, closing, error, generation, ...tab }) => tab) },
               ]))),
+              treeExpanded: packTreeExpanded(this.repositoryTreeExpandedByWorkspace),
               hiddenSlashCommands: this.hiddenSlashCommands.trim(),
               notificationsEnabled: this.notificationsEnabled,
               updateChecksEnabled: this.updateChecksEnabled,

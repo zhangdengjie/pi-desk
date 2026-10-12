@@ -463,6 +463,7 @@ func TestCatalogServicePersistsDesktopState(t *testing.T) {
 			Appearance: "light", Language: "zh-CN", FontFamily: "mono", FontSize: 15, OfflineMode: true, StreamingBehavior: "steer",
 			LightCodeTheme: "github-light", DarkCodeTheme: "github-dark", ShowCodeLineNumbers: true, WrapCodeLines: true, CodeFontSize: 12,
 			SidebarWidth: 344, InspectorOpen: true, InspectorWidth: 468, InspectorTab: "changes", WorkspaceApplication: "vscode",
+			TreeExpanded: `{"d:/repo":["src"]}`,
 		},
 		Threads: []domain.DesktopThreadState{{
 			ID: "thread-1", Title: "Audit", WorkspacePath: workspaceRecord.Path, Trust: "deny", Status: "running",
@@ -475,7 +476,7 @@ func TestCatalogServicePersistsDesktopState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.ActiveThreadID != "thread-1" || len(state.Threads) != 1 || state.Threads[0].WorkspaceID != workspaceRecord.ID || state.Threads[0].Draft != "continue" || !state.Threads[0].Unread || state.Preferences == nil || state.Preferences.Language != "zh-CN" || state.Preferences.FontFamily != "mono" || state.Preferences.FontSize != 15 || state.Preferences.LightCodeTheme != "github-light" || state.Preferences.DarkCodeTheme != "github-dark" || !state.Preferences.ShowCodeLineNumbers || !state.Preferences.WrapCodeLines || state.Preferences.CodeFontSize != 12 || !state.Preferences.OfflineMode || state.Preferences.SidebarWidth != 344 || state.Preferences.InspectorWidth != 468 || state.Preferences.WorkspaceApplication != "vscode" {
+	if state.ActiveThreadID != "thread-1" || len(state.Threads) != 1 || state.Threads[0].WorkspaceID != workspaceRecord.ID || state.Threads[0].Draft != "continue" || !state.Threads[0].Unread || state.Preferences == nil || state.Preferences.Language != "zh-CN" || state.Preferences.FontFamily != "mono" || state.Preferences.FontSize != 15 || state.Preferences.LightCodeTheme != "github-light" || state.Preferences.DarkCodeTheme != "github-dark" || !state.Preferences.ShowCodeLineNumbers || !state.Preferences.WrapCodeLines || state.Preferences.CodeFontSize != 12 || !state.Preferences.OfflineMode || state.Preferences.SidebarWidth != 344 || state.Preferences.InspectorWidth != 468 || state.Preferences.WorkspaceApplication != "vscode" || state.Preferences.TreeExpanded != `{"d:/repo":["src"]}` {
 		t.Fatalf("unexpected desktop state: %#v", state)
 	}
 }

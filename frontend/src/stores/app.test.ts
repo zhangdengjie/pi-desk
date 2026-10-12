@@ -272,6 +272,34 @@ describe("app store", () => {
     expect(store.inspectorOpen).toBe(false);
   });
 
+  it("packs only the open directories of the file tree, and restores them per workspace", async () => {
+    const store = useAppStore();
+    store.scheduleDesktopStateSave = vi.fn();
+    store.threads = [{ id: "a", title: "a", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];
+    store.activateThread("a");
+    store.catalogReady = true;
+    store.setRepositoryTreeExpanded("src", true);
+    store.setRepositoryTreeExpanded("dist", false);
+    await store.persistDesktopState();
+
+    const saved = mocks.saveDesktopState.mock.calls.at(-1)![0];
+    // A stored `false` says the same as "no entry" now that directories default to collapsed, so it
+    // is dropped: the blob carries only what a cold start cannot derive by itself.
+    expect(JSON.parse(saved.preferences.treeExpanded)).toEqual({ "d:/repo": ["src"] });
+
+    const restored = useAppStore(createPinia());
+    restored.restoreDesktopPreferences(saved);
+    expect(restored.repositoryTreeExpandedByWorkspace["d:/repo"]).toEqual({ src: true });
+
+    // A blob of another shape must leave the tree collapsed rather than half-restored or crashing.
+    const junk = useAppStore(createPinia());
+    junk.restoreDesktopPreferences({ ...saved, preferences: { ...saved.preferences, treeExpanded: "{oops" } });
+    expect(junk.repositoryTreeExpandedByWorkspace).toEqual({});
+    const shaped = useAppStore(createPinia());
+    shaped.restoreDesktopPreferences({ ...saved, preferences: { ...saved.preferences, treeExpanded: '{"d:/repo":"src","x":[null,""]}' } });
+    expect(shaped.repositoryTreeExpandedByWorkspace).toEqual({});
+  });
+
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();

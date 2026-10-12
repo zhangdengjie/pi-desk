@@ -246,22 +246,25 @@ type DesktopPreferences struct {
 	TranscriptTintStrength int    `json:"transcriptTintStrength,omitempty"`
 	// CodeAccent is the reader's own colour for inline code spans ("" = keep the theme's pill). Like
 	// TranscriptTint it is stored raw and made safe where it meets CSS, in App.vue.
-	CodeAccent           string `json:"codeAccent,omitempty"`
-	LightCodeTheme       string `json:"lightCodeTheme,omitempty"`
-	DarkCodeTheme        string `json:"darkCodeTheme,omitempty"`
-	ShowCodeLineNumbers  bool   `json:"showCodeLineNumbers,omitempty"`
-	WrapCodeLines        bool   `json:"wrapCodeLines,omitempty"`
-	CodeFontSize         int    `json:"codeFontSize,omitempty"`
-	OfflineMode          bool   `json:"offlineMode"`
-	ProxyEnabled         bool   `json:"proxyEnabled"`
-	ProxyURL             string `json:"proxyUrl,omitempty"`
-	StreamingBehavior    string `json:"streamingBehavior"`
-	SidebarCollapsed     bool   `json:"sidebarCollapsed"`
-	SidebarWidth         int    `json:"sidebarWidth,omitempty"`
-	InspectorOpen        bool   `json:"inspectorOpen"`
-	InspectorWidth       int    `json:"inspectorWidth,omitempty"`
-	InspectorTab         string `json:"inspectorTab"`
-	PanelState           string `json:"panelState,omitempty"`
+	CodeAccent          string `json:"codeAccent,omitempty"`
+	LightCodeTheme      string `json:"lightCodeTheme,omitempty"`
+	DarkCodeTheme       string `json:"darkCodeTheme,omitempty"`
+	ShowCodeLineNumbers bool   `json:"showCodeLineNumbers,omitempty"`
+	WrapCodeLines       bool   `json:"wrapCodeLines,omitempty"`
+	CodeFontSize        int    `json:"codeFontSize,omitempty"`
+	OfflineMode         bool   `json:"offlineMode"`
+	ProxyEnabled        bool   `json:"proxyEnabled"`
+	ProxyURL            string `json:"proxyUrl,omitempty"`
+	StreamingBehavior   string `json:"streamingBehavior"`
+	SidebarCollapsed    bool   `json:"sidebarCollapsed"`
+	SidebarWidth        int    `json:"sidebarWidth,omitempty"`
+	InspectorOpen       bool   `json:"inspectorOpen"`
+	InspectorWidth      int    `json:"inspectorWidth,omitempty"`
+	InspectorTab        string `json:"inspectorTab"`
+	PanelState          string `json:"panelState,omitempty"`
+	// TreeExpanded carries the file tree's per-workspace expansion record as an opaque JSON string.
+	// Same contract as PanelState: the frontend owns the shape, this layer only moves it.
+	TreeExpanded         string `json:"treeExpanded,omitempty"`
 	HiddenSlashCommands  string `json:"hiddenSlashCommands,omitempty"`
 	NotificationsEnabled bool   `json:"notificationsEnabled"`
 	UpdateChecksEnabled  bool   `json:"updateChecksEnabled"`

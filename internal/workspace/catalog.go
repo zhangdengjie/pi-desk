@@ -119,10 +119,13 @@ type PreferencesRecord struct {
 	InspectorWidth         int    `json:"inspectorWidth,omitempty"`
 	InspectorTab           string `json:"inspectorTab"`
 	PanelState             string `json:"panelState,omitempty"`
-	NotificationsEnabled   bool   `json:"notificationsEnabled"`
-	UpdateChecksEnabled    bool   `json:"updateChecksEnabled"`
-	CloseToTray            bool   `json:"closeToTray"`
-	WorkspaceApplication   string `json:"workspaceApplication,omitempty"`
+	// TreeExpanded is the opaque JSON blob the frontend writes for the file tree's expansion state.
+	// Deliberately unvalidated, like PanelState: a broken blob is discarded by the reader, never by us.
+	TreeExpanded         string `json:"treeExpanded,omitempty"`
+	NotificationsEnabled bool   `json:"notificationsEnabled"`
+	UpdateChecksEnabled  bool   `json:"updateChecksEnabled"`
+	CloseToTray          bool   `json:"closeToTray"`
+	WorkspaceApplication string `json:"workspaceApplication,omitempty"`
 }
 
 type stateFile struct {
