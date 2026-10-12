@@ -2063,6 +2063,16 @@ export const useAppStore = defineStore("app", {
       const record = this.repositoryTreeExpandedByWorkspace[key] ?? (this.repositoryTreeExpandedByWorkspace[key] = {});
       record[directory] = value;
     },
+    /** Expand-all / collapse-all for the whole visible tree, written into the same per-workspace
+     *  bucket as `setRepositoryTreeExpanded`. Collapsing writes `false` instead of clearing the
+     *  record, so the "ancestors of the selected file stay open" fallback in `FileTreeNode` cannot
+     *  reopen a folder the user just folded away. */
+    setRepositoryTreeExpandedBulk(directoryPaths: string[], value: boolean) {
+      const key = this.activeRepositoryTreeKey;
+      if (!key || !directoryPaths.length) return;
+      const record = this.repositoryTreeExpandedByWorkspace[key] ?? (this.repositoryTreeExpandedByWorkspace[key] = {});
+      for (const directory of directoryPaths) record[directory] = value;
+    },
     async refreshActiveRepository(threadID?: string) {
       const thread = this.threads.find((item) => item.id === (threadID || this.activeThreadId));
       if (!thread) return;

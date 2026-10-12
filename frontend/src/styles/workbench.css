@@ -74,6 +74,15 @@
 .panel-file-filter { display: flex; align-items: center; flex: 0 0 32px; gap: 6px; margin: 8px; padding: 0 10px; border: 1px solid var(--panel-rule); border-radius: 11px; color: var(--panel-muted); }
 .panel-file-filter input { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--text); font-size: 13px; outline-offset: 3px; }
 .panel-file-ignored { flex: 0 0 auto; margin-inline: 10px; }
+/* One row for the git-ignored checkbox plus the folder bulk toggles (`.panel-directory` is a column,
+   so this is the tree header). Geometry stays in CSS - no Tailwind display utility on the label:
+   utilities are `!important` (`styles/tailwind.css:9`) and would beat these rules. */
+.panel-file-tools { display: flex; align-items: center; gap: 2px; min-width: 0; margin: 6px 10px; }
+.panel-file-tools .panel-file-ignored { flex: 1 1 auto; min-width: 0; margin-inline: 0; }
+.panel-file-tools .file-ignored-toggle { margin-top: 0; }
+.panel-file-tools .file-ignored-toggle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-tree-bulk { width: 26px; height: 26px; flex: 0 0 26px; }
+.panel-tree-bulk:disabled { opacity: .35; cursor: default; }
 .panel-file-tree { min-height: 0; flex: 1; padding: 0 8px 8px; overflow: auto; }
 /* Row geometry (grid columns, gap, min-height, indentation) belongs to layout.css and to
    `.file-tree-children`; `--tree-depth` is deliberately not bound in the template, so the padding

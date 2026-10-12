@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { Binary, ChevronRight, FileCode2, FileDiff, LoaderCircle, PanelRightClose, FolderOpen, Globe, Terminal, Plus, X, Maximize2, Minimize2, Search, ChevronDown, ExternalLink, List, ArrowLeft } from "lucide-vue-next";
+import { Binary, ChevronRight, FileCode2, FileDiff, LoaderCircle, PanelRightClose, FolderOpen, Globe, Terminal, Plus, X, Maximize2, Minimize2, Search, ChevronDown, ChevronsDownUp, ChevronsUpDown, ExternalLink, List, ArrowLeft } from "lucide-vue-next";
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { pruneTerminalIds, promoteTerminalId } from "../utils/terminalPool";
 import { type PanelTab, useAppStore } from "../stores/app";
-import { buildRepositoryTree, type RepositoryTreeEntry } from "../utils/fileMentions";
+import { buildRepositoryTree, type RepositoryTreeEntry, type RepositoryTreeNode } from "../utils/fileMentions";
 import { fuzzyScore } from "../utils/fuzzySearch";
 import { highlightCodeLines, type CodeSegment } from "../utils/codeHighlight";
 import CodePreview from "./CodePreview.vue";
@@ -674,6 +674,27 @@ const visibleFiles = computed(() => fileMatches.value.slice(0, FILE_LIST_LIMIT))
 const fileListTruncated = computed(() => fileMatches.value.length > visibleFiles.value.length || Boolean(repository.value?.truncated));
 const fileTree = computed(() => buildRepositoryTree(visibleFiles.value));
 
+// Every directory path currently rendered, depth-first. Drives the expand-all / collapse-all pair in
+// the same row as the git-ignored checkbox: those buttons write this list into the per-workspace
+// bucket, so the state survives a tab switch exactly like a single folder toggle does.
+const directoryPaths = computed<string[]>(() => {
+  const paths: string[] = [];
+  const walk = (nodes: RepositoryTreeNode[]) => {
+    for (const node of nodes) {
+      if (!node.directory) continue;
+      paths.push(node.path);
+      walk(node.children);
+    }
+  };
+  walk(fileTree.value);
+  return paths;
+});
+const treeAllExpanded = computed(() => directoryPaths.value.length > 0 && directoryPaths.value.every((path) => expandedDirectories.value[path] === true));
+const treeAnyExpanded = computed(() => directoryPaths.value.some((path) => expandedDirectories.value[path] === true));
+function setTreeExpandedAll(value: boolean) {
+  appStore.setRepositoryTreeExpandedBulk(directoryPaths.value, value);
+}
+
 function changeLabel(indexStatus: string, worktreeStatus: string): string {
   if (indexStatus === "?" || worktreeStatus === "?") return "U";
   if (indexStatus === "R" || worktreeStatus === "R") return "R";
@@ -980,15 +1001,33 @@ watch(() => currentTab.value?.id, async () => {
     <TerminalPane v-for="tab in mountedTerminalTabs" v-show="tab.id === currentTab?.id" :key="tab.id" :session-id="tab.terminalId" :active="tab.id === currentTab?.id" />
     <div v-if="currentTab?.kind === 'files' || ((currentTab?.kind === 'file' || currentTab?.kind === 'diff') && currentTab.treeOpen)" key="directory" class="panel-directory">
       <label class="panel-file-filter"><Search :size="16" /><input v-model="filter" type="search" :placeholder="tr('inspector.filterFiles')" :aria-label="tr('inspector.filterFiles')" /></label>
-      <label v-if="fileEntries.length" class="file-ignored-toggle panel-file-ignored" :title="tr('inspector.showIgnoredHint')">
-        <input
-          type="checkbox"
-          :checked="appStore.repositoryShowIgnoredFiles"
-          :aria-label="tr('inspector.showIgnored')"
-          @change="appStore.setRepositoryShowIgnoredFiles(($event.target as HTMLInputElement).checked)"
-        />
-        <span>{{ tr("inspector.showIgnored") }}</span>
-      </label>
+      <div v-if="fileEntries.length" class="panel-file-tools">
+        <label class="file-ignored-toggle panel-file-ignored" :title="tr('inspector.showIgnoredHint')">
+          <input
+            type="checkbox"
+            :checked="appStore.repositoryShowIgnoredFiles"
+            :aria-label="tr('inspector.showIgnored')"
+            @change="appStore.setRepositoryShowIgnoredFiles(($event.target as HTMLInputElement).checked)"
+          />
+          <span>{{ tr("inspector.showIgnored") }}</span>
+        </label>
+        <button
+          class="panel-icon-button panel-tree-bulk"
+          type="button"
+          :disabled="treeAllExpanded"
+          :aria-label="tr('inspector.expandAllFolders')"
+          :title="tr('inspector.expandAllFolders')"
+          @click="setTreeExpandedAll(true)"
+        ><ChevronsUpDown :size="15" /></button>
+        <button
+          class="panel-icon-button panel-tree-bulk"
+          type="button"
+          :disabled="!treeAnyExpanded"
+          :aria-label="tr('inspector.collapseAllFolders')"
+          :title="tr('inspector.collapseAllFolders')"
+          @click="setTreeExpandedAll(false)"
+        ><ChevronsDownUp :size="15" /></button>
+      </div>
       <div class="panel-file-tree">
         <div v-if="appStore.activeRepositoryLoading && !repository" class="repository-state"><LoaderCircle v-spin :size="18" class="is-spinning" /></div>
         <p v-else-if="appStore.activeRepositoryError" class="error-text" role="alert">{{ appStore.activeRepositoryError }}</p>

@@ -22,6 +22,11 @@ function panelState(threadId: string, tab: Partial<PanelTab> & Pick<PanelTab, "k
   const id = threadId + ":" + tab.path;
   return { inspectorByThread: { [threadId]: { tabs: [{ id, title: tab.path || "", ...tab }], activeId: id, open: true, width: 600, expanded: false } } };
 }
+// The tree opens collapsed now, so any test reaching for a nested file has to open it first - done
+// through the real control, which keeps the bulk toggle exercised by every one of these cases.
+async function expandAllFolders(wrapper: { get: (selector: string) => { trigger: (event: string) => unknown } }) {
+  await wrapper.get(`button[title="${tr("inspector.expandAllFolders")}"]`).trigger("click");
+}
 describe("InspectorPanel", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -394,6 +399,7 @@ describe("InspectorPanel", () => {
     });
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
+    await expandAllFolders(wrapper);
 
     expect(wrapper.findAll('[role="tab"]')[0].text()).toBe("Files");
     expect(wrapper.find('[title="Show branches"]').exists()).toBe(false);
@@ -622,6 +628,7 @@ describe("InspectorPanel", () => {
 
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
+    await expandAllFolders(wrapper);
     const rollback = wrapper.get('button.file-tree-rollback');
     expect(rollback.attributes("title")).toBe("Roll back session changes");
 
@@ -680,11 +687,22 @@ describe("InspectorPanel", () => {
     const panel = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
 
-    // `src` is open by default, `src/deep` is not.
+    // Every folder opens collapsed now, so nothing nested is reachable without a click.
+    expect(panel.find('button[title="Preview src/index.ts"]').exists()).toBe(false);
     expect(panel.find('button[title="Preview src/deep/nested.ts"]').exists()).toBe(false);
+    expect(panel.findAll('button[title="Expand folder"]')).toHaveLength(1); // only `src` is on screen
+
     await panel.get('button[title="Expand folder"]').trigger("click");
+    expect(panel.find('button[title="Preview src/index.ts"]').exists()).toBe(true);
+    expect(owned.repositoryTreeExpandedByWorkspace["d:/repo"]).toEqual({ src: true });
+
+    // Children render lazily, so `src/deep` only now has its own toggle - and `src` has flipped to
+    // "Collapse folder", which is why exactly one "Expand folder" button is left on screen.
+    const toggles = panel.findAll('button[title="Expand folder"]');
+    expect(toggles).toHaveLength(1);
+    await toggles[0]!.trigger("click");
     expect(panel.find('button[title="Preview src/deep/nested.ts"]').exists()).toBe(true);
-    expect(owned.repositoryTreeExpandedByWorkspace["d:/repo"]).toEqual({ "src/deep": true });
+    expect(owned.repositoryTreeExpandedByWorkspace["d:/repo"]).toEqual({ src: true, "src/deep": true });
 
     // A preview opens its own tab; returning to the files tab must not reset the tree.
     repositoryMocks.previewFile.mockResolvedValue({ path: "src/index.ts", content: "x" });
@@ -694,6 +712,37 @@ describe("InspectorPanel", () => {
     expect(tabs).toHaveLength(2);
     await tabs[0]!.trigger("click");
     expect(panel.find('button[title="Preview src/deep/nested.ts"]').exists()).toBe(true);
+  });
+
+  it("expands and collapses the whole tree from the row beside the git-ignored switch", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const owned = useAppStore();
+    owned.$patch({
+      threads: [{ id: "thread-bulk", title: "Bulk", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
+      activeThreadId: "thread-bulk",
+      repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } },
+    });
+    owned.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    owned.scheduleDesktopStateSave = vi.fn();
+    const panel = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    const expand = panel.get(`button[title="${tr("inspector.expandAllFolders")}"]`);
+    const collapse = panel.get(`button[title="${tr("inspector.collapseAllFolders")}"]`);
+    // Nothing is open yet, so collapsing is a no-op and the button says so.
+    expect(collapse.attributes("disabled")).toBeDefined();
+
+    await expand.trigger("click");
+    expect(owned.repositoryTreeExpandedByWorkspace["d:/repo"]).toEqual({ src: true, "src/deep": true });
+    expect(panel.find('button[title="Preview src/deep/nested.ts"]').exists()).toBe(true);
+    expect(expand.attributes("disabled")).toBeDefined();
+
+    await collapse.trigger("click");
+    // Collapse writes `false` per path instead of clearing the record, so the "keep the ancestors of
+    // the selected file open" fallback cannot reopen anything behind the user's back.
+    expect(owned.repositoryTreeExpandedByWorkspace["d:/repo"]).toEqual({ src: false, "src/deep": false });
+    expect(panel.findAll('button[title^="Preview "]')).toHaveLength(0);
   });
 
   it("lists every workspace file up to the backend cap instead of the first 500", async () => {
@@ -710,6 +759,7 @@ describe("InspectorPanel", () => {
     store.scheduleDesktopStateSave = vi.fn();
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
+    await expandAllFolders(wrapper);
 
     expect(previewTitles(wrapper)).toHaveLength(paths.length);
     expect(wrapper.find(".diff-notice").exists()).toBe(false);
@@ -737,6 +787,8 @@ describe("InspectorPanel", () => {
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
 
+    // `.pi` is collapsed like every other folder, so the ignored row one level down needs a click.
+    await wrapper.get('button[title=".pi"]').trigger("click");
     // The folder Git folds into a single `--directory` row still renders, and says why it is faded.
     const folder = wrapper.get('button[title=".pi/plans (git-ignored)"]');
     expect(folder.classes()).toContain("is-ignored");
@@ -771,6 +823,7 @@ describe("InspectorPanel", () => {
     store.scheduleDesktopStateSave = vi.fn();
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
+    await expandAllFolders(wrapper);
 
     expect(previewTitles(wrapper)).toHaveLength(paths.length);
 
@@ -1177,6 +1230,7 @@ describe("InspectorPanel", () => {
     repositoryMocks.previewFile.mockResolvedValue({ path: "src/index.ts", content: "x" });
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
+    await expandAllFolders(wrapper);
 
     const tree = wrapper.get(".panel-file-tree").element as HTMLElement;
     tree.scrollTop = 640;

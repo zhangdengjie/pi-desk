@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { AtSign, ChevronDown, ChevronRight, File, Folder, FolderOpen, Undo2 } from "lucide-vue-next";
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import { tr } from "../i18n";
 import type { RepositoryTreeNode } from "../utils/fileMentions";
 
@@ -24,9 +24,12 @@ const emit = defineEmits<{
   pin: [path: string];
   expand: [path: string, value: boolean];
 }>();
-const localOpen = ref((props.depth ?? 0) === 0);
+// Directories start collapsed. The store record is the only thing that says "open", with one
+// fallback: the ancestors of the file currently being previewed stay open, so a tab always reveals
+// its own path. `filtering` still force-opens everything - a match buried in a closed folder is
+// unreadable otherwise.
 const open = computed({
-  get: () => props.filtering || (props.expanded?.[props.node.path] ?? (props.selectedPath?.startsWith(props.node.path + "/") || localOpen.value)),
+  get: () => props.filtering || (props.expanded?.[props.node.path] ?? Boolean(props.selectedPath?.startsWith(`${props.node.path}/`))),
   set: (value) => emit("expand", props.node.path, value),
 });
 // The tree lists git-ignored paths greyed out, so a folder name has to say which of the two it is.
