@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -463,7 +464,8 @@ func TestCatalogServicePersistsDesktopState(t *testing.T) {
 			Appearance: "light", Language: "zh-CN", FontFamily: "mono", FontSize: 15, OfflineMode: true, StreamingBehavior: "steer",
 			LightCodeTheme: "github-light", DarkCodeTheme: "github-dark", ShowCodeLineNumbers: true, WrapCodeLines: true, CodeFontSize: 12,
 			SidebarWidth: 344, InspectorOpen: true, InspectorWidth: 468, InspectorTab: "changes", WorkspaceApplication: "vscode",
-			TreeExpanded: `{"d:/repo":["src"]}`,
+			TreeExpanded:        `{"d:/repo":["src"]}`,
+			HiddenSlashCommands: "late,ontime",
 		},
 		Threads: []domain.DesktopThreadState{{
 			ID: "thread-1", Title: "Audit", WorkspacePath: workspaceRecord.Path, Trust: "deny", Status: "running",
@@ -476,7 +478,7 @@ func TestCatalogServicePersistsDesktopState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.ActiveThreadID != "thread-1" || len(state.Threads) != 1 || state.Threads[0].WorkspaceID != workspaceRecord.ID || state.Threads[0].Draft != "continue" || !state.Threads[0].Unread || state.Preferences == nil || state.Preferences.Language != "zh-CN" || state.Preferences.FontFamily != "mono" || state.Preferences.FontSize != 15 || state.Preferences.LightCodeTheme != "github-light" || state.Preferences.DarkCodeTheme != "github-dark" || !state.Preferences.ShowCodeLineNumbers || !state.Preferences.WrapCodeLines || state.Preferences.CodeFontSize != 12 || !state.Preferences.OfflineMode || state.Preferences.SidebarWidth != 344 || state.Preferences.InspectorWidth != 468 || state.Preferences.WorkspaceApplication != "vscode" || state.Preferences.TreeExpanded != `{"d:/repo":["src"]}` {
+	if state.ActiveThreadID != "thread-1" || len(state.Threads) != 1 || state.Threads[0].WorkspaceID != workspaceRecord.ID || state.Threads[0].Draft != "continue" || !state.Threads[0].Unread || state.Preferences == nil || state.Preferences.Language != "zh-CN" || state.Preferences.FontFamily != "mono" || state.Preferences.FontSize != 15 || state.Preferences.LightCodeTheme != "github-light" || state.Preferences.DarkCodeTheme != "github-dark" || !state.Preferences.ShowCodeLineNumbers || !state.Preferences.WrapCodeLines || state.Preferences.CodeFontSize != 12 || !state.Preferences.OfflineMode || state.Preferences.SidebarWidth != 344 || state.Preferences.InspectorWidth != 468 || state.Preferences.WorkspaceApplication != "vscode" || state.Preferences.TreeExpanded != `{"d:/repo":["src"]}` || state.Preferences.HiddenSlashCommands != "late,ontime" {
 		t.Fatalf("unexpected desktop state: %#v", state)
 	}
 }
@@ -631,5 +633,41 @@ func TestComposerImageCacheAndMetadata(t *testing.T) {
 	}
 	if _, err := service.ReadComposerImage(key); err == nil {
 		t.Fatal("missing cache accepted")
+	}
+}
+
+// TestDesktopPreferencesFieldsAreCarried is the regression net for the class of bug that made
+// `hiddenSlashCommands` never come back: this package copies DesktopPreferences field by field in two
+// hand-written mappings, and a field added to the domain struct without a line in both of them is
+// silently dropped on every save. Reading the struct from source is deliberate - it is the only way
+// the check notices a *new* field.
+func TestDesktopPreferencesFieldsAreCarried(t *testing.T) {
+	structRaw, err := os.ReadFile(filepath.Join("..", "domain", "catalog.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mappingRaw, err := os.ReadFile("catalog.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(structRaw)
+	start := strings.Index(text, "type DesktopPreferences struct {")
+	if start < 0 {
+		t.Fatal("DesktopPreferences struct not found in domain/catalog.go")
+	}
+	block := text[start:]
+	block = block[:strings.Index(block, "\n}")]
+	fields := regexp.MustCompile(`(?m)^\t([A-Z][A-Za-z0-9]*)\s`).FindAllStringSubmatch(block, -1)
+	if len(fields) < 20 {
+		t.Fatalf("expected the whole preferences struct, found %d exported fields", len(fields))
+	}
+	mapping := string(mappingRaw)
+	for _, match := range fields {
+		field := match[1]
+		// `\b` matters: TranscriptTint is a prefix of TranscriptTintStrength.
+		hits := len(regexp.MustCompile(`\.Preferences\.`+field+`\b`).FindAllStringIndex(mapping, -1))
+		if hits != 2 {
+			t.Errorf("domain.DesktopPreferences.%s is copied %d time(s) in appservice/catalog.go, want 2 (load + save)", field, hits)
+		}
 	}
 }

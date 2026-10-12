@@ -188,7 +188,8 @@ func TestCatalogPersistsValidatedDesktopPreferences(t *testing.T) {
 		OfflineMode: true, ProxyEnabled: true, ProxyURL: "socks5://127.0.0.1:10800",
 		StreamingBehavior: "followUp", SidebarCollapsed: true, SidebarWidth: 344,
 		InspectorOpen: true, InspectorWidth: 468, InspectorTab: "context",
-		TreeExpanded: `{"d:/repo":["src","src/deep"]}`,
+		TreeExpanded:        `{"d:/repo":["src","src/deep"]}`,
+		HiddenSlashCommands: "eod,week",
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +198,7 @@ func TestCatalogPersistsValidatedDesktopPreferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if desktop.Preferences == nil || desktop.Preferences.Appearance != "light" || desktop.Preferences.Language != "en" || desktop.Preferences.FontFamily != "serif" || desktop.Preferences.FontSize != 16 || desktop.Preferences.LightCodeTheme != "vitesse-light" || desktop.Preferences.DarkCodeTheme != "catppuccin-mocha" || !desktop.Preferences.ShowCodeLineNumbers || desktop.Preferences.CodeFontSize != 13 || !desktop.Preferences.ProxyEnabled || desktop.Preferences.StreamingBehavior != "followUp" || desktop.Preferences.SidebarWidth != 344 || desktop.Preferences.InspectorWidth != 468 || desktop.Preferences.InspectorTab != "context" || desktop.Preferences.TreeExpanded != `{"d:/repo":["src","src/deep"]}` {
+	if desktop.Preferences == nil || desktop.Preferences.Appearance != "light" || desktop.Preferences.Language != "en" || desktop.Preferences.FontFamily != "serif" || desktop.Preferences.FontSize != 16 || desktop.Preferences.LightCodeTheme != "vitesse-light" || desktop.Preferences.DarkCodeTheme != "catppuccin-mocha" || !desktop.Preferences.ShowCodeLineNumbers || desktop.Preferences.CodeFontSize != 13 || !desktop.Preferences.ProxyEnabled || desktop.Preferences.StreamingBehavior != "followUp" || desktop.Preferences.SidebarWidth != 344 || desktop.Preferences.InspectorWidth != 468 || desktop.Preferences.InspectorTab != "context" || desktop.Preferences.TreeExpanded != `{"d:/repo":["src","src/deep"]}` || desktop.Preferences.HiddenSlashCommands != "eod,week" {
 		t.Fatalf("unexpected preferences: %#v", desktop.Preferences)
 	}
 	if err := catalog.SaveDesktop(DesktopRecord{Preferences: &PreferencesRecord{

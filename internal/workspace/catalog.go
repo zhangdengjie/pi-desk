@@ -121,7 +121,10 @@ type PreferencesRecord struct {
 	PanelState             string `json:"panelState,omitempty"`
 	// TreeExpanded is the opaque JSON blob the frontend writes for the file tree's expansion state.
 	// Deliberately unvalidated, like PanelState: a broken blob is discarded by the reader, never by us.
-	TreeExpanded         string `json:"treeExpanded,omitempty"`
+	TreeExpanded string `json:"treeExpanded,omitempty"`
+	// HiddenSlashCommands lists slash commands the composer should not offer. The field used to exist
+	// only in the domain struct, so the frontend wrote it on every save and this layer dropped it.
+	HiddenSlashCommands  string `json:"hiddenSlashCommands,omitempty"`
 	NotificationsEnabled bool   `json:"notificationsEnabled"`
 	UpdateChecksEnabled  bool   `json:"updateChecksEnabled"`
 	CloseToTray          bool   `json:"closeToTray"`
