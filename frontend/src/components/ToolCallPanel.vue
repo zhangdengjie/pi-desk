@@ -8,6 +8,7 @@ import { tr } from "../i18n";
 import { panelOpenState, pinPanelOpen } from "../utils/detailsOpenState";
 import { attachInnerTail, type InnerTail } from "../utils/innerTail";
 import { useRevealedText } from "../composables/useRevealedText";
+import { decodePercentRuns } from "../utils/percentText";
 import { streamTuning } from "../utils/streamTuning";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 import LoadingRing from "./LoadingRing.vue";
@@ -96,6 +97,11 @@ const panelOpen = computed(() => {
 // a time. While the call runs, the window reveals them frame by frame and then follows
 // its own tail; the moment the call settles the full text is on screen.
 const shownOutput = useRevealedText(() => props.tool.output, () => props.tool.status === "running");
+
+// A percent-encoded payload (an MCP stream that proxies an SSE body, a `curl` of a query
+// string) is rewritten *for reading only* - see utils/percentText for the safety rules.
+// `tool.output` itself is untouched, so the Copy button above still hands back the raw bytes.
+const outputView = computed(() => decodePercentRuns(shownOutput.value));
 let innerTail: InnerTail | undefined;
 let innerTailEl: HTMLElement | undefined;
 
@@ -108,7 +114,7 @@ let innerTailEl: HTMLElement | undefined;
 // second still has to land showing what it printed. A finished call that the reader
 // opens by hand later is deliberately excluded - they mean to read it from the top.
 let wasRunning = props.tool.status === "running";
-watch(() => [panelOpen.value, props.tool.status, shownOutput.value.length] as const, () => {
+watch(() => [panelOpen.value, props.tool.status, outputView.value.text.length] as const, () => {
   const settling = wasRunning && props.tool.status !== "running";
   wasRunning = props.tool.status === "running";
   if (!panelOpen.value || !belongsToLiveRun.value) return;
@@ -387,7 +393,11 @@ onBeforeUnmount(() => {
     </div>
     <div v-if="tool.output" class="tool-section">
       <div class="tool-section-header">
-        <span>{{ tr("tools.output") }} <small v-if="tool.truncated">{{ tr("tools.truncated") }}</small></span>
+        <span>
+          {{ tr("tools.output") }}
+          <small v-if="tool.truncated">{{ tr("tools.truncated") }}</small>
+          <small v-if="outputView.decoded" class="tool-decoded" :title="tr('tools.decodedHint')">{{ tr("tools.decoded") }}</small>
+        </span>
         <button type="button" :title="tr('tools.copyOutput')" :aria-label="tr('tools.copyOutput')" @click="void copyText('output', tool.output)">
           <Check v-if="copied === 'output'" :size="13" />
           <Copy v-else :size="13" />
@@ -396,7 +406,7 @@ onBeforeUnmount(() => {
       <!-- `shownOutput` is already revealed a frame at a time, so MarkdownBody gets streaming=false:
            a second reveal on top of the first would hold text back that is already on screen. -->
       <div v-if="markdownOutput" ref="outputPanel" class="tool-output tool-markdown"><MarkdownBody :text="shownOutput" :streaming="false" /></div>
-      <pre v-else ref="outputPanel" class="tool-output">{{ shownOutput }}</pre>
+      <pre v-else ref="outputPanel" class="tool-output">{{ outputView.text }}</pre>
     </div>
     <ImagePreviewDialog v-if="previewImage" :image="previewImage" @close="previewImage = undefined" />
     </template>

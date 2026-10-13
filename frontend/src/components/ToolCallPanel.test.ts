@@ -56,6 +56,31 @@ async function openPanel(wrapper: ReturnType<typeof mount>) {
     expect(writeText).toHaveBeenNthCalledWith(2, "all passed");
   });
 
+  it("renders a percent-encoded stream readably while copy still hands back the raw bytes", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    // Shaped like the real `app_api /api/ai/chat/stream` output: encoded CJK, an encoded \n,
+    // and URL punctuation that must NOT be decoded.
+    const raw = "note=%E8%AF%B7%E6%94%BE%E5%BF%83%0A%E7%9D%A1%E7%9C%A0 path=%2Fa%2Fb";
+    pinPanelOpen("tool-encoded", true);
+    const wrapper = mount(ToolCallPanel, {
+      props: { tool: { id: "tool-encoded", name: "app_api", output: raw, status: "complete" } },
+    });
+
+    const pre = wrapper.get("pre.tool-output");
+    expect(pre.text()).toContain("note=请放心");
+    expect(pre.text()).toContain("睡眠");
+    // over half this payload is escapes, so it reads as "an encoded blob" and its ASCII
+    // escapes decode too (utils/percentText rule 2). A log that merely quotes one URL keeps
+    // `%2F`/`%20` quoted - asserted in src/utils/percentText.test.ts.
+    expect(pre.text()).toContain("path=/a/b");
+    expect(pre.text()).not.toContain("%E8%AF%B7");
+    expect(wrapper.text()).toContain("Decoded for display");
+
+    await wrapper.get('[aria-label="Copy tool output"]').trigger("click");
+    expect(writeText).toHaveBeenCalledWith(raw);
+  });
+
   it("keeps failed calls collapsed by default and labels projected output truncation", async () => {
     const wrapper = mount(ToolCallPanel, {
       props: { tool: { id: "tool-2", name: "read", arguments: { path: "main.go" }, output: "partial", truncated: true, status: "error" } },
