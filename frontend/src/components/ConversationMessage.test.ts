@@ -760,12 +760,32 @@ describe("ConversationMessage", () => {
     expect(details.get("summary").text()).toContain("241,443 tokens before");
     expect(details.get("summary").text()).toContain("about 32,000 tokens after");
     expect(details.get("summary").text()).toContain("08/14 11:24");
+    // A row restored from a session Pi compacted elsewhere has no measured duration - and must
+    // not claim one.
+    expect(details.get("summary").text()).not.toContain("took");
     expect(details.attributes("open")).toBeUndefined();
     expect(wrapper.find(".message-actions").exists()).toBe(false);
 
     await details.get("summary").trigger("click");
     expect(details.attributes("open")).toBeDefined();
     expect(details.get(".compaction-summary").text()).toContain("The previous implementation details were retained.");
+  });
+
+  it("labels a watched compaction with the time it took", async () => {
+    const wrapper = mount(ConversationMessage, {
+      props: {
+        message: {
+          id: "live-compaction-1", role: "system", text: "", thinking: "",
+          timestamp: "10/13 15:00", streaming: false, tools: [],
+          compaction: { summary: "## Saved", tokensBefore: 100_000, estimatedTokensAfter: 20_000, durationMs: 8_400 },
+        },
+      },
+      global: { plugins: [createPinia()] },
+    });
+
+    const label = wrapper.get(".compaction-divider summary").text();
+    expect(label).toContain("took 8.4s");
+    expect(label).toContain("about 20,000 tokens after");
   });
 
   it("offers copy, inline edit, delete confirmation, and fork for a persisted message", async () => {

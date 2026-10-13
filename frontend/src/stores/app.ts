@@ -220,6 +220,13 @@ export interface TimelineCompaction {
   summary: string;
   tokensBefore?: number;
   estimatedTokensAfter?: number;
+  /**
+   * Wall time of the summarisation call. Pi keeps no such number - a `compaction` entry stores
+   * the moment it was written, not how long the work took - so this only exists for a compaction
+   * this window actually watched (`compaction_start` -> `compaction_end`). Historical rows
+   * simply omit it; the label disappears rather than showing an estimate of idle time.
+   */
+  durationMs?: number;
 }
 
 export interface TimelineRunNotice {
@@ -872,7 +879,11 @@ function nestedToolHistory(value: unknown): ToolExecution[] | undefined {
   return roots;
 }
 
-function historicalMessages(source: Array<Record<string, unknown>>, compactionEstimates: Record<string, number> = {}): TimelineMessage[] {
+function historicalMessages(
+  source: Array<Record<string, unknown>>,
+  compactionEstimates: Record<string, number> = {},
+  compactionDurations: Record<string, number> = {},
+): TimelineMessage[] {
   const result: TimelineMessage[] = [];
   const toolsByID = new Map<string, ToolExecution>();
   for (const value of source) {
@@ -882,6 +893,7 @@ function historicalMessages(source: Array<Record<string, unknown>>, compactionEs
       const summary = typeof value.summary === "string" ? value.summary : "";
       const tokensBefore = tokenCount(value.tokensBefore);
       const persistedEstimate = tokenCount(value.estimatedTokensAfter);
+      const estimateKey = compactionEstimateKey(summary, tokensBefore);
       result.push({
         id: identity.id,
         role: "system", text: "", thinking: "",
@@ -889,7 +901,8 @@ function historicalMessages(source: Array<Record<string, unknown>>, compactionEs
         compaction: {
           summary,
           tokensBefore,
-          estimatedTokensAfter: persistedEstimate ?? compactionEstimates[compactionEstimateKey(summary, tokensBefore)],
+          estimatedTokensAfter: persistedEstimate ?? compactionEstimates[estimateKey],
+          durationMs: compactionDurations[estimateKey],
         },
       });
       continue;
@@ -965,7 +978,7 @@ function historicalMessages(source: Array<Record<string, unknown>>, compactionEs
   return result;
 }
 
-function liveCompactionMessage(payload: Record<string, unknown>): TimelineMessage | undefined {
+function liveCompactionMessage(payload: Record<string, unknown>, durationMs?: number): TimelineMessage | undefined {
   if (payload.aborted === true) return undefined;
   const result = payload.result && typeof payload.result === "object" ? payload.result as Record<string, unknown> : undefined;
   if (!result || typeof result.summary !== "string") return undefined;
@@ -979,6 +992,7 @@ function liveCompactionMessage(payload: Record<string, unknown>): TimelineMessag
       summary: result.summary,
       tokensBefore,
       estimatedTokensAfter: tokenCount(result.estimatedTokensAfter),
+      durationMs,
     },
   };
 }
@@ -1127,6 +1141,9 @@ export const useAppStore = defineStore("app", {
     promptCacheByThread: {} as Record<string, PromptCacheStatus | undefined>,
     sessionStatsRefreshGenerationByThread: {} as Record<string, number>,
     compactionEstimatesByThread: {} as Record<string, Record<string, number>>,
+    compactionDurationsByThread: {} as Record<string, Record<string, number>>,
+    // When `compaction_start` arrived, per thread. Consumed by the matching `compaction_end`.
+    compactionStartByThread: {} as Record<string, number>,
     latestCompactionEstimateByThread: {} as Record<string, number | undefined>,
     modelsByThread: {} as Record<string, PiModel[]>,
     configuredModels: [] as PiModel[],
@@ -1997,7 +2014,7 @@ export const useAppStore = defineStore("app", {
       this.sessionMutationErrorByThread[thread.id] = snapshot.mutationError || "";
       this.transcriptEntriesByThread[thread.id] = entries;
       this.promptCacheByThread[thread.id] = latestPromptCacheStatus(entries);
-      const historical = historicalMessages(entries, this.compactionEstimatesByThread[thread.id]);
+      const historical = historicalMessages(entries, this.compactionEstimatesByThread[thread.id], this.compactionDurationsByThread[thread.id]);
       adoptStreamedIds(historical, this.messagesByThread[thread.id] ?? []);
       for (const message of historical) {
         if (message.compaction?.estimatedTokensAfter !== undefined) {
@@ -2860,6 +2877,7 @@ export const useAppStore = defineStore("app", {
         this.waitingForOutputByThread, this.sessionStateByThread,
         this.sessionStatsByThread, this.promptCacheByThread, this.sessionStatsRefreshGenerationByThread,
         this.compactionEstimatesByThread, this.latestCompactionEstimateByThread,
+        this.compactionDurationsByThread, this.compactionStartByThread,
         this.modelsByThread, this.thinkingLevelsByThread, this.thinkingLevelsRefreshGenerationByThread, this.commandsByThread,
         this.queueByThread, this.pendingPromptsByThread, this.pendingPromptsPausedByThread, this.pendingPromptDispatchByThread, this.sessionMutationErrorByThread, this.retryByThread, this.extensionRequestByThread, this.extensionRequestsPendingByThread, this.extensionStatusesByThread,
         this.extensionWidgetsByThread, this.extensionTitleByThread, this.transcriptStateByThread,
@@ -3751,10 +3769,17 @@ export const useAppStore = defineStore("app", {
         }));
     },
     applyCompactionEstimate(threadId: string, compaction: TimelineCompaction, invalidateStats = true) {
+      const key = compactionEstimateKey(compaction.summary, compaction.tokensBefore);
+      // The duration is remembered on the same channel as the token estimate, because it is the
+      // same kind of number: this window measured it, Pi's durable entry does not carry it.
+      if (compaction.durationMs !== undefined) {
+        const durations = this.compactionDurationsByThread[threadId] ?? (this.compactionDurationsByThread[threadId] = {});
+        durations[key] = compaction.durationMs;
+      }
       const estimate = compaction.estimatedTokensAfter;
       if (estimate === undefined) return;
       const estimates = this.compactionEstimatesByThread[threadId] ?? (this.compactionEstimatesByThread[threadId] = {});
-      estimates[compactionEstimateKey(compaction.summary, compaction.tokensBefore)] = estimate;
+      estimates[key] = estimate;
       this.latestCompactionEstimateByThread[threadId] = estimate;
 
       const current = this.sessionStatsByThread[threadId] ?? {};
@@ -4087,13 +4112,20 @@ export const useAppStore = defineStore("app", {
           // Pi writes the durable compaction entry only when compaction succeeds.
           // Keep start progress out of the conversation timeline, but keep
           // automatic compaction visibly busy until Pi emits agent_settled.
+          this.compactionStartByThread[thread.id] = Date.now();
           if (payload.reason === "threshold" || payload.reason === "overflow") {
             thread.status = "running";
             this.waitingForOutputByThread[thread.id] = true;
             this.sessionOperationByThread[thread.id] = COMPACTING_OPERATION;
           }
           break;
-        case "compaction_end":
+        case "compaction_end": {
+          // Pi keeps no duration on a compaction entry - its `timestamp` is the moment it was
+          // written - so this start/end pair is the only clock there is. Dropped on the ways out
+          // that render no row (aborted, failed), so a retry cannot inherit a stale start.
+          const startedAt = this.compactionStartByThread[thread.id];
+          delete this.compactionStartByThread[thread.id];
+          const durationMs = startedAt === undefined ? undefined : Math.max(0, Date.now() - startedAt);
           if (payload.reason === "threshold" || payload.reason === "overflow") {
             thread.status = "running";
             this.waitingForOutputByThread[thread.id] = true;
@@ -4107,7 +4139,7 @@ export const useAppStore = defineStore("app", {
           } else if (payload.aborted === true) {
             break;
           } else {
-            const marker = liveCompactionMessage(payload);
+            const marker = liveCompactionMessage(payload, durationMs);
             if (!marker) break;
             this.applyCompactionEstimate(thread.id, marker.compaction!);
             if (thread.status === "idle" && thread.sessionFile) {
@@ -4117,6 +4149,7 @@ export const useAppStore = defineStore("app", {
             }
           }
           break;
+        }
         case "auto_retry_start": {
           thread.status = "running";
           const retryError = runtimeErrorText(payload.errorMessage);

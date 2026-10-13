@@ -13,6 +13,7 @@ import { splitTaggedThinking } from "../utils/taggedThinking";
 import { panelOpenState, pinPanelOpen } from "../utils/detailsOpenState";
 import { attachInnerTail, type InnerTail } from "../utils/innerTail";
 import { humanizeRunError } from "../utils/runErrors";
+import { formatElapsed } from "../utils/elapsed";
 import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 import MarkdownBody from "./MarkdownBody.vue";
 import MarkdownOutlineNav from "./MarkdownOutlineNav.vue";
@@ -210,13 +211,15 @@ const compactionTokensAfterLabel = computed(() => {
   if (value === undefined) return "";
   return tr("conversation.compactedTokensAfter", { count: value.toLocaleString() });
 });
+const compactionDurationLabel = computed(() => {
+  const value = props.message.compaction?.durationMs;
+  if (value === undefined || value < 0) return "";
+  return tr("conversation.compactedIn", { time: formatElapsed(value) });
+});
 const durationLabel = computed(() => {
   const duration = props.message.durationMs;
   if (duration === undefined || duration < 0) return "";
-  const seconds = Math.floor(duration / 1000);
-  if (seconds < 1) return `${duration}ms`;
-  if (seconds < 60) return `${(duration / 1000).toFixed(seconds < 10 ? 1 : 0)}s`;
-  return `${Math.floor(seconds / 60)}m${seconds % 60}s`;
+  return formatElapsed(duration);
 });
 
 watch(() => props.message.id, () => {
@@ -474,6 +477,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
           <strong>{{ tr("conversation.contextCompacted") }}</strong>
           <span v-if="compactionTokensBeforeLabel">· {{ compactionTokensBeforeLabel }}</span>
           <span v-if="compactionTokensAfterLabel">· {{ compactionTokensAfterLabel }}</span>
+          <span v-if="compactionDurationLabel">· {{ compactionDurationLabel }}</span>
           <time v-if="message.timestamp">· {{ message.timestamp }}</time>
         </span>
         <span class="compaction-line" aria-hidden="true" />

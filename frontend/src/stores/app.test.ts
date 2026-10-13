@@ -2260,6 +2260,53 @@ describe("app store", () => {
     });
   });
 
+  it("measures a compaction it watched and remembers the duration for the historical row", async () => {
+    const store = useAppStore();
+    await store.createThread("/work/repo", "deny");
+    const thread = store.activeThread!;
+    thread.started = true;
+    thread.generation = 3;
+    thread.status = "running";
+    store.messagesByThread[thread.id] = [];
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-13T07:00:00Z"));
+    store.handlePiEvent({
+      threadId: thread.id,
+      event: { generation: 3, type: "compaction_start", payload: { reason: "manual" } },
+    });
+    vi.advanceTimersByTime(12_400);
+    store.handlePiEvent({
+      threadId: thread.id,
+      event: {
+        generation: 3,
+        type: "compaction_end",
+        payload: {
+          reason: "manual", aborted: false,
+          result: { summary: "## Saved", tokensBefore: 100_000, estimatedTokensAfter: 20_000 },
+        },
+      },
+    });
+
+    expect(store.activeMessages.find((message) => message.compaction)?.compaction)
+      .toMatchObject({ summary: "## Saved", durationMs: 12_400 });
+    // The start stamp is consumed, so a later retry cannot inherit it.
+    expect(store.compactionStartByThread[thread.id]).toBeUndefined();
+
+    vi.useRealTimers();
+    // Pi's durable entry carries neither the estimate nor the duration: the row rebuilt from a
+    // snapshot has to read both back from the tables this window filled.
+    store.applySessionSnapshot(thread, {
+      messages: [{
+        role: "piDeskCompaction", summary: "## Saved", tokensBefore: 100_000,
+        timestamp: "2026-10-13T07:00:12Z", piDeskEntryId: "compact-1",
+      }],
+      messageCount: 1,
+    });
+    expect(store.activeMessages.find((message) => message.compaction)?.compaction)
+      .toMatchObject({ estimatedTokensAfter: 20_000, durationMs: 12_400 });
+  });
+
   it("places successful compaction at the live Pi event position without temporary timeline notices", async () => {
     const store = useAppStore();
     await store.createThread("D:\\work\\repo", "deny");
