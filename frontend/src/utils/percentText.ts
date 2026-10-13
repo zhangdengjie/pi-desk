@@ -24,10 +24,11 @@
  *    and the run stays as it was written.
  *
  * A truncated head (`F%99%E6%A0%87…`, cut mid-sequence by the output cap) still decodes: the
- * orphaned continuation byte becomes one U+FFFD and the rest turns readable.
+ * bytes that do form a character turn readable, and the orphan is shown as the raw `%XX` it
+ * was. Nothing is ever replaced by U+FFFD - a box glyph in the middle of a sentence reads as
+ * "this renderer is broken", while `%84` reads as "these bytes were already gone upstream".
  */
 
-const REPLACEMENT = "\uFFFD";
 const RUN = /(?:%[0-9A-Fa-f]{2}){2,}/g;
 // In a whole encoded payload a lone pair is part of the encoding too (`%5E` for `^` sits between
 // two digits, so a {2,} run never reaches it). Only used once density says so.
@@ -50,6 +51,8 @@ const WHOLE_PAYLOAD_DENSITY = 0.5;
 function decodeRun(run: string, aggressive: boolean): string | null {
   const bytes: number[] = [];
   for (const match of run.matchAll(PAIR)) bytes.push(parseInt(match[1]!, 16));
+  // The source text of byte k, used whenever that byte cannot be shown as a character.
+  const raw = (k: number) => run.slice(k * 3, k * 3 + 3);
 
   const chars: string[] = [];
   let bad = 0;
@@ -79,7 +82,7 @@ function decodeRun(run: string, aggressive: boolean): string | null {
       cp = lead & 0x07;
     } else {
       bad += 1;
-      chars.push(REPLACEMENT);
+      chars.push(raw(i));
       i += 1;
       continue;
     }
@@ -101,7 +104,7 @@ function decodeRun(run: string, aggressive: boolean): string | null {
     }
     if (!complete || cp < 0x80 || (cp >= 0xd800 && cp <= 0xdfff) || cp > 0x10ffff) {
       bad += 1;
-      chars.push(REPLACEMENT);
+      chars.push(raw(i));
       i += 1;
       continue;
     }

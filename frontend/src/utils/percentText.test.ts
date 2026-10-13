@@ -52,13 +52,24 @@ describe("decodePercentRuns", () => {
   });
 
   it("survives a run cut mid-sequence by the output cap", () => {
-    // head truncated: the orphaned %99 becomes one replacement char, the rest turns readable
+    // head truncated: the orphaned %99 stays as written, the rest turns readable
     const { text, decoded } = decodePercentRuns("F%99%E6%A0%87%E9%A2%98");
     expect(decoded).toBe(true);
     expect(text).toContain("标题");
-    expect(text).toMatch(/^F\uFFFD?标题$/);
+    expect(text).toBe("F%99标题");
     // tail truncated: readable part kept, dangling bytes still shown as written
     expect(decodePercentRuns("%E4%BD%A0%E5%A5").text).toBe("你%E5%A5");
+  });
+
+  it("shows bytes that were already lost upstream as written, never as a box glyph", () => {
+    // The real shape behind the reported "乱码": an MCP server cut an escaped string at a
+    // character budget, so 的 (%E7%9A%84) lost its first two pairs at the end of the head
+    // field and the leftover `A%84` landed at the start of `textTail`.
+    const input = "%E4%B8%8D\",\n  \"textTail\": \"A%84%E5%AE%9E%E9%99%85";
+    const { text } = decodePercentRuns(input);
+    expect(text).toContain("不");
+    expect(text).toContain("A%84实际");
+    expect(text).not.toContain("\uFFFD");
   });
 
   it("is a no-op (same string reference) for text with no percent or no candidate run", () => {
