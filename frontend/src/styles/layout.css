@@ -3690,7 +3690,7 @@ html.is-resizing-pane .inspector {
   border-radius: 6px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: calc(12px + var(--font-size-delta));
   white-space: nowrap;
 }
 
@@ -8935,7 +8935,7 @@ article.mcp-server-row {
 .browser-toolbar .icon-button { width: 32px; height: 36px; flex: 0 0 32px; border-radius: 8px; }
 .browser-toolbar .icon-button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .browser-address:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
-.browser-error { padding: 8px 12px; color: var(--red); font-size: 12px; flex-shrink: 0; }
+.browser-error { padding: 8px 12px; color: var(--red); font-size: calc(12px + var(--font-size-delta)); flex-shrink: 0; }
 .browser-native-viewport {
   position: relative;
   flex: 1;
@@ -8950,7 +8950,7 @@ article.mcp-server-row {
 .browser-empty > svg { display: block; margin: 0 auto 24px; opacity: .6; }
 .browser-empty h3 { margin: 0 0 10px; font-size: var(--font-size-body); font-weight: 500; color: var(--text); }
 .browser-empty p { margin: 0; font-size: var(--font-size-body); }
-.browser-placeholder { color: var(--text-muted); font-size: 13px; }
+.browser-placeholder { color: var(--text-muted); font-size: calc(13px + var(--font-size-delta)); }
 
 .is-sidebar-collapsed .primary-nav {
   justify-items: center;

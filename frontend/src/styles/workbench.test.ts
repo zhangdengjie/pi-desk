@@ -317,6 +317,28 @@ describe("responsive workbench layout", () => {
     }
   });
 
+  it("keeps every absolute px font-size in the stylesheets on the ladder", async () => {
+    // The rem trap above has a sibling, and it hides better because a literal looks deliberate:
+    // `font-size: 13px` in a stylesheet is exactly as deaf to Settings > 外观 > 字体大小 as `text-sm`
+    // was. The panel chrome carried 12 of them, so the file tabs, the breadcrumb and the tree stayed
+    // put while the sidebar beside them grew - one setting, two scales, on the same screen.
+    // `--code-font-size` is the only legitimate literal: it is its own setting, not an oversight.
+    for (const path of ["src/styles/workbench.css", "src/styles/layout.css"]) {
+      const bare = (await textAt(path)).replace(/\/\*[\s\S]*?\*\//g, "");
+      const offenders: string[] = [];
+      for (const rule of bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        const selector = rule[1].trim().replace(/\s+/g, " ").slice(0, 64);
+        for (const decl of rule[2].matchAll(/(?:^|[;\s])font-size:\s*([^;]+)/g)) {
+          const value = decl[1].trim();
+          if (!/\d(\.\d+)?px/.test(value)) continue;
+          if (value.includes("--font-size-delta") || value.includes("--code-font-size")) continue;
+          offenders.push(`${selector} { font-size: ${value} }`);
+        }
+      }
+      expect(offenders, `${path} carries font sizes that ignore 字体大小`).toEqual([]);
+    }
+  });
+
   it("previews the tint presets at a strength that actually exists", async () => {
     const css = await textAt("src/styles/layout.css");
     const preset = css.match(/\.appearance-color-preset\s*{[^}]*}/)?.[0] ?? "";
