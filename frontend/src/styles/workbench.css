@@ -562,6 +562,10 @@
   border-bottom: 0;
 }
 
+/* The rail rung is the only font size for the rows in this column. Every row that used to carry a
+ * private size (`.workspace-threads .thread-row`, `.thread-row.active-session-row`) now inherits from
+ * here, so `Settings > 外观 > 字体大小` moves the nav items and both lists together, and the group rows
+ * finally draw at the 12px the 活跃会话 rows have always drawn at. */
 .new-task-button,
 .primary-nav button,
 .workspace-row,
@@ -571,7 +575,7 @@
   gap: 10px;
   padding: 0 10px;
   border-radius: var(--radius-md);
-  font-size: calc(14px + var(--font-size-delta));
+  font-size: var(--font-size-rail);
 }
 
 .primary-nav button {
@@ -628,20 +632,22 @@
   padding: 2px 0 8px;
 }
 
+/* Geometry only - no `font-size` here. `.workspace-threads .thread-row` is 0,2,0, so a size written
+ * on it outranks the rail rule at 0,1,0 no matter which file is read first; that is how these rows
+ * ended up two rungs above their own heading. */
 .workspace-threads .thread-row {
   height: 36px;
   min-height: 36px;
   padding-left: 38px;
-  font-size: calc(14px + var(--font-size-delta));
 }
 
-/* The 活跃会话 rows sit directly above the groups, so they must match what those rows actually
- * render at, not what this file asks for: the template's `text-[var(--font-size-label)]` utility is
- * `!important` (tailwind.css imports with `important`), so group rows are 12px, not the 14px above. */
+/* Same reason: the 活跃会话 rows sit directly above the groups, and this rule used to pin them to
+ * `--font-size-label` by hand while the group rows asked for 14px right underneath - two sizes in one
+ * list. Both come off `--font-size-rail` now, which IS that 12px, so the active rows keep the size
+ * they had and the group rows drop to meet them. */
 .thread-row.active-session-row {
   padding-left: 8px;
   padding-right: 10px;
-  font-size: var(--font-size-label);
 }
 
 .thread-title.is-started {
@@ -656,6 +662,8 @@
 
 .active-session-toggle {
   height: 28px;
+  /* Half a pixel above the rail: this is the heading of the list below it, and 600 weight plus 12.5px
+     is the only thing that says so. It still carries `--font-size-delta`, so 字号 moves it in step. */
   font-size: calc(12.5px + var(--font-size-delta));
 }
 

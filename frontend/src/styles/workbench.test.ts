@@ -227,7 +227,9 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/:root\[data-theme="light"\] \.sidebar,[^}]*--bg-active:\s*#e1e1e3/s);
     // The nav row used to carry a private +1 over the group rule, so 字号 14 drew the sidebar at 15px
     // while the label promised 14. It inherits the group's body rung now.
-    expect(css).toMatch(/\.new-task-button,\s*\.primary-nav button,[^{]*\{[^}]*font-size:\s*calc\(14px \+ var\(--font-size-delta\)\)/s);
+    // The rail rung, not the body rung: the 活跃会话 heading sat at 12.5px while its own nav items read
+    // 14px and the rows under it read 14px too, so the left column had three sizes stacked in one list.
+    expect(css).toMatch(/\.new-task-button,\s*\.primary-nav button,[^{]*\{[^}]*font-size:\s*var\(--font-size-rail\)/s);
     expect(css.match(/\.primary-nav button\s*\{[^}]*\}/s)?.[0] ?? "").toMatch(/height:\s*40px/);
     expect(css).toMatch(/\.thread-time\s*{[^}]*font-variant-numeric:\s*tabular-nums/s);
   });
@@ -350,6 +352,7 @@ describe("responsive workbench layout", () => {
     const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "");
     const wb = strip(await workbenchText());
     const layout = strip(await textAt("src/styles/layout.css"));
+    const tokens = strip(await textAt("src/styles/tokens.css"));
     // Every rule carrying the selector is checked, not the first one: `.composer-editor
     // .markdown-editor [contenteditable="true"]` appears twice and the first carries no size at all, so
     // a single-block match read green against the wrong rule. The invariant is "this surface owns no
@@ -374,12 +377,37 @@ describe("responsive workbench layout", () => {
         if (size !== undefined) expect(size, `${selector} left the body rung`).toBe(BODY);
       }
     }
-    // The two sidebar rows carry no size of their own - they inherit the group rule, so there is one
-    // constant here rather than three free to drift away from 字号 again.
-    for (const selector of ["\\.primary-nav button", "\\.workspace-row"]) {
-      const rules = rulesOf(wb, selector);
-      expect(rules.length, `${selector} matched no rule at a line start`).toBeGreaterThan(0);
-      for (const rule of rules) expect(rule[2], `${selector} re-added a private font-size`).not.toMatch(/font-size/);
+    // The sidebar rows carry no size of their own - they inherit the group rule, so there is one
+    // constant here rather than three free to drift away from 字号 again. Checked in both files: a
+    // 0,2,0 selector like `.workspace-threads .thread-row` outranks the rail rule in whichever sheet
+    // it lives in, so a stray size in layout.css would win even though workbench.css loads later.
+    for (const selector of [
+      "\\.primary-nav button",
+      "\\.workspace-row",
+      "\\.workspace-threads \\.thread-row",
+      "\\.thread-row\\.active-session-row",
+    ]) {
+      for (const source of [wb, layout]) {
+        for (const rule of rulesOf(source, selector)) {
+          expect(rule[2], `${selector} re-added a private font-size`).not.toMatch(/font-size/);
+        }
+      }
+    }
+    // And the one constant is the rail rung, in both sheets, so 字体大小 moves the whole column at once.
+    // The rail must stay on `--font-size-label` (12px): that is the size the 活跃会话 rows have always
+    // drawn at, and the point of the change is that the group rows drop to meet it - not the reverse.
+    expect(tokens).toContain("--font-size-rail: var(--font-size-label)");
+    // (`.active-session-toggle` is the heading of the list, not a row: it keeps its own half-pixel rung
+    // above the rail, but it must still carry the delta or 字号 leaves it behind.)
+    for (const source of [wb, layout]) {
+      const rules = rulesOf(source, "\\.active-session-toggle");
+      expect(rules.length, ".active-session-toggle matched no rule at a line start").toBeGreaterThan(0);
+      for (const rule of rules) {
+        const size = rule[2].match(/font-size:\s*([^;]*)/)?.[1].trim();
+        if (size !== undefined) {
+          expect(size, ".active-session-toggle left the ladder (no --font-size-delta)").toContain("var(--font-size-delta)");
+        }
+      }
     }
   });
 

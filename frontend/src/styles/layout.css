@@ -181,7 +181,7 @@ html.is-resizing-pane .inspector {
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-secondary);
-  font-size: calc(12.5px + var(--font-size-delta));
+  font-size: var(--font-size-rail);
   text-align: left;
   cursor: pointer;
   /* This list is not virtualized, and dragging either pane resizer rewrites the shell's grid
@@ -329,7 +329,6 @@ html.is-resizing-pane .inspector {
 .workspace-threads .thread-row {
   height: 29px;
   padding-left: 8px;
-  font-size: calc(12px + var(--font-size-delta));
 }
 
 .row-tail {
@@ -471,7 +470,6 @@ html.is-resizing-pane .inspector {
 .thread-row.active-session-row {
   padding-left: 6px;
   padding-right: 8px;
-  font-size: calc(12px + var(--font-size-delta));
 }
 
 /* Head, not tail: in a flat cross-project list the marker is the column you scan for "which ones are
@@ -9202,7 +9200,7 @@ article.mcp-server-row {
   padding-right: 8px;
   padding-left: 8px;
   border-radius: 6px;
-  font-size: calc(13.5px + var(--font-size-delta));
+  font-size: var(--font-size-rail);
 }
 
 .sidebar-section {
@@ -9226,7 +9224,6 @@ article.mcp-server-row {
 
 .workspace-threads .thread-row {
   height: 29px;
-  font-size: calc(13px + var(--font-size-delta));
 }
 
 .sidebar-search input {

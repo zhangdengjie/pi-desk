@@ -77,6 +77,9 @@ describe("teleported dialog theme inheritance", () => {
     expect(tokens).toContain("--font-size-meta: calc(11px + var(--font-size-delta))");
     expect(tokens).toContain("--font-size-control: calc(13px + var(--font-size-delta))");
     expect(tokens).toContain("--font-size-body: calc(14px + var(--font-size-delta))");
+    // The sidebar rail is one rung, not three: nav items, workspace rows and both session lists read
+    // `--font-size-rail`, which is the 12px the 活跃会话 rows have always drawn at.
+    expect(tokens).toContain("--font-size-rail: var(--font-size-label)");
   });
 
   it("publishes the selectable code preview palettes and sampled ZCode surfaces", async () => {

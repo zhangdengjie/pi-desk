@@ -63,6 +63,12 @@
   --font-size-delta: 0px;
   --font-size-meta: calc(11px + var(--font-size-delta));
   --font-size-label: calc(12px + var(--font-size-delta));
+  /* One rung for the whole left rail: the nav items, the workspace rows and both session lists all
+     read off this value. It is `--font-size-label` because that is what the 活跃会话 rows already drew
+     at - the size the reader accepted - and the group rows below them were the ones sitting two rungs
+     higher at 14px. The 活跃会话 *heading* stays 0.5px above the rail on purpose (weight 600 + 12.5px
+     is what separates it from its own list). */
+  --font-size-rail: var(--font-size-label);
   --font-size-control: calc(13px + var(--font-size-delta));
   --font-size-body: calc(14px + var(--font-size-delta));
   --font-size-title: calc(15px + var(--font-size-delta));
