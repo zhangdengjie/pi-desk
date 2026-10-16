@@ -581,7 +581,6 @@
   padding: 0 12px;
   border-radius: var(--radius-md);
   color: var(--text);
-  font-size: calc(15px + var(--font-size-delta));
 }
 
 .workspace-row {
@@ -591,7 +590,6 @@
   padding: 0 10px;
   border-radius: var(--radius-md);
   color: var(--text-muted);
-  font-size: calc(15px + var(--font-size-delta));
 }
 
 .primary-nav-row {
@@ -1179,7 +1177,7 @@
   scrollbar-gutter: stable;
   background: var(--bg-conversation);
   color: var(--text);
-  font-size: calc(15px + var(--font-size-delta));
+  font-size: calc(14px + var(--font-size-delta));
   /* No leading declared here, on purpose. The rendered document is a `.markdown-body`, which carries
      the transcript token, and this box's own 1.7 was therefore dead for every line of prose in the
      pane - measured: the file preview's <li> computes to 18.00 / 19.20 / 20.40px as 正文行高 moves

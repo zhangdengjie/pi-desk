@@ -225,7 +225,10 @@ describe("responsive workbench layout", () => {
     const css = await workbenchText();
     expect(css).toMatch(/\.sidebar\s*{[^}]*background:\s*var\(--bg-sidebar\)/s);
     expect(css).toMatch(/:root\[data-theme="light"\] \.sidebar,[^}]*--bg-active:\s*#e1e1e3/s);
-    expect(css).toMatch(/\.primary-nav button\s*{[^}]*height:\s*40px[^}]*font-size:\s*calc\(15px \+ var\(--font-size-delta\)\)/s);
+    // The nav row used to carry a private +1 over the group rule, so 字号 14 drew the sidebar at 15px
+    // while the label promised 14. It inherits the group's body rung now.
+    expect(css).toMatch(/\.new-task-button,\s*\.primary-nav button,[^{]*\{[^}]*font-size:\s*calc\(14px \+ var\(--font-size-delta\)\)/s);
+    expect(css.match(/\.primary-nav button\s*\{[^}]*\}/s)?.[0] ?? "").toMatch(/height:\s*40px/);
     expect(css).toMatch(/\.thread-time\s*{[^}]*font-variant-numeric:\s*tabular-nums/s);
   });
 
@@ -336,6 +339,47 @@ describe("responsive workbench layout", () => {
         }
       }
       expect(offenders, `${path} carries font sizes that ignore 字体大小`).toEqual([]);
+    }
+  });
+
+  it("keeps 字号 N equal to what the dominant surfaces actually draw", async () => {
+    // The label used to be true only for the settings row itself: at 字号 14 the transcript drew 14.5px,
+    // the sidebar nav and the file preview 15px. "Looks too big" therefore had no answer in the UI -
+    // every number the reader saw was correct for something other than what filled the screen. Those
+    // private offsets are gone; a re-added +0.5 / +1 on any of them is a regression, not a design call.
+    const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "");
+    const wb = strip(await workbenchText());
+    const layout = strip(await textAt("src/styles/layout.css"));
+    // Every rule carrying the selector is checked, not the first one: `.composer-editor
+    // .markdown-editor [contenteditable="true"]` appears twice and the first carries no size at all, so
+    // a single-block match read green against the wrong rule. The invariant is "this surface owns no
+    // private size", which is a property of the set.
+    // Anchored at a line start: unanchored, `\.markdown-body` also matches
+    // `.compaction-summary .markdown-body`, whose 12px is a deliberate small-print surface.
+    const BODY = "calc(14px + var(--font-size-delta))";
+    const rulesOf = (source: string, selector: string) =>
+      [...source.matchAll(new RegExp(`(^|\\n)${selector}\\s*\\{([^}]*)\\}`, "gs"))];
+    const rungs: Array<[string, string]> = [
+      [wb, "\\.file-markdown-preview"],
+      [layout, "\\.message-content p"],
+      [layout, "\\.markdown-body"],
+      [layout, "\\.composer-editor \\.draft-input"],
+      [layout, `\\.composer-editor \\.markdown-editor \\[contenteditable="true"\\]`],
+    ];
+    for (const [source, selector] of rungs) {
+      const rules = rulesOf(source, selector);
+      expect(rules.length, `${selector} matched no rule at a line start`).toBeGreaterThan(0);
+      for (const rule of rules) {
+        const size = rule[2].match(/font-size:\s*([^;]*)/)?.[1].trim();
+        if (size !== undefined) expect(size, `${selector} left the body rung`).toBe(BODY);
+      }
+    }
+    // The two sidebar rows carry no size of their own - they inherit the group rule, so there is one
+    // constant here rather than three free to drift away from 字号 again.
+    for (const selector of ["\\.primary-nav button", "\\.workspace-row"]) {
+      const rules = rulesOf(wb, selector);
+      expect(rules.length, `${selector} matched no rule at a line start`).toBeGreaterThan(0);
+      for (const rule of rules) expect(rule[2], `${selector} re-added a private font-size`).not.toMatch(/font-size/);
     }
   });
 

@@ -426,9 +426,11 @@
 
 /* Linear: the number in Settings > 外观 > 字体大小 is the pixel size the chrome's body rung renders at
    (14 -> 0, 12 -> -2). It used to be compressed - 12 was -1.5px, 13 was -0.75px, 15..18 stepped by 0.5 -
-   so picking 12 drew the transcript at 13px and the label was a notch name, not a size. The reading
-   surface keeps its deliberate +0.5px over the chrome (`.markdown-body` is 14.5px-based); everything
-   else now reads true. */
+   so picking 12 drew the transcript at 13px and the label was a notch name, not a size.
+   The reading surface used to keep a deliberate +0.5px over the chrome and the sidebar nav a +1px, which
+   made the number true only for the settings row itself: at 字号 14 the transcript drew 14.5px, the nav
+   and the file preview 15px. Both offsets are gone - every dominant surface now sits on
+   `--font-size-body`, so the label is the size. Headings keep their own rungs above it. */
 :root[data-font-size="12"] { --font-size-delta: -2px; }
 :root[data-font-size="13"] { --font-size-delta: -1px; }
 :root[data-font-size="14"] { --font-size-delta: 0px; }
