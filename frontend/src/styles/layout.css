@@ -8468,13 +8468,37 @@ article.mcp-server-row {
 }
 
 .select-options {
-  display: grid;
-  gap: 6px;
+  /* NOT a grid container — measured in real WebKit: an auto row sized `[-] edit …` to ONE line
+     (csHeight 34 / scrollHeight 43) while the text painted two, because its unwrapped width
+     (≈568) sits a hair over the available 567. `[-] powershell …` (≈707) got 52 = correct. So the
+     row's intrinsic-height pass uses a width a few px wider than the final layout, and only the
+     "barely wraps" rows collapse. Block layout has no such pass: height = sum of line boxes. */
+  display: block;
 }
 
+.select-options > * + * {
+  margin-top: 6px;
+}
+
+/* Extension `select` rows carry the whole terminal line in one string — pi-plan-mode's tool
+   allowlist sends `[-] edit — blocked by Plan policy (unavailable: …)`, which is far wider than
+   the dialog. `ui.button` puts `justify-center` + `whitespace-nowrap` on it, and those are layered
+   `!important` utilities, so they beat anything written here (AGENTS §4.3): centred + overflowing
+   clips BOTH ends, and the tool name — the only part you click on — disappeared off the left edge.
+   Measured in real WebKit: button box 1810px wide, first char at x=875. The element therefore
+   carries no layout utilities at all, and `display: block` drops base.css's `inline-flex` so the
+   box height is simply the sum of its line boxes (see .select-options above for why that matters). */
 .select-options .text-button {
-  justify-content: flex-start;
+  display: block;
+  width: 100%;
+  min-height: 0;
   text-align: left;
+  white-space: normal;
+  overflow-wrap: break-word;
+  padding-block: 7px;
+  font-family: var(--font-mono);
+  font-size: calc(12.5px + var(--font-size-delta));
+  line-height: 1.5;
 }
 
 .batch-extension-dialog {

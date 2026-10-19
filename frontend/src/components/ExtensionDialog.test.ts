@@ -68,6 +68,39 @@ describe("ExtensionDialog", () => {
     expect(store.respondToExtension).toHaveBeenLastCalledWith(undefined, true);
   });
 
+  it("keeps select rows left-aligned and wrapping, because plan-mode sends terminal-width option strings", async () => {
+    // pi-plan-mode has no TUI over RPC, so its tool allowlist falls back to `select` and every row
+    // arrives as one long string (`[-] edit — blocked by Plan policy (unavailable: …)`).
+    // `ui.button` puts `justify-center` + `whitespace-nowrap` on the element; those are layered
+    // `!important` utilities, so layout.css cannot outvote them (AGENTS §4.3) and the row blew past
+    // the dialog with the tool name centred off the left edge. Measured in real WebKit:
+    // before -> button 1810px wide, first char at x=875; after -> 606px, first char at x=12.
+    const { wrapper } = setup({ id: "sel", method: "select", title: "Pick", options: [
+      `[-] find — inactive in Pi (unavailable: ${"Not active in Pi; Plan mode will not activate it; ".repeat(3)})`,
+    ] });
+    const classes = wrapper.get(".select-options button").classes();
+    for (const utility of ["justify-center", "whitespace-nowrap", "inline-flex", "min-h-[34px]"]) {
+      expect(classes, `select option still carries the layout utility ${utility}`).not.toContain(utility);
+    }
+    expect(classes).toContain("select-option");
+
+    const { readFile } = await import(["node", "fs/promises"].join(":") as string) as {
+      readFile(path: string, encoding: "utf8"): Promise<string>;
+    };
+    const css = await readFile("src/styles/layout.css", "utf8");
+    const list = css.match(/\.select-options \{[^}]*\}/)?.[0] ?? "";
+    const row = css.match(/\.select-options \.text-button \{[^}]*\}/)?.[0] ?? "";
+    expect(row).toMatch(/text-align:\s*left/);
+    expect(row).toMatch(/white-space:\s*normal/);
+    // A `grid` row is sized by WebKit's intrinsic-height pass, which uses a width a few px wider
+    // than the final layout - so a row that "barely" wraps (e.g. `[-] edit … policy)`, max-content
+    // ≈568 vs 567 available) reserved ONE line (csHeight 34 / scrollHeight 43) and the second line
+    // spilled onto the border. Block layout has no such pass.
+    expect(list).toMatch(/display:\s*block/);
+    expect(list).not.toMatch(/display:\s*grid/);
+    expect(css).toMatch(/\.select-options > \* \+ \* \{[^}]*margin-top:/);
+  });
+
   it("renders a batch ask as tabs, preserves option descriptions, reviews, and submits structured answers", async () => {
     const { store, wrapper } = setup({
       id: "batch",

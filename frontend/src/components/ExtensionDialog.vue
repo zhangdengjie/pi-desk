@@ -50,7 +50,7 @@ onBeforeUnmount(() => {
         />
         <p v-else-if="request.message">{{ request.message }}</p>
         <div v-if="request.method === 'select'" class="select-options">
-          <button v-for="option in request.options" :key="option" class="text-button" :class="ui.button" type="button" @click="appStore.respondToExtension(option)">{{ option }}</button>
+          <button v-for="option in request.options" :key="option" class="text-button select-option" type="button" @click="appStore.respondToExtension(option)">{{ option }}</button>
         </div>
         <textarea :class="ui.textarea" v-else-if="request.method === 'editor'" v-model="value" rows="10" :placeholder="request.placeholder" autofocus />
         <input :class="ui.input" v-else-if="request.method === 'input'" v-model="value" :placeholder="request.placeholder" autofocus @keydown.enter="appStore.respondToExtension(value)" />
