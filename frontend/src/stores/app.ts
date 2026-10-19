@@ -2529,6 +2529,7 @@ export const useAppStore = defineStore("app", {
         await this.ensureSession(thread);
         await this.applyPendingModel(thread);
         if (this.sessionOperationByThread[thread.id]) throw new Error("Session history operation is in progress");
+        let commandEchoIsOrphan = false;
         if (!wasRunning) {
           // A slash send whose command list has not arrived yet would be judged "not a command" off an
           // empty array and re-create the stuck spinner, so ask once, here, before deciding.
@@ -2538,6 +2539,16 @@ export const useAppStore = defineStore("app", {
           if (!invokesExtensionCommand(this.commandsByThread[thread.id] ?? [], message)) {
             thread.status = "running";
             this.waitingForOutputByThread[thread.id] = true;
+          } else {
+            // An extension command is consumed by pi's own loop: it never becomes a user entry in the
+            // session file, so the optimistic row above is the only trace - and it is undeletable, because
+            // every persisted action needs an `entryId` (`ConversationMessage.vue` `persistedActionsDisabled`).
+            // Verified: 0 of 232 session files contain a `role:"user"` entry starting with `/plan`. Drop the
+            // echo once pi has taken the command, so a cancelled `/plan` leaves no corpse in the transcript.
+            // Built-in commands are excluded upstream: `invokesExtensionCommand` only matches
+            // `source === "extension"`. And this whole branch is skipped while a run is active, where a
+            // slash send really is queued into the session - there the echo has to stay.
+            commandEchoIsOrphan = true;
           }
         }
         await agentService.sendPrompt({
@@ -2548,6 +2559,10 @@ export const useAppStore = defineStore("app", {
             images: await Promise.all(attachments.map(imageAttachmentContent)),
           } : {}),
         });
+        if (commandEchoIsOrphan) {
+          const index = messages.indexOf(timelineMessage);
+          if (index >= 0) messages.splice(index, 1);
+        }
         if (!wasRunning && !message.trimStart().startsWith("/")) {
           const widgets = { ...(this.extensionWidgetsByThread[thread.id] ?? {}) };
           for (const key of TODO_WIDGET_KEYS) delete widgets[key];

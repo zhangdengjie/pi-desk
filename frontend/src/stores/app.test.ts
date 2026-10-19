@@ -1623,6 +1623,28 @@ describe("app store", () => {
     expect(mocks.sendPrompt).toHaveBeenCalledTimes(1);
   });
 
+  it("drops the optimistic row of an extension command, which never reaches the session file", async () => {
+    const store = useAppStore();
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread!;
+    thread.started = true;
+    thread.generation = 1;
+    store.commandsByThread[thread.id] = [{ name: "plan", source: "extension" }];
+
+    expect(await store.deliverPrompt(thread, "/plan", [])).toBe(true);
+    // pi consumes the command in its own loop, so that row never gets an `entryId` - and every persisted
+    // action, including the trash button, is disabled without one. A cancelled `/plan` used to leave the
+    // corpse in the transcript permanently (0 of 232 session files hold a `role:"user"` `/plan` entry).
+    expect(store.messagesByThread[thread.id]).toHaveLength(0);
+    expect(thread.status).not.toBe("running");
+
+    // The gate is `invokesExtensionCommand`, not "starts with /": an unknown slash send really is a
+    // prompt, so its row has to stay visible.
+    expect(await store.deliverPrompt(thread, "/not-a-command", [])).toBe(true);
+    expect(store.messagesByThread[thread.id]).toHaveLength(1);
+    expect(store.messagesByThread[thread.id]?.[0].text).toBe("/not-a-command");
+  });
+
   it.each(["rejected", "unconfirmed"])("blocks sending when startup model selection is %s and retains the choice", async (failure) => {
     const store = useAppStore();
     await store.createThread("D:\\work\\repo", "approve");
