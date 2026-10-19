@@ -2517,7 +2517,8 @@ export const useAppStore = defineStore("app", {
         delivery: streamingBehavior, images: attachments, tools: [],
       };
       messages.push(timelineMessage);
-      if (thread.title === "New task") {
+      const titledFromEcho = thread.title === "New task";
+      if (titledFromEcho) {
         const titleText = skillInvocationTitleText(message);
         thread.firstMessage = titleText;
         thread.title = threadTitleText(titleText) || "Image task";
@@ -2562,6 +2563,9 @@ export const useAppStore = defineStore("app", {
         if (commandEchoIsOrphan) {
           const index = messages.indexOf(timelineMessage);
           if (index >= 0) messages.splice(index, 1);
+          // A first send that is only a command must not name the thread either, or "New task" turns
+          // into `/plan` with an empty transcript behind it.
+          if (titledFromEcho) { thread.title = "New task"; thread.firstMessage = ""; }
         }
         if (!wasRunning && !message.trimStart().startsWith("/")) {
           const widgets = { ...(this.extensionWidgetsByThread[thread.id] ?? {}) };

@@ -1637,12 +1637,14 @@ describe("app store", () => {
     // corpse in the transcript permanently (0 of 232 session files hold a `role:"user"` `/plan` entry).
     expect(store.messagesByThread[thread.id]).toHaveLength(0);
     expect(thread.status).not.toBe("running");
+    expect(thread.title).toBe("New task");
 
     // The gate is `invokesExtensionCommand`, not "starts with /": an unknown slash send really is a
     // prompt, so its row has to stay visible.
     expect(await store.deliverPrompt(thread, "/not-a-command", [])).toBe(true);
     expect(store.messagesByThread[thread.id]).toHaveLength(1);
     expect(store.messagesByThread[thread.id]?.[0].text).toBe("/not-a-command");
+    expect(thread.title).toBe("/not-a-command");
   });
 
   it.each(["rejected", "unconfirmed"])("blocks sending when startup model selection is %s and retains the choice", async (failure) => {
