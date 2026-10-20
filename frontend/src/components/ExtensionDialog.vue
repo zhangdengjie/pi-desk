@@ -21,6 +21,11 @@ const pendingCount = computed(() => appStore.extensionRequestsPendingByThread[ap
 const stale = computed(() => !request.value);
 const value = ref("");
 const dialog = ref<HTMLElement | null>(null);
+// The window is centred, so any change in its height slides every row by half the delta. A `select`
+// re-sends itself on each click, so from the first re-issue onwards its height is pinned to what
+// the frame you clicked on actually occupied; anything taller scrolls inside .dialog-body, which is
+// already what happens at max-h. The first frame is never pinned, so a two-option select stays small.
+const heightLock = ref(0);
 const dialogTitle = computed(() => frame.value?.method === "batch_ask"
   ? tr("extension.batchTitle", { count: frame.value.batchQuestions?.length ?? 0 })
   : frame.value?.title || tr("extension.title"));
@@ -34,6 +39,26 @@ function respond(answer: string | boolean | undefined, cancelled = false) {
   // Forward exactly the arguments the template used to pass - `cancelled` only exists when true.
   void (cancelled ? appStore.respondToExtension(answer, true) : appStore.respondToExtension(answer));
 }
+
+// pi-tui-kit has no screen identity on the wire, only the strings it renders; its `dialogTitle()`
+// always puts the screen title on the first line, so that line is what distinguishes "same screen,
+// re-issued" from "the user navigated somewhere else".
+function screenKeyOf(screen?: ExtensionUIRequest) {
+  return screen ? `${screen.method}|${(screen.title ?? "").split("\n", 1)[0]}` : "";
+}
+
+// `flush: "pre"` - reading the rect here still measures the OUTGOING frame, which is the geometry
+// the user's eyes are on.
+watch(frame, (next, previous) => {
+  if (!next || !previous) return;
+  if (screenKeyOf(next) !== screenKeyOf(previous)) {
+    heightLock.value = 0;
+    return;
+  }
+  if (heightLock.value || next.method !== "select") return;
+  const measured = Math.round(dialog.value?.getBoundingClientRect().height ?? 0);
+  if (measured > 64) heightLock.value = measured;
+});
 
 watch(request, (next) => {
   if (next) frame.value = next;
@@ -50,8 +75,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="frame" class="dialog-backdrop" :class="[frame.method === 'select' ? ui.dialogBackdropTop : ui.dialogBackdrop, { 'extension-dialog-hold': stale }]">
-    <section ref="dialog" class="dialog-window extension-dialog" :class="[ui.dialog, frame.method === 'select' ? 'select-dialog' : '', frame.method === 'batch_ask' ? ui.dialogLarge : '', { 'batch-extension-dialog': frame.method === 'batch_ask' }]" role="dialog" aria-modal="true" :aria-labelledby="`extension-title-${frame.id}`" :aria-busy="stale" tabindex="-1">
+  <div v-if="frame" class="dialog-backdrop" :class="[ui.dialogBackdrop, { 'extension-dialog-hold': stale }]">
+    <section ref="dialog" class="dialog-window extension-dialog" :class="[ui.dialog, frame.method === 'select' ? 'select-dialog' : '', frame.method === 'batch_ask' ? ui.dialogLarge : '', { 'batch-extension-dialog': frame.method === 'batch_ask' }]" :style="heightLock ? { height: `${heightLock}px` } : undefined" role="dialog" aria-modal="true" :aria-labelledby="`extension-title-${frame.id}`" :aria-busy="stale" tabindex="-1">
       <header :class="ui.dialogHeader">
         <h2 :id="`extension-title-${frame.id}`">{{ dialogTitle }}</h2>
         <button class="icon-button" :class="ui.iconButton" type="button" :title="tr('extension.cancel')" @click="respond(undefined, true)"><X :size="17" /></button>

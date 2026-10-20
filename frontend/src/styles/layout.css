@@ -8515,11 +8515,12 @@ article.mcp-server-row {
   white-space: pre-line;
 }
 
-/* The select dialog is anchored to the top by its own utility set (ui.dialogBackdropTop) instead of
-   centring: a centred window moves its TOP edge by half of every content-height change, and a
-   `select` re-renders on each click (pi-plan-mode's allowlist grows a line of tool names per tick).
-   It cannot be fixed from here - `place-items-center` is a layered `!important` utility, and an
-   unlayered rule loses to it either way (AGENTS §4.3). */
+/* A `select` dialog is re-sent by the extension on every click, and the backdrop CENTRES it, so a
+   change in the window's height slides every row on screen by half the delta. That is handled in the
+   component, which pins the height across re-issues of one screen (ExtensionDialog.vue `heightLock`)
+   - not here: `place-items-center` is a layered !important utility, so an unlayered rule loses to it
+   whichever way it is written, and anchoring the top instead moved the dialog out of the user's eye
+   line (AGENTS §4.3). */
 
 .batch-extension-dialog {
   width: min(720px, 100%);

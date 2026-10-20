@@ -153,7 +153,7 @@ describe("ExtensionDialog", () => {
     wrapper.unmount();
   });
 
-  it("keeps the extension's line breaks and anchors a select dialog to the top", async () => {
+  it("keeps the extension's line breaks and locks the centred window's height across a re-issue", async () => {
     const { readFile } = await import(["node", "fs/promises"].join(":") as string) as {
       readFile(path: string, encoding: "utf8"): Promise<string>;
     };
@@ -163,14 +163,28 @@ describe("ExtensionDialog", () => {
     expect(css).toMatch(/\.extension-dialog h2 \{[^}]*white-space:\s*pre-line/);
     expect(css).toMatch(/\.dialog-backdrop\.extension-dialog-hold \{[^}]*pointer-events:\s*none/);
 
-    // Centring is a layered !important utility, so the only way to stop the window's top edge from
-    // sliding is to not put that utility on the element (AGENTS §4.3).
-    const select = setup({ id: "s", method: "select", title: "t", options: ["a"] }).wrapper.get(".dialog-backdrop").classes();
-    expect(select, "select dialog is still centred -> its top edge moves with the content").toContain("items-start");
-    expect(select).toContain("justify-items-center");
-    expect(select).not.toContain("place-items-center");
-    expect(setup({ id: "c", method: "confirm", title: "t", message: "m" }).wrapper.get(".dialog-backdrop").classes())
-      .toContain("place-items-center");
+    // The user wants it centred, so the height is what has to stop changing instead.
+    const { store, wrapper } = setup({
+      id: "s1", method: "select", title: "Choose Plan policy allowlist\nPlan policy will allow: bash, read.",
+      options: ["[ ] read", "[ ] write"],
+    });
+    expect(wrapper.get(".dialog-backdrop").classes()).toContain("place-items-center");
+    const win = wrapper.get<HTMLElement>(".dialog-window").element;
+    expect(win.style.height, "the first frame must keep its natural size").toBe("");
+
+    // jsdom lays nothing out, so hand the component the geometry a real engine would report.
+    win.getBoundingClientRect = () => ({ height: 512 }) as unknown as DOMRect;
+    store.extensionRequestByThread["thread-1"] = {
+      id: "s2", method: "select", title: "Choose Plan policy allowlist\nPlan policy will allow: bash, read, git_ops.",
+      options: ["[x] read", "[ ] write"],
+    };
+    await wrapper.vm.$nextTick();
+    expect(win.style.height).toBe("512px");
+
+    // A different screen releases the lock, so it can size itself.
+    store.extensionRequestByThread["thread-1"] = { id: "s3", method: "select", title: "Settings", options: ["Theme"] };
+    await wrapper.vm.$nextTick();
+    expect(win.style.height).toBe("");
   });
 
   it("renders a batch ask as tabs, preserves option descriptions, reviews, and submits structured answers", async () => {

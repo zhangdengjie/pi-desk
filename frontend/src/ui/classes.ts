@@ -14,11 +14,6 @@ export const ui = {
     "relative inline-grid size-7 shrink-0 place-items-center rounded-md border border-transparent bg-transparent p-0 text-[var(--text-muted)] transition-[background-color,color,transform] duration-150 ease-out hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:translate-y-px active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] disabled:cursor-not-allowed disabled:opacity-40 pointer-coarse:size-11",
   dialogBackdrop:
     "fixed inset-0 z-[400] grid place-items-center overflow-x-clip bg-[var(--overlay)] p-4 backdrop-blur-[2px] max-[520px]:place-items-stretch max-[520px]:p-0",
-  // Same frame, but the window is anchored to the TOP. Needed by an extension `select`, which
-  // re-renders on every click: centring makes any content-height change move the window's top edge
-  // by half the delta, and that is the visible slide of every row on screen.
-  dialogBackdropTop:
-    "fixed inset-0 z-[400] grid items-start justify-items-center overflow-x-clip bg-[var(--overlay)] p-4 backdrop-blur-[2px] max-[520px]:place-items-stretch max-[520px]:p-0",
   dialog:
     "grid max-h-[min(88dvh,760px)] w-[min(640px,calc(100%_-_32px))] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg-panel)] text-[var(--text)] shadow-[var(--shadow-dialog)] outline-none max-[520px]:h-dvh max-[520px]:max-h-dvh max-[520px]:w-full max-[520px]:rounded-none max-[520px]:border-0",
   dialogLarge:
