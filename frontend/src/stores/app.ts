@@ -462,6 +462,12 @@ let searchGeneration = 0;
 let searchRequest: ReturnType<typeof catalogService.searchSessionText> | undefined;
 let piStartQueue: Promise<void> = Promise.resolve();
 const piStartPromises = new Map<string, Promise<void>>();
+
+// An extension's dialog menu (`pi-tui-kit`'s `runDialogMenu`) answers a `select` and then re-sends
+// the same screen with the new state. The dialog must survive that round trip, so the answered
+// frame is held mounted - inert - for this long while the next one is in flight.
+const extensionDialogHoldTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const EXTENSION_DIALOG_HOLD_MS = 250;
 const modelApplicationPromises = new Map<string, Promise<void>>();
 const piStartingGenerationFloor = new Map<string, number>();
 const piExitedGenerationByThread = new Map<string, number>();
@@ -1215,6 +1221,8 @@ export const useAppStore = defineStore("app", {
     // Pi may emit several `extension_ui_request` frames for one turn (parallel tool calls).
     // Only the head is shown; the rest wait here so no request is ever silently dropped.
     extensionRequestsPendingByThread: {} as Record<string, ExtensionUIRequest[]>,
+    // True while the head slot is empty only because a response is still travelling to Pi.
+    extensionDialogHeldByThread: {} as Record<string, boolean>,
     extensionStatusesByThread: {} as Record<string, Record<string, string>>,
     extensionWidgetsByThread: {} as Record<string, Record<string, ExtensionWidget>>,
     extensionTitleByThread: {} as Record<string, string | undefined>,
@@ -1237,6 +1245,13 @@ export const useAppStore = defineStore("app", {
   getters: {
     activeThread(state): ThreadSummary | undefined {
       return state.threads.find((thread) => thread.id === state.activeThreadId);
+    },
+    // App.vue must NOT key the dialog's existence off the head slot: clearing it synchronously on
+    // click unmounted the scroll container, so a menu re-render lost the list's scroll offset and
+    // the backdrop flashed - the "click an item and everything jumps" bug.
+    extensionDialogVisible(state): boolean {
+      const id = state.activeThreadId;
+      return Boolean(id && (state.extensionRequestByThread[id] || state.extensionDialogHeldByThread[id]));
     },
     // The native picker runs on this machine, so an SSH workspace would produce a local path the
     // remote Pi cannot read; the composer button is disabled for those.
@@ -2760,8 +2775,7 @@ export const useAppStore = defineStore("app", {
         this.finishAssistant(thread.id);
         this.waitingForOutputByThread[thread.id] = false;
         this.bashRunningByThread[thread.id] = false;
-        this.extensionRequestByThread[thread.id] = undefined;
-        this.extensionRequestsPendingByThread[thread.id] = [];
+        this.clearExtensionRequests(thread.id);
         this.extensionStatusesByThread[thread.id] = {};
         this.piProcessOrder = this.piProcessOrder.filter((id) => id !== thread.id);
         this.queueByThread[thread.id] = { steering: [], followUp: [] };
@@ -2898,7 +2912,7 @@ export const useAppStore = defineStore("app", {
         this.compactionEstimatesByThread, this.latestCompactionEstimateByThread,
         this.compactionDurationsByThread, this.compactionStartByThread,
         this.modelsByThread, this.thinkingLevelsByThread, this.thinkingLevelsRefreshGenerationByThread, this.commandsByThread,
-        this.queueByThread, this.pendingPromptsByThread, this.pendingPromptsPausedByThread, this.pendingPromptDispatchByThread, this.sessionMutationErrorByThread, this.retryByThread, this.extensionRequestByThread, this.extensionRequestsPendingByThread, this.extensionStatusesByThread,
+        this.queueByThread, this.pendingPromptsByThread, this.pendingPromptsPausedByThread, this.pendingPromptDispatchByThread, this.sessionMutationErrorByThread, this.retryByThread, this.extensionRequestByThread, this.extensionRequestsPendingByThread, this.extensionDialogHeldByThread, this.extensionStatusesByThread,
         this.extensionWidgetsByThread, this.extensionTitleByThread, this.transcriptStateByThread,
         this.sessionBranchesByThread, this.sessionBranchesErrorByThread, this.sessionOperationByThread, this.pendingModelByThread,
         this.modelSelectionGenerationByThread,
@@ -3483,9 +3497,25 @@ export const useAppStore = defineStore("app", {
       await agentService.setAutoRetry({ threadId: thread.id, enabled });
       this.autoRetryEnabledByThread[thread.id] = enabled;
     },
+    holdExtensionDialog(threadId: string) {
+      this.extensionDialogHeldByThread[threadId] = true;
+      const pending = extensionDialogHoldTimers.get(threadId);
+      if (pending) clearTimeout(pending);
+      extensionDialogHoldTimers.set(threadId, setTimeout(() => {
+        extensionDialogHoldTimers.delete(threadId);
+        delete this.extensionDialogHeldByThread[threadId];
+      }, EXTENSION_DIALOG_HOLD_MS));
+    },
+    releaseExtensionDialogHold(threadId: string) {
+      const pending = extensionDialogHoldTimers.get(threadId);
+      if (pending) clearTimeout(pending);
+      extensionDialogHoldTimers.delete(threadId);
+      delete this.extensionDialogHeldByThread[threadId];
+    },
     queueExtensionRequest(threadId: string, request: ExtensionUIRequest) {
       const head = this.extensionRequestByThread[threadId];
       if (!head) {
+        this.releaseExtensionDialogHold(threadId);
         this.extensionRequestByThread[threadId] = request;
         return;
       }
@@ -3498,6 +3528,7 @@ export const useAppStore = defineStore("app", {
       if (this.extensionRequestByThread[threadId]) return;
       const queue = this.extensionRequestsPendingByThread[threadId];
       if (!queue?.length) return;
+      this.releaseExtensionDialogHold(threadId);
       const now = Date.now();
       while (queue.length) {
         const next = queue.shift()!;
@@ -3512,6 +3543,7 @@ export const useAppStore = defineStore("app", {
       return head ? [head, ...queue] : [...queue];
     },
     clearExtensionRequests(threadId: string) {
+      this.releaseExtensionDialogHold(threadId);
       this.extensionRequestByThread[threadId] = undefined;
       this.extensionRequestsPendingByThread[threadId] = [];
     },
@@ -3536,6 +3568,8 @@ export const useAppStore = defineStore("app", {
       // acknowledges used to keep the dialog (and every request queued behind it) on screen forever.
       this.extensionRequestByThread[thread.id] = undefined;
       this.promoteNextExtensionRequest(thread.id);
+      // Nothing queued behind it: the menu loop may re-issue this very screen, so keep painting.
+      if (!this.extensionRequestByThread[thread.id]) this.holdExtensionDialog(thread.id);
       try {
         await agentService.respondExtensionUI({
           threadId: thread.id,
@@ -4238,7 +4272,7 @@ export const useAppStore = defineStore("app", {
             // (this is also what `abortActiveThread` does for prompts left over when you press Stop).
             const requestID = boundedExtensionText(request.id, 256).trim();
             if (!requestID) break;
-            delete this.extensionRequestByThread[thread.id];
+            this.clearExtensionRequests(thread.id);
             void agentService.respondExtensionUI({ threadId: thread.id, requestId: requestID, cancelled: true });
             const notice = request.placeholder === BATCH_ASK_PLACEHOLDER
               ? tr("extension.invalidBatchRequest")
@@ -4291,8 +4325,7 @@ export const useAppStore = defineStore("app", {
           if (thread.id !== this.activeThreadId || appIsInBackground()) thread.unread = true;
           this.queueByThread[thread.id] = { steering: [], followUp: [] };
           this.retryByThread[thread.id] = undefined;
-          this.extensionRequestByThread[thread.id] = undefined;
-          this.extensionRequestsPendingByThread[thread.id] = [];
+          this.clearExtensionRequests(thread.id);
           this.extensionStatusesByThread[thread.id] = {};
           this.extensionWidgetsByThread[thread.id] = {};
           this.extensionTitleByThread[thread.id] = undefined;

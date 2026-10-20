@@ -8501,6 +8501,26 @@ article.mcp-server-row {
   line-height: 1.5;
 }
 
+/* The held frame keeps painting while Pi's next request is in flight, but it is already answered:
+   it must not swallow the click you aim at whatever appears underneath it, and it must not eat Tab. */
+.dialog-backdrop.extension-dialog-hold {
+  pointer-events: none;
+}
+
+/* `pi-tui-kit` builds a dialog menu's title by joining the screen title and every description line
+   with \n (runtime.js `dialogTitle`), and pi-plan-mode puts the live tool summary in there. The h2
+   is flex-centred inside an auto-sized grid row, so folding those breaks into one re-wrapped
+   paragraph made the header's height depend on where the tool names happened to land. */
+.extension-dialog h2 {
+  white-space: pre-line;
+}
+
+/* The select dialog is anchored to the top by its own utility set (ui.dialogBackdropTop) instead of
+   centring: a centred window moves its TOP edge by half of every content-height change, and a
+   `select` re-renders on each click (pi-plan-mode's allowlist grows a line of tool names per tick).
+   It cannot be fixed from here - `place-items-center` is a layered `!important` utility, and an
+   unlayered rule loses to it either way (AGENTS §4.3). */
+
 .batch-extension-dialog {
   width: min(720px, 100%);
   max-height: min(760px, calc(100vh - 40px));

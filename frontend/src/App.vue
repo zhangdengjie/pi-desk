@@ -299,6 +299,6 @@ watch(() => [appStore.codeAccent, darkSurface.value] as const, ([accent, dark]) 
     <BranchDialog v-if="appStore.branchPanelOpen" />
     <DeleteSessionDialog v-if="appStore.deleteDialogOpen" />
     <ExportResultDialog v-if="appStore.exportDialogOpen" />
-    <ExtensionDialog v-if="appStore.activeThreadId && appStore.extensionRequestByThread[appStore.activeThreadId]" />
+    <ExtensionDialog v-if="appStore.extensionDialogVisible" />
   </div>
 </template>

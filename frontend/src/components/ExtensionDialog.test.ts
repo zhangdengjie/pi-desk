@@ -2,6 +2,7 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAppStore, type ExtensionUIRequest } from "../stores/app";
+import { agentService } from "../services/agent";
 import ExtensionDialog from "./ExtensionDialog.vue";
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
@@ -9,7 +10,7 @@ vi.mock("../services/catalog", () => ({ catalogService: {} }));
 vi.mock("../services/desktop", () => ({ getBootstrapState: vi.fn() }));
 vi.mock("../services/repository", () => ({ repositoryService: {} }));
 
-function setup(request: ExtensionUIRequest) {
+function setup(request: ExtensionUIRequest, options: { liveRespond?: boolean } = {}) {
   const pinia = createPinia();
   setActivePinia(pinia);
   const store = useAppStore();
@@ -21,7 +22,7 @@ function setup(request: ExtensionUIRequest) {
     activeThreadId: "thread-1",
     extensionRequestByThread: { "thread-1": request },
   });
-  store.respondToExtension = vi.fn().mockResolvedValue(undefined);
+  if (!options.liveRespond) store.respondToExtension = vi.fn().mockResolvedValue(undefined);
   store.dismissExtensionRequest = vi.fn();
   const wrapper = mount(ExtensionDialog, { global: { plugins: [pinia] } });
   return { store, wrapper };
@@ -99,6 +100,77 @@ describe("ExtensionDialog", () => {
     expect(list).toMatch(/display:\s*block/);
     expect(list).not.toMatch(/display:\s*grid/);
     expect(css).toMatch(/\.select-options > \* \+ \* \{[^}]*margin-top:/);
+  });
+
+  it("survives a menu re-issue: same scroll container, same rows, no second answer", async () => {
+    // pi-plan-mode's tool allowlist is one `select` per click (pi-tui-kit runtime.js runDialogMenu).
+    // The head slot used to be cleared synchronously on click, so App.vue's v-if tore the dialog
+    // down and rebuilt it: .dialog-body restarted at scrollTop 0 and every row slid - the jump.
+    vi.useFakeTimers();
+    const respondExtensionUI = vi.fn().mockResolvedValue(undefined);
+    agentService.respondExtensionUI = respondExtensionUI;
+
+    const { store, wrapper } = setup({
+      id: "s1", method: "select", title: "Choose Plan policy allowlist\nPlan policy will allow: bash, read.",
+      options: ["[ ] read", "[ ] write"],
+    }, { liveRespond: true });
+    const body = wrapper.get(".dialog-body").element;
+    const firstRow = wrapper.get(".select-options button").element;
+    expect(wrapper.get(".dialog-window").classes()).toContain("select-dialog");
+
+    await wrapper.get(".select-options button").trigger("click");
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.extensionRequestByThread["thread-1"]).toBeUndefined();
+    expect(store.extensionDialogVisible).toBe(true);
+    expect(wrapper.get(".dialog-body").element).toBe(body);
+    // A position key patches the row instead of replacing it.
+    expect(wrapper.get(".select-options button").element).toBe(firstRow);
+    expect(wrapper.get(".dialog-backdrop").classes()).toContain("extension-dialog-hold");
+
+    // An already answered frame must not answer a second time.
+    await wrapper.get(".select-options button").trigger("click");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(respondExtensionUI).toHaveBeenCalledTimes(1);
+
+    // The next frame of the same menu lands in the surviving element.
+    store.queueExtensionRequest("thread-1", {
+      id: "s2", method: "select", title: "Choose Plan policy allowlist\nPlan policy will allow: bash, read, git_ops.",
+      options: ["[x] read", "[ ] write"],
+    });
+    await wrapper.vm.$nextTick();
+    expect(store.extensionDialogHeldByThread["thread-1"]).toBeUndefined();
+    expect(wrapper.get(".dialog-body").element).toBe(body);
+    expect(wrapper.get(".select-options button").element).toBe(firstRow);
+    expect(wrapper.get(".select-options button").text()).toBe("[x] read");
+    expect(wrapper.get(".dialog-backdrop").classes()).not.toContain("extension-dialog-hold");
+
+    // Closing the menu for real: the held frame expires instead of hanging on screen.
+    await wrapper.get(".select-options button").trigger("click");
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(store.extensionDialogVisible).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("keeps the extension's line breaks and anchors a select dialog to the top", async () => {
+    const { readFile } = await import(["node", "fs/promises"].join(":") as string) as {
+      readFile(path: string, encoding: "utf8"): Promise<string>;
+    };
+    const css = await readFile("src/styles/layout.css", "utf8");
+    // The title is title + every description line joined with \n; folding it into one re-wrapped
+    // paragraph made the header row's height depend on where the tool names landed.
+    expect(css).toMatch(/\.extension-dialog h2 \{[^}]*white-space:\s*pre-line/);
+    expect(css).toMatch(/\.dialog-backdrop\.extension-dialog-hold \{[^}]*pointer-events:\s*none/);
+
+    // Centring is a layered !important utility, so the only way to stop the window's top edge from
+    // sliding is to not put that utility on the element (AGENTS §4.3).
+    const select = setup({ id: "s", method: "select", title: "t", options: ["a"] }).wrapper.get(".dialog-backdrop").classes();
+    expect(select, "select dialog is still centred -> its top edge moves with the content").toContain("items-start");
+    expect(select).toContain("justify-items-center");
+    expect(select).not.toContain("place-items-center");
+    expect(setup({ id: "c", method: "confirm", title: "t", message: "m" }).wrapper.get(".dialog-backdrop").classes())
+      .toContain("place-items-center");
   });
 
   it("renders a batch ask as tabs, preserves option descriptions, reviews, and submits structured answers", async () => {
