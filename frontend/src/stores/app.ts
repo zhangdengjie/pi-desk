@@ -178,6 +178,7 @@ export interface ThreadSummary {
   firstMessage?: string;
   parentSessionFile?: string;
   unread?: boolean;
+  archived?: boolean;
   error?: string;
 }
 
@@ -241,11 +242,14 @@ export interface TimelineRunNotice {
 export interface TimelineMessage {
   id: string;
   /**
-   * Stable v-for identity for a merged assistant run. `id` follows the *final*
-   * message, so it flips every time Pi appends another assistant message; using
-   * it as the row key remounted the row mid-run and reset every panel under it.
+   * Stable v-for identity for a message row. `id` follows the *final* message of a
+   * merged run, so it flips every time Pi appends another assistant message, and a
+   * re-read of the same session hands back session-entry ids instead of the ones the
+   * live stream used. Keying the row by `id` remounted it and reset every panel under
+   * it. `renderKey` is carried over whenever a re-read row matches what is on screen
+   * (`applySessionSnapshot`) and whenever a run grows (`conversationGrouping`).
    */
-  turnKey?: string;
+  renderKey?: string;
   entryId?: string;
   role: "user" | "assistant" | "system";
   text: string;
@@ -2030,8 +2034,17 @@ export const useAppStore = defineStore("app", {
       this.transcriptEntriesByThread[thread.id] = entries;
       this.promptCacheByThread[thread.id] = latestPromptCacheStatus(entries);
       const historical = historicalMessages(entries, this.compactionEstimatesByThread[thread.id], this.compactionDurationsByThread[thread.id]);
-      adoptStreamedIds(historical, this.messagesByThread[thread.id] ?? []);
-      for (const message of historical) {
+      const previous = this.messagesByThread[thread.id] ?? [];
+      // Two passes, two different identities. `adoptStreamedIds` aligns the *id* of the rows a live
+      // run produced with the session-entry rows that come back from disk; `renderKey` then carries
+      // the v-for key across the whole list, including rows that never streamed in this window.
+      adoptStreamedIds(historical, previous);
+      for (const [index, message] of historical.entries()) {
+        const existing = previous[index];
+        if (existing?.role === message.role && existing.text === message.text && existing.thinking === message.thinking
+          && existing.tools.length === message.tools.length && existing.tools.every((tool, toolIndex) => tool.id === message.tools[toolIndex].id)) {
+          message.renderKey = existing.renderKey ?? existing.id;
+        }
         if (message.compaction?.estimatedTokensAfter !== undefined) {
           this.applyCompactionEstimate(thread.id, message.compaction, false);
         }
@@ -2462,8 +2475,10 @@ export const useAppStore = defineStore("app", {
     },
     async sendActivePrompt(behavior?: StreamingBehavior) {
       const thread = this.activeThread;
-      const message = this.activeDraft.trim();
-      const attachments = this.activeAttachments.map((image) => ({ ...image }));
+      const originalDraft = this.activeDraft;
+      const originalAttachments = this.activeAttachments;
+      const message = originalDraft.trim();
+      const attachments = originalAttachments.map((image) => ({ ...image }));
       if (!thread || this.sessionOperationByThread[thread.id] || (!message && attachments.length === 0)) return;
       if (this.requestRemoteReconnect(thread, "prompt")) return;
 
@@ -2472,26 +2487,25 @@ export const useAppStore = defineStore("app", {
         if (this.transcriptStateByThread[thread.id] !== "loaded") return;
       }
 
+      // Re-checked after the await above: loading a transcript can start an operation of its own.
+      if (this.sessionOperationByThread[thread.id]) return;
+      // Clear only what this send actually carried. The draft may have been retyped while the
+      // transcript loaded, and attachments added after that must survive this send.
+      if ((this.draftsByThread[thread.id] ?? "") === originalDraft) this.draftsByThread[thread.id] = "";
+      this.attachmentsByThread[thread.id] = (this.attachmentsByThread[thread.id] ?? []).filter(image => !attachments.some(sent => sent.id === image.id));
       // An explicit argument wins over the preference (the queue panel always steers one now).
       const mode = behavior ?? this.streamingBehavior;
       if (thread.status === "running" && mode !== "steer") {
         const queue = this.pendingPromptsByThread[thread.id] ?? (this.pendingPromptsByThread[thread.id] = []);
         queue.push({ id: createID("pending"), text: message, images: attachments, createdAt: nowISO() });
-        this.draftsByThread[thread.id] = "";
-        this.attachmentsByThread[thread.id] = [];
         this.scheduleDesktopStateSave();
         return;
       }
 
-      if (this.sessionOperationByThread[thread.id]) return;
-      const originalDraft = this.draftsByThread[thread.id];
-      const originalAttachments = this.attachmentsByThread[thread.id];
-      this.draftsByThread[thread.id] = "";
-      this.attachmentsByThread[thread.id] = [];
       const sent = await this.deliverPrompt(thread, message, attachments, thread.status === "running" && mode === "steer" ? "steer" : undefined);
       if (!sent && !this.draftsByThread[thread.id] && !this.attachmentsByThread[thread.id]?.length) {
-        this.draftsByThread[thread.id] = originalDraft ?? message;
-        this.attachmentsByThread[thread.id] = originalAttachments ?? [];
+        this.draftsByThread[thread.id] = originalDraft;
+        this.attachmentsByThread[thread.id] = originalAttachments;
       }
       this.scheduleDesktopStateSave();
     },
@@ -2676,7 +2690,8 @@ export const useAppStore = defineStore("app", {
     },
     async sendActiveBash() {
       const thread = this.activeThread;
-      const raw = this.activeDraft.trim();
+      const originalDraft = this.activeDraft;
+      const raw = originalDraft.trim();
       if (!thread || this.sessionOperationByThread[thread.id] || !raw.startsWith("!") || this.activeAttachments.length || this.bashRunningByThread[thread.id]) return;
       const excludeFromContext = raw.startsWith("!!");
       const command = raw.slice(excludeFromContext ? 2 : 1).trim();
@@ -2696,7 +2711,8 @@ export const useAppStore = defineStore("app", {
         });
         this.bashMessageByThread[thread.id] = messageID;
         this.bashRunningByThread[thread.id] = true;
-        this.draftsByThread[thread.id] = "";
+        thread.archived = false;
+        if (this.draftsByThread[thread.id] === originalDraft) this.draftsByThread[thread.id] = "";
         if (thread.title === "New task") {
           thread.firstMessage = command;
           thread.title = `! ${command}`.slice(0, 64);
@@ -2842,6 +2858,24 @@ export const useAppStore = defineStore("app", {
         this.appendSystem(thread.id, `Unable to rename task: ${errorMessage(error)}`, errorMessage(error));
       }
     },
+    canArchiveThread(threadId: string): boolean {
+      const thread = this.threads.find((item) => item.id === threadId);
+      return Boolean(thread && thread.status !== "running" && thread.status !== "starting"
+        && !this.bashRunningByThread[threadId] && !this.waitingForOutputByThread[threadId]
+        && !this.pendingPromptsByThread[threadId]?.length && !this.pendingPromptDispatchByThread[threadId]
+        && !this.sessionOperationByThread[threadId]);
+    },
+    setThreadArchived(threadId: string, archived: boolean) {
+      const thread = this.threads.find((item) => item.id === threadId);
+      if (!thread || (archived && !this.canArchiveThread(threadId))) return;
+      thread.archived = archived;
+      if (archived && this.activeThreadId === threadId) {
+        const next = this.filteredThreads.find((item) => !item.archived);
+        if (next) this.selectThread(next.id);
+        else this.activateThread("");
+      }
+      this.scheduleDesktopStateSave();
+    },
     requestDeleteThread(threadId: string) {
       const thread = this.threads.find((candidate) => candidate.id === threadId);
       if (!thread || this.sessionOperationByThread[thread.id]) return;
@@ -2922,7 +2956,7 @@ export const useAppStore = defineStore("app", {
       this.forgetTerminalGenerations(threadId);
       piExitedGenerationByThread.delete(threadId);
       if (this.activeThreadId === threadId) {
-        this.activateThread(this.threads[0]?.id ?? "");
+        this.activateThread(this.threads.find((thread) => !thread.archived)?.id ?? "");
       }
       this.piProcessOrder = this.piProcessOrder.filter((id) => id !== threadId);
     },
@@ -3374,6 +3408,7 @@ export const useAppStore = defineStore("app", {
       const titleSuffix = kind === "fork" ? "fork" : "copy";
       const newTitle = `${previous.title} (${titleSuffix})`;
       thread.title = newTitle;
+      thread.archived = false;
       thread.sessionId = state.sessionId;
       thread.sessionFile = state.sessionFile;
       this.invalidateSessionReads(thread.id);
@@ -3959,6 +3994,7 @@ export const useAppStore = defineStore("app", {
 
       switch (sessionEvent.event.type) {
         case "agent_start":
+          thread.archived = false;
           thread.status = "running";
           this.waitingForOutputByThread[thread.id] = true;
           this.scheduleDesktopStateSave();
@@ -4011,7 +4047,7 @@ export const useAppStore = defineStore("app", {
               void this.dispatchNextPendingPrompt(thread.id);
             });
           }
-          if (this.notificationsEnabled && !(this.pendingPromptsByThread[thread.id]?.length) && (thread.id !== this.activeThreadId || appIsInBackground())) {
+          if (this.notificationsEnabled && !(this.pendingPromptsByThread[thread.id]?.length)) {
             const lastAssistant = messages.findLast((message) => message.role === "assistant");
             const notification = payload.aborted === true ? "notifications.taskCancelled" : lastAssistant?.error ? "notifications.taskFailed" : "notifications.taskCompleted";
             void notifyDesktop(tr(notification), taskNotificationSummary(thread.title));
@@ -4600,6 +4636,7 @@ export const useAppStore = defineStore("app", {
               existing.workspacePath = workspace.path;
             }
             existing.unread = saved.unread;
+            existing.archived = saved.archived && !interrupted;
             existing.status = interrupted ? "attention" : saved.status as ThreadStatus;
             if (interrupted) existing.error = "Previous Pi run was interrupted";
             existing.createdAt ||= saved.createdAt;
@@ -4619,6 +4656,7 @@ export const useAppStore = defineStore("app", {
               createdAt: saved.createdAt,
               modifiedAt: saved.updatedAt,
               unread: saved.unread,
+              archived: saved.archived && !interrupted,
               error: interrupted ? "Previous Pi run was interrupted" : undefined,
             });
             drafts.set(saved.id, saved.draft ?? "");
@@ -4642,9 +4680,9 @@ export const useAppStore = defineStore("app", {
           if (composers.has(thread.id)) await this.restoreComposer(thread.id, composers.get(thread.id)!);
           this.transcriptStateByThread[thread.id] ??= "idle";
         }
-        this.activateThread(this.threads.some((thread) => thread.id === desktop.activeThreadId)
+        this.activateThread(this.threads.some((thread) => thread.id === desktop.activeThreadId && !thread.archived)
           ? desktop.activeThreadId ?? ""
-          : this.threads[0]?.id ?? "");
+          : this.threads.find((thread) => !thread.archived)?.id ?? "");
         this.catalogReady = true;
       } catch (error) {
         this.catalogError = errorMessage(error);
@@ -4730,7 +4768,7 @@ export const useAppStore = defineStore("app", {
           this.draftsByThread[thread.id] = "";
           this.transcriptStateByThread[thread.id] = "idle";
         }
-        if (!this.activeThreadId) this.activeThreadId = this.threads[0]?.id ?? "";
+        if (!this.activeThreadId) this.activeThreadId = this.threads.find((thread) => !thread.archived)?.id ?? "";
         this.scheduleDesktopStateSave();
       } catch (error) {
         this.sessionSyncError = errorMessage(error);
@@ -4819,6 +4857,7 @@ export const useAppStore = defineStore("app", {
               createdAt: thread.createdAt,
               updatedAt: thread.modifiedAt,
               unread: thread.unread || undefined,
+              archived: thread.archived || undefined,
             })),
           };
           try {

@@ -49,7 +49,7 @@ async function openPanel(wrapper: ReturnType<typeof mount>) {
 
     expect(wrapper.find("summary").text()).toContain("bash npm test");
     expect(wrapper.find("summary").text()).toContain("Complete");
-    expect(wrapper.get(".tool-summary").element.nextElementSibling).toBe(wrapper.get(".tool-status").element);
+    expect(wrapper.get(".tool-summary-group").element.nextElementSibling).toBe(wrapper.get(".tool-status").element);
     await wrapper.get('[aria-label="Copy tool input"]').trigger("click");
     await wrapper.get('[aria-label="Copy tool output"]').trigger("click");
     expect(writeText).toHaveBeenNthCalledWith(1, JSON.stringify({ command: "npm test" }, null, 2));
@@ -254,6 +254,23 @@ async function openPanel(wrapper: ReturnType<typeof mount>) {
     expect(wrapper.get("details").attributes("open")).toBeUndefined();
     wrapper.unmount();
     vi.useRealTimers();
+  });
+
+  // Upstream 1.3.0's contract, kept as its own case: a live call starts collapsed, and a reader who
+  // opened it by hand must not have it snap shut when the call lands. Our side reaches the same
+  // answer through `detailsOpenState`, so the assertion is the whole point of the test.
+  it("keeps live tool output collapsed and preserves a manual expansion when the call finishes", async () => {
+    const wrapper = mount(ToolCallPanel, {
+      props: { tool: { id: "tool-live-manual", name: "read", output: "partial", status: "running" } },
+    });
+
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    await wrapper.get("summary").trigger("click");
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+
+    await wrapper.setProps({ tool: { id: "tool-live-manual", name: "read", output: "done", status: "complete" } });
+    expect(wrapper.get("details").attributes("open")).toBeDefined();
+    wrapper.unmount();
   });
 
   it("never touches the layout for a call that finishes before the window would open", async () => {

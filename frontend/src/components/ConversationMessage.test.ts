@@ -433,7 +433,7 @@ describe("ConversationMessage", () => {
     expect(streamedOutput.text()).toBe("Partial answer");
   });
 
-  it("keeps execution expanded until all assistant output finishes", async () => {
+  it("preserves manual execution expansion across output state changes", async () => {
     const pinia = createPinia();
     const wrapper = mount(ConversationMessage, {
       props: {
@@ -452,12 +452,26 @@ describe("ConversationMessage", () => {
     const details = wrapper.get(".execution-process");
     expect(details.attributes("open")).toBeDefined();
     expect(wrapper.find(".message-actions").exists()).toBe(false);
+    const metaSlot = wrapper.get(".message-meta").element;
+
+    // Upstream 1.3.0 added this: a reader who closes a live execution panel must win, and the
+    // panel stays shut through the rest of the run. Our `detailsOpenState` answers the same way.
+    await details.get("summary").trigger("click");
+    await wrapper.vm.$nextTick();
+    expect(details.attributes("open")).toBeUndefined();
 
     await wrapper.setProps({ message: { ...wrapper.props("message"), streaming: false } });
     await wrapper.vm.$nextTick();
     expect(details.attributes("open")).toBeUndefined();
     expect(wrapper.find(".message-actions").exists()).toBe(true);
+    expect(wrapper.get(".message-meta").element).toBe(metaSlot);
     expect(wrapper.findAll(".message-action")).toHaveLength(4);
+    await details.get("summary").trigger("click");
+    await wrapper.setProps({ message: { ...wrapper.props("message"), streaming: true } });
+    expect(details.attributes("open")).toBeDefined();
+    expect(wrapper.get(".message-meta").element).toBe(metaSlot);
+    await wrapper.setProps({ message: { ...wrapper.props("message"), streaming: false } });
+    expect(details.attributes("open")).toBeDefined();
   });
 
   // A turn caught mid-run: reasoning streamed, one call finished, the answer has
@@ -614,7 +628,7 @@ describe("ConversationMessage", () => {
     expect(store.openRepositoryDiff).toHaveBeenCalledWith("src/main.go", "+ changed", "assistant-remote-file");
   });
 
-  it("expands only the active reasoning step and collapses it when reasoning finishes", async () => {
+  it("keeps the live reasoning window's own choice through the end of thinking", async () => {
     const pinia = createPinia();
     const message = {
       id: "assistant-thinking-live", role: "assistant" as const, text: "", thinking: "Inspecting",
@@ -623,7 +637,13 @@ describe("ConversationMessage", () => {
     };
     const wrapper = mount(ConversationMessage, { props: { message }, global: { plugins: [pinia] } });
 
+    // Divergence from upstream 1.3.0, which collapses a live reasoning block. Ours opens it only
+    // while the answer has no character yet, inside a fixed-height window (`.thinking-body.is-live`)
+    // that pulls its own tail - so nothing under it moves. See `livePanelsAllowed`.
     expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
+    // The reader's own toggle outranks every mode, and it is what survives the run.
+    await wrapper.get(".thinking-block > summary").trigger("click");
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeUndefined();
     await wrapper.setProps({ message: {
       ...message, text: "Answer", activeExecution: "text" as const,
       executionSteps: [{ ...message.executionSteps[0], active: false }],

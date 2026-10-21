@@ -17,6 +17,7 @@ import LoadingRing from "./LoadingRing.vue";
 
 const appStore = useAppStore();
 const timeline = ref<HTMLElement>();
+const timelineContent = ref<HTMLElement>();
 const composerBar = ref<ComponentPublicInstance>();
 const composerHeight = ref(0);
 const searchPopover = ref<InstanceType<typeof SearchPopover>>();
@@ -37,23 +38,9 @@ const lastMessage = computed(() => messages.value.at(-1));
 // between a tool call and its answer, and a snap there would yank the tail to the
 // bottom in the middle of a live run.
 const streamLive = computed(() => lastMessage.value?.streaming === true);
-const streamSignal = computed(() => {
-  const message = lastMessage.value;
-  if (!message) return [appStore.activeThreadId, "", 0, 0, 0, 0, "", appStore.activeWaitingForOutput] as const;
-  let thinkingLength = message.thinking.length;
-  let toolCount = message.tools.length;
-  let toolOutput = message.tools.reduce((total, tool) => total + tool.output.length, 0);
-  // Merged assistant runs keep thinking and tools inside executionSteps with
-  // message.tools/thinking emptied out, so growth has to be read from there.
-  for (const step of message.executionSteps ?? []) {
-    if (step.kind === "thinking" && step.text) thinkingLength += step.text.length;
-    for (const tool of step.tools ?? []) {
-      toolCount += 1;
-      toolOutput += tool.output.length;
-    }
-  }
-  return [appStore.activeThreadId, message.id, message.text.length, thinkingLength, toolCount, toolOutput, message.runNotice?.status ?? "", appStore.activeWaitingForOutput] as const;
-});
+// Only completed history is virtualized; the growing turn keeps native DOM sizing.
+const virtualMessageCount = computed(() => shouldVirtualize.value ? Math.max(0, messages.value.findLastIndex(message => message.role === "user")) : 0);
+const directMessages = computed(() => messages.value.slice(virtualMessageCount.value));
 
 /**
  * The virtualizer keeps its own copy of the scroll offset and only learns of a raw
@@ -78,7 +65,9 @@ function openPinWindow() {
     // private API, and the range it computes answers the same question: once the last row is
     // inside the range, the offset it used was the bottom.
     const items = virtualizer.value.getVirtualItems();
-    const last = messages.value.length - 1;
+    // The virtualized range is the completed history only (upstream 1.3.0's partial
+    // virtualization), so "the last row" is `virtualMessageCount - 1`, not the last turn.
+    const last = virtualMessageCount.value - 1;
     if (last >= 0 && items.length && items[items.length - 1].index >= last) {
       pinWindow.value = false;
       return;
@@ -118,9 +107,9 @@ function noteViewportHeight() {
 }
 
 const virtualizer = useVirtualizer(computed(() => ({
-  count: shouldVirtualize.value ? messages.value.length : 0,
+  count: virtualMessageCount.value,
   getScrollElement: () => timeline.value ?? null,
-  getItemKey: (index: number) => messages.value[index]?.turnKey ?? messages.value[index]?.id ?? index,
+  getItemKey: (index: number) => messages.value[index]?.renderKey ?? messages.value[index]?.id ?? index,
   estimateSize: (index: number) => estimateMessageSize(messages.value[index]),
   overscan: pinWindow.value ? 0 : virtualOverscan.value,
 })));
@@ -128,6 +117,10 @@ const virtualizer = useVirtualizer(computed(() => ({
 
 const virtualRows = computed(() => virtualizer.value.getVirtualItems());
 const virtualTotalSize = computed(() => virtualizer.value.getTotalSize());
+// The DOM observer owns bottom-following; virtual anchoring still handles history browsing.
+watch(stickToBottom, (pinned) => {
+  virtualizer.value.shouldAdjustScrollPositionOnItemSizeChange = pinned ? () => false : undefined;
+}, { immediate: true });
 
 type SearchMatch = { messageId: string; messageIndex: number };
 type ConversationNavigationItem = SearchMatch & { title: string; answer: string };
@@ -462,9 +455,10 @@ function updateActiveNavigation() {
   if (!element || !navigationItems.value.length) return;
 
   if (shouldVirtualize.value) {
-    const activeIndex = virtualRows.value.reduce((current, row) => (
+    let activeIndex = virtualRows.value.reduce((current, row) => (
       row.start <= element.scrollTop + 48 ? Math.max(current, row.index) : current
     ), 0);
+    if (element.scrollTop + 48 >= virtualTotalSize.value) activeIndex = virtualMessageCount.value;
     const activeItem = navigationItems.value.findLast((item) => item.messageIndex <= activeIndex);
     activeNavigationId.value = activeItem?.messageId ?? navigationItems.value[0].messageId;
     return;
@@ -497,7 +491,8 @@ function closeSearch() {
 }
 
 async function scrollToMessage(messageIndex: number, messageId: string, block: ScrollLogicalPosition) {
-  if (shouldVirtualize.value) virtualizer.value.scrollToIndex(messageIndex, { align: block === "start" ? "start" : "center" });
+  stickToBottom.value = false;
+  if (messageIndex < virtualMessageCount.value) virtualizer.value.scrollToIndex(messageIndex, { align: block === "start" ? "start" : "center" });
   await nextTick();
   const row = Array.from(timeline.value?.querySelectorAll<HTMLElement>("[data-message-id]") ?? [])
     .find((element) => element.dataset.messageId === messageId);
@@ -526,7 +521,7 @@ async function scrollToSearchMatch() {
   const match = currentSearchMatch.value;
   const element = timeline.value;
   if (!match || !element) return;
-  if (shouldVirtualize.value) virtualizer.value.scrollToIndex(match.messageIndex, { align: "start" });
+  if (match.messageIndex < virtualMessageCount.value) virtualizer.value.scrollToIndex(match.messageIndex, { align: "start" });
   await nextTick();
   let row = findSearchRow(element, match.messageId);
   // The virtualizer needs a frame or three to actually mount the row we just asked for. Without the
@@ -534,7 +529,7 @@ async function scrollToSearchMatch() {
   // scrollTop stayed 0 while the target sat 3113px down the document).
   for (let attempt = 0; !row && attempt < 4; attempt += 1) {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    if (shouldVirtualize.value) virtualizer.value.scrollToIndex(match.messageIndex, { align: "start" });
+    if (match.messageIndex < virtualMessageCount.value) virtualizer.value.scrollToIndex(match.messageIndex, { align: "start" });
     await nextTick();
     row = findSearchRow(element, match.messageId);
   }
@@ -648,31 +643,37 @@ watch(() => composerBar.value?.$el, (element, _previous, onCleanup) => {
   });
 }, { flush: "post" });
 
-watch(() => appStore.activeThreadId, async () => {
+async function openConversation() {
   activeNavigationId.value = navigationItems.value[0]?.messageId ?? "";
   stickToBottom.value = true;
   openPinWindow();
   await nextTick();
   // `measure()` used to sit here. It is `itemSizeCache.clear()` plus a notify, and the cache is
-  // keyed by `turnKey` (a message id), so entries from other tasks can never be *wrong* - they are
-  // simply the heights this row had the last time it was on screen. Clearing it meant every switch
-  // back re-ranged the list from the character-count estimate, which caps at 900px against rows
-  // measured at 1439-1874px: the probe counted 17 mounts for 8 distinct rows on the 653-entry task
-  // (`.pi/bin/hitprobe/devSwitchProbe.ts.keep`, 2026-09-30 08:3x).
+  // keyed by `renderKey` (a message id), so entries from other tasks can never be *wrong* - they
+  // are simply the heights this row had the last time it was on screen. Clearing it meant every
+  // switch back re-ranged the list from the character-count estimate, which caps at 900px against
+  // rows measured at 1439-1874px: the probe counted 17 mounts for 8 distinct rows on the 653-entry
+  // task (`.pi/bin/hitprobe/devSwitchProbe.ts.keep`, 2026-09-30 08:3x).
   scrollToBottom();
+  // Upstream 1.3.0: the growing turn is plain DOM that mounts a tick after the virtualized
+  // history, so one pin lands short of a cold transcript. Re-pin, but only if the reader is
+  // still with us - a scroll that happened in this tick outranks it.
+  await nextTick();
+  if (stickToBottom.value) scrollToBottom();
   updateActiveNavigation();
+}
+
+watch(() => appStore.activeThreadId, openConversation);
+appStore.$onAction(({ name, args, after }) => {
+  // Selecting the current conversation does not change activeThreadId.
+  if (name === "selectThread" && args[0] === appStore.activeThreadId) after(() => { void openConversation(); });
 });
 
-watch(streamSignal, (_signal, previous) => {
-  const messageChanged = previous?.[1] !== lastMessage.value?.id;
-  if (messageChanged && lastMessage.value?.role === "user") stickToBottom.value = true;
-  noteSelfGrowth();
-  if (stickToBottom.value) followTail();
-});
-
-watch(virtualTotalSize, () => {
-  noteSelfGrowth();
-  if (stickToBottom.value && shouldVirtualize.value) followTail();
+watch(() => lastMessage.value?.id, () => {
+  if (lastMessage.value?.role === "user") {
+    stickToBottom.value = true;
+    void nextTick().then(() => { if (stickToBottom.value) scrollToBottom(); });
+  }
 });
 
 watch(navigationItems, (items) => {
@@ -688,20 +689,26 @@ watch(searchMatches, (matches) => {
   activeSearchMatch.value = matches.length ? Math.min(activeSearchMatch.value, matches.length - 1) : 0;
 }, { flush: "post" });
 
-onMounted(async () => {
+let contentResizeObserver: ResizeObserver | undefined;
+onMounted(() => {
   document.addEventListener("keydown", onDocumentKeydown, true);
-  // A thread that was already active when this pane mounted never runs the `activeThreadId` watcher
-  // below, so nothing pinned the tail and the transcript opened at the top. Same shape as the switch
-  // path - and deliberately without `measure()`: the row-height cache is keyed by `turnKey`, so the
-  // heights this row had last time it was on screen are still the right ones (see the note there).
-  stickToBottom.value = true;
-  openPinWindow();
-  await nextTick();
-  noteViewportHeight();
-  scrollToBottom();
-  updateActiveNavigation();
+  // Upstream 1.3.0's hook, and it is the right one: a ResizeObserver on the content wrapper is
+  // the after-layout, before-paint place where the *committed* document height is known - it fires
+  // for the growing turn (now plain DOM) and for virtual row re-measures alike. That replaces the
+  // per-delta `streamSignal` watcher and the `virtualTotalSize` one. What it calls is our follow,
+  // not a hard jump: a discrete landing eases into place instead of teleporting the screen.
+  contentResizeObserver = new ResizeObserver(() => {
+    if (appStore.paneResizing) return;
+    noteViewportHeight();
+    noteSelfGrowth();
+    if (stickToBottom.value) followTail();
+    updateActiveNavigation();
+  });
+  if (timelineContent.value) contentResizeObserver.observe(timelineContent.value);
+  void openConversation();
 });
 onBeforeUnmount(() => {
+  contentResizeObserver?.disconnect();
   stopFollowingTail();
   cancelAnimationFrame(pinFrames);
   rowObserver?.disconnect();
@@ -759,6 +766,7 @@ onBeforeUnmount(() => {
         </aside>
       </nav>
       <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--composer-overlay-reserve': `${composerHeight}px` }" @scroll="onTimelineScroll" @wheel="onTimelineWheel" @pointerdown="markReaderInput" @keydown="markReaderInput">
+      <div ref="timelineContent" class="timeline-content">
       <div v-if="appStore.sessionMutationErrorByThread?.[appStore.activeThreadId]" class="conversation-operation-banner mb-4 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-[var(--font-size-label)] text-[var(--text-secondary)]" role="status">
         {{ tr("conversation.historyMutationLimit") }}
       </div>
@@ -784,8 +792,9 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
+      <template v-else>
       <div
-        v-else-if="shouldVirtualize"
+        v-if="shouldVirtualize"
         class="virtual-message-list"
         data-virtualized="true"
         :style="{ height: `${virtualTotalSize}px` }"
@@ -807,15 +816,18 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <ConversationMessage v-else v-for="message in messages" :key="message.turnKey ?? message.id" :ref="observeTranscriptRow" :message="message" :search-query="searchQuery" :search-active="message.id === activeSearchMessageId" :search-active-index="activeSearchHitIndex" />
+      <ConversationMessage v-for="message in directMessages" :key="message.renderKey ?? message.id" :ref="observeTranscriptRow" :message="message" :search-query="searchQuery" :search-active="message.id === activeSearchMessageId" :search-active-index="activeSearchHitIndex" />
+      </template>
       <div
-        v-if="appStore.activeWaitingForOutput && !appStore.activeRetry"
+        v-if="messages.length > 0"
         class="waiting-for-output mt-3 inline-flex size-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-raised)] text-[var(--text-secondary)] shadow-sm"
+        :class="{ invisible: !appStore.activeWaitingForOutput || Boolean(appStore.activeRetry) }"
         role="status"
         aria-live="polite"
         :aria-label="tr('conversation.waitingForOutput')"
       >
         <LoadingRing :size="14" />
+      </div>
       </div>
       </div>
       <button

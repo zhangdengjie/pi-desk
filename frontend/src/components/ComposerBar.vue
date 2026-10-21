@@ -766,6 +766,7 @@ onBeforeUnmount(() => {
       >{{ tr("composer.providerEnvMissing", { provider: issue.provider, variable: issue.variable }) }}</div>
       <div class="composer-editor" @keydown.capture="onKeydown" @paste.capture="onPaste">
         <DraftInput
+          :key="appStore.activeThreadId"
           ref="markdownEditor"
           v-model="draft"
           :placeholder="tr('composer.placeholder')"

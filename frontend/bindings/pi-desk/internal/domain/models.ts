@@ -191,6 +191,7 @@ export interface DesktopThreadState {
     "createdAt"?: string;
     "updatedAt"?: string;
     "unread"?: boolean;
+    "archived"?: boolean;
 }
 
 export interface DiscoverModelsRequest {
@@ -326,6 +327,7 @@ export interface ManagedSkill {
     "directory": string;
     "kind": string;
     "enabled": boolean;
+    "readOnly"?: boolean;
     "warnings"?: string[] | null;
     "content": string;
 }
@@ -360,6 +362,7 @@ export interface ManagedSkillSummary {
     "directory": string;
     "kind": string;
     "enabled": boolean;
+    "readOnly"?: boolean;
     "warnings"?: string[] | null;
 }
 
@@ -401,6 +404,7 @@ export interface McpServer {
     "transport": string;
     "endpoint"?: string;
     "disabled": boolean;
+    "needsMigration"?: boolean;
     "definition": string;
 }
 
@@ -416,6 +420,7 @@ export interface McpServerSummary {
     "transport": string;
     "endpoint"?: string;
     "disabled": boolean;
+    "needsMigration"?: boolean;
 }
 
 export interface McpServerTestResult {

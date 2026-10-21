@@ -84,7 +84,7 @@ const showMessageMeta = computed(() => (
   Boolean(props.message.delivery)
   || (props.message.role === "user" && Boolean(props.message.timestamp))
   || Boolean(props.message.contextExcluded)
-  || showActions.value
+  || actionable.value
 ));
 const runNotice = computed(() => {
   if (props.message.role !== "assistant") return undefined;
@@ -222,7 +222,7 @@ const durationLabel = computed(() => {
   return formatElapsed(duration);
 });
 
-watch(() => props.message.id, () => {
+watch(() => props.message.renderKey ?? props.message.id, () => {
   changedFilesExpanded.value = false;
   everLive.value = props.message.streaming;
 });
@@ -317,7 +317,10 @@ const everLive = ref(props.message.streaming);
 watch(() => props.message.streaming, (streaming) => {
   if (streaming) everLive.value = true;
 });
-const executionKey = computed(() => `${props.message.id}-execution`);
+// `renderKey` is the run's identity (upstream 1.3.0): it stays on the first message of the turn
+// while `id` moves to the newest answer. Keying the panel memory by `id` made every appended
+// message look like a different panel, which is what forced the registry to exist at all.
+const executionKey = computed(() => `${props.message.renderKey ?? props.message.id}-execution`);
 
 // Written during render, which is what lets a toggle handler tell "Vue asked for
 // this value" apart from "the reader clicked": the handler's `step` closure can

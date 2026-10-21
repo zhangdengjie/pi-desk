@@ -139,6 +139,18 @@ describe("ConversationPane", () => {
     expect(scrollerObserver!.disconnect).toHaveBeenCalled();
   });
 
+  it("keeps the latest user and assistant turn outside history virtualization", async () => {
+    const wrapper = mountTranscript(82);
+    await flushPromises();
+    expect(wrapper.find("[data-virtualized]").exists()).toBe(true);
+    for (const id of ["message-80", "message-81"]) {
+      const row = wrapper.get(`[data-message-id="${id}"]`).element;
+      expect(row.closest(".virtual-message-row")).toBeNull();
+      expect(row.parentElement).toBe(wrapper.get(".timeline-content").element);
+    }
+    wrapper.unmount();
+  });
+
   it("opens an already selected conversation at its latest message", async () => {
     const wrapper = mountTranscript(4);
     const timeline = wrapper.get(".timeline").element as HTMLElement;
@@ -153,6 +165,34 @@ describe("ConversationPane", () => {
     // both real engines land on. Measured boundary: utils/scroll.ts keeps the write under 2^31
     // because WebKit drops anything larger at 0 (docs: .pi/plans, 2026-09-28).
     expect(timeline.scrollTop).toBeGreaterThanOrEqual(1200);
+  });
+
+  it("opens cached conversations at the bottom, including reselecting the current conversation", async () => {
+    const wrapper = mountTranscript(4);
+    await flushPromises();
+    const store = useAppStore();
+    store.threads.push({ ...store.threads[0], id: "thread-2" });
+    store.messagesByThread["thread-2"] = transcript(6);
+    const timeline = wrapper.get(".timeline").element as HTMLElement;
+    Object.defineProperty(timeline, "scrollHeight", {
+      get: () => wrapper.findAll(".stub-message").length * 300,
+    });
+
+    for (const threadId of ["thread-1", "thread-2", "thread-1"]) {
+      await wrapper.get(".timeline").trigger("wheel", { deltaY: -100 });
+      timeline.scrollTop = 100;
+      store.selectThread(threadId);
+      await flushPromises();
+      // Same contract as the case above: the pin writes an oversized offset and the engine clamps
+      // it, which happy-dom does not do, so "at or past the bottom" is what is observable here.
+      expect(timeline.scrollTop).toBeGreaterThanOrEqual(timeline.scrollHeight);
+    }
+
+    wrapper.unmount();
+    timeline.scrollTop = 100;
+    store.selectThread("thread-1");
+    await flushPromises();
+    expect(timeline.scrollTop).toBe(100);
   });
 
   it("measures the composer stack and follows its growth only while pinned to the bottom", async () => {
@@ -197,6 +237,7 @@ describe("ConversationPane", () => {
     expect(timeline.scrollTop).toBeGreaterThan(1200);
 
     timeline.scrollTop = 100;
+    await wrapper.get(".timeline").trigger("wheel", { deltaY: -100 });
     await wrapper.get(".timeline").trigger("scroll");
     rect.mockReturnValue({ height: 400 } as DOMRect);
     observer.callback();
@@ -211,8 +252,19 @@ describe("ConversationPane", () => {
 
   async function mountPinnedTail() {
     const frames: FrameRequestCallback[] = [];
+    const observers: Array<{ callback: () => void; target?: Element; disconnect: () => void }> = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.stubGlobal("ResizeObserver", class {
+      record: (typeof observers)[number];
+      constructor(callback: () => void) {
+        this.record = { callback, disconnect: vi.fn() };
+        observers.push(this.record);
+      }
+      observe(target: Element) { this.record.target = target; }
+      unobserve() {}
+      disconnect() { this.record.disconnect(); }
+    });
     const store = useAppStore();
     const wrapper = mountTranscript(4);
     await flushPromises();
@@ -227,15 +279,20 @@ describe("ConversationPane", () => {
       while (frames.length) frames.shift()?.(0);
       await flushPromises();
     };
-    // Growing the tail is what normally triggers the follow; scrollHeight has to
-    // move with it because jsdom lays nothing out.
+    // Growing the tail is what triggers the follow, and in a real window the ResizeObserver on
+    // `.timeline-content` is what reports that growth (upstream 1.3.0; it replaced the per-delta
+    // `streamSignal` watcher). happy-dom lays nothing out and never fires one, so `stream` reports
+    // the height change by hand - same call, same order as the engine's.
+    const contentObserver = () =>
+      observers.find((item) => item.target === wrapper.get(".timeline-content").element);
     const stream = async (text: string, scrollHeight: number) => {
       const messages = store.messagesByThread["thread-1"];
       messages[messages.length - 1].text = text;
       sizes.scrollHeight = scrollHeight;
+      contentObserver()?.callback();
       await settle();
     };
-    return { wrapper, timeline, stream, settle };
+    return { wrapper, timeline, stream, settle, contentObserver };
   }
 
   it("stops following the tail when a small wheel flick escapes the bottom", async () => {
@@ -591,6 +648,154 @@ describe("ConversationPane", () => {
     expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
     expect((wrapper.get(".thinking-block .thinking-body").element as HTMLElement).scrollTop).toBe(120);
     expect(wrapper.get(".thinking-block .thinking-body").text()).toBe("Reading the scroll code");
+  });
+
+  it("follows measured content growth without mistaking layout scrolls for an upward wheel", async () => {
+    // Upstream 1.3.0's hook: one ResizeObserver on `.timeline-content` is what learns that the
+    // document got taller, before paint. What it triggers here is our follow rather than a hard
+    // jump, so an 800px landing eases over a few frames instead of teleporting the screen - the
+    // assertions pump the frame chain to its settled value and check the three reader states.
+    const frames: FrameRequestCallback[] = [];
+    const observers: Array<{ callback: () => void; target?: Element; disconnect: () => void }> = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.stubGlobal("ResizeObserver", class {
+      record: (typeof observers)[number];
+      constructor(callback: () => void) {
+        this.record = { callback, disconnect: vi.fn() };
+        observers.push(this.record);
+      }
+      observe(target: Element) { this.record.target = target; }
+      unobserve() {}
+      disconnect() { this.record.disconnect(); }
+    });
+    const wrapper = mountTranscript(4);
+    await flushPromises();
+    const observer = observers.find((item) => item.target === wrapper.get(".timeline-content").element)!;
+    expect(observer, "the transcript must observe its own content box").toBeDefined();
+    const timeline = wrapper.get(".timeline").element as HTMLElement;
+    const sizes = { clientHeight: 600, scrollHeight: 1200 };
+    Object.defineProperties(timeline, {
+      clientHeight: { configurable: true, get: () => sizes.clientHeight },
+      scrollHeight: { configurable: true, get: () => sizes.scrollHeight },
+    });
+    const settle = () => { for (let guard = 0; guard < 60 && frames.length; guard += 1) frames.shift()!(0); };
+
+    timeline.scrollTop = 600;
+    await wrapper.get(".timeline").trigger("scroll");
+
+    // 800px of new content. The observer reports the growth first, so the scroll the clamp
+    // produces afterwards is not evidence about the reader.
+    sizes.scrollHeight = 2000;
+    observer.callback();
+    settle();
+    expect(timeline.scrollTop).toBe(2000);
+    await wrapper.get(".timeline").trigger("scroll");
+    expect(timeline.scrollTop).toBe(2000);
+
+    // A 5px flick is the reader leaving, but the position it lands on is still inside the 24px
+    // "arrived at the tail" band, so move well clear of it before checking the pin stays released.
+    await wrapper.get(".timeline").trigger("wheel", { deltaY: -5 });
+    timeline.scrollTop = 1300;
+    await wrapper.get(".timeline").trigger("scroll");
+    sizes.scrollHeight = 3000;
+    observer.callback();
+    settle();
+    expect(timeline.scrollTop).toBe(1300);
+
+    // Back at the bottom re-arms on its own.
+    timeline.scrollTop = 2400;
+    await wrapper.get(".timeline").trigger("scroll");
+    sizes.scrollHeight = 3200;
+    observer.callback();
+    settle();
+    expect(timeline.scrollTop).toBe(3200);
+    wrapper.unmount();
+    expect(observer.disconnect).toHaveBeenCalled();
+  });
+
+  it("keeps the first answer DOM in place through the empty start of a tool follow-up", async () => {
+    const store = useAppStore();
+    store.threads = [{ id: "thread-1", title: "First turn", workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "running", started: true, generation: 1 }];
+    store.activeThreadId = "thread-1";
+    store.messagesByThread["thread-1"] = [];
+    const live = mount(ConversationPane, { global: { stubs: { ComposerBar: true } } });
+    try {
+      await flushPromises();
+      expect(live.find(".empty-thread").exists()).toBe(true);
+      store.messagesByThread["thread-1"] = [
+        { ...transcript(1)[0], id: "first-user", text: "Inspect" },
+        { ...transcript(2)[1], id: "first-work", text: "Reading the project", streaming: true, tools: [{ id: "read", name: "read", output: "source", status: "complete" }] },
+      ];
+      await live.vm.$nextTick();
+      const body = live.get('[data-role="assistant"] .message-content > .markdown-body').element;
+      store.messagesByThread["thread-1"][1].streaming = false;
+      store.messagesByThread["thread-1"].push({ ...transcript(2)[1], id: "next-work", text: "", thinking: "Checking the next file", streaming: true });
+      await live.vm.$nextTick();
+      expect(live.get('[data-role="assistant"] .message-content > .markdown-body').element).toBe(body);
+      expect(live.get('[data-role="assistant"] .message-content > .markdown-body').text()).toBe("Reading the project");
+      expect(live.findAll(".execution-process-details > .markdown-body")).toHaveLength(0);
+    } finally {
+      live.unmount();
+    }
+  });
+
+  it("preserves the assistant row and open tools through streaming, completion and history refresh", async () => {
+    const store = useAppStore();
+    store.threads = [{
+      id: "thread-1", title: "Live task", workspace: "repo", workspacePath: "D:\\repo",
+      trust: "deny", status: "running", started: false, generation: 0,
+    }];
+    store.activeThreadId = "thread-1";
+    store.messagesByThread["thread-1"] = [
+      { ...transcript(1)[0], id: "request", text: "Inspect" },
+      { ...transcript(2)[1], id: "work", thinking: "Check sources", streaming: true, tools: [{ id: "tool", name: "read", output: "source", status: "complete" }] },
+    ];
+    const wrapper = mount(ConversationPane, { global: { stubs: { ComposerBar: true } } });
+    const row = wrapper.get('[data-role="assistant"]').element;
+    const tool = wrapper.get(".tool-call").element;
+    const thinking = wrapper.get(".thinking-block").element;
+    await wrapper.get(".thinking-block > summary").trigger("click");
+    await wrapper.get(".tool-call > summary").trigger("click");
+    expect(wrapper.get(".tool-call").attributes("open")).toBeDefined();
+
+    store.messagesByThread["thread-1"].push({ ...transcript(2)[1], id: "answer", text: "Done", streaming: true });
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.get('[data-role="assistant"]').element).toBe(row);
+    expect(wrapper.get('[data-role="assistant"]').attributes("data-message-id")).toBe("answer");
+    expect(wrapper.get(".tool-call").element).toBe(tool);
+    expect(wrapper.get(".tool-call").attributes("open")).toBeDefined();
+    store.activeAssistantByThread["thread-1"] = "answer";
+    store.finishAssistant("thread-1");
+    store.threads[0].status = "idle";
+    await wrapper.vm.$nextTick();
+    // Divergence from upstream, on purpose: in `auto` the execution window is the window *onto the
+    // run*, so it closes when the run does and the answer gets the screen back. The reader's own
+    // panels (the reasoning block and the tool call, both clicked above) stay open - asserted below.
+    expect(wrapper.get(".execution-process").attributes("open")).toBeUndefined();
+    const waitingSlot = wrapper.get(".waiting-for-output").element;
+    store.applySessionSnapshot(store.threads[0], { messages: [
+      { role: "user", piDeskEntryId: "request", content: "Inspect" },
+      { role: "assistant", piDeskEntryId: "work", content: [
+        { type: "thinking", thinking: "Check sources" },
+        { type: "text", text: "Message 1" }, { type: "toolCall", id: "tool", name: "read" },
+      ] },
+      { role: "toolResult", toolCallId: "tool", piDeskEntryId: "result", content: "source" },
+      { role: "assistant", piDeskEntryId: "answer", content: "Done" },
+    ], messageCount: 4 });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get('[data-role="assistant"]').element).toBe(row);
+    // `adoptStreamedIds` (ours) rewrites the re-read row's id back to the one the live stream used,
+    // so the id does not jump to the session-entry form here. The contract upstream is checking -
+    // the row node itself survives - is the next assertion plus the tool/thinking ones below.
+    expect(wrapper.get('[data-role="assistant"]').attributes("data-message-id")).toBe("answer");
+    expect(wrapper.get(".tool-call").element).toBe(tool);
+    expect(wrapper.get(".tool-call").attributes("open")).toBeDefined();
+    expect(wrapper.get(".thinking-block").element).toBe(thinking);
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
+    expect(wrapper.get(".waiting-for-output").element).toBe(waitingSlot);
+    expect(wrapper.get(".waiting-for-output").classes()).toContain("invisible");
     wrapper.unmount();
   });
 
@@ -616,15 +821,15 @@ describe("ConversationPane", () => {
     expect(status.text()).toBe("");
     expect(status.attributes("aria-label")).toBe("Thinking");
     expect(status.find("span.loading-ring").exists()).toBe(true);
-    expect(wrapper.get(".timeline").element.lastElementChild?.classList.contains("waiting-for-output")).toBe(true);
+    expect(wrapper.get(".timeline-content").element.lastElementChild?.classList.contains("waiting-for-output")).toBe(true);
 
     store.retryByThread["thread-1"] = { attempt: 1, maxAttempts: 3, delayMs: 4000 };
     await wrapper.vm.$nextTick();
-    expect(wrapper.find(".waiting-for-output").exists()).toBe(false);
+    expect(wrapper.get(".waiting-for-output").classes()).toContain("invisible");
 
     store.waitingForOutputByThread["thread-1"] = false;
     await wrapper.vm.$nextTick();
-    expect(wrapper.find(".waiting-for-output").exists()).toBe(false);
+    expect(wrapper.get(".waiting-for-output").classes()).toContain("invisible");
   });
 
   it("opens conversation search with Ctrl+F and navigates results", async () => {

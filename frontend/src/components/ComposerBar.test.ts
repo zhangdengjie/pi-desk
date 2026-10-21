@@ -131,6 +131,32 @@ describe("ComposerBar", () => {
     wrapper.unmount();
   });
 
+  it("rebuilds the draft field when the conversation changes, so undo cannot cross tasks", async () => {
+    // Ported from upstream 1.3.0, which needed it because the milkdown surface kept one ProseMirror
+    // history across threads. Our composer is a plain textarea (DraftInput), so the leak is the
+    // browser's own undo stack: one Cmd+Z in task B would step back into task A's text. The two
+    // drafts differ by a single trailing character on purpose - that is the case a minimal-patch
+    // write would happily serve from the same element, and therefore the case that proves the `:key`.
+    const store = useAppStore();
+    store.$patch({
+      threads: ["first", "second"].map((id) => ({ id, title: id, workspace: "repo", workspacePath: "D:\\repo", trust: "approve" as const, status: "idle" as const, started: true, generation: 1 })),
+      activeThreadId: "first",
+      draftsByThread: { first: "draft", second: "draft!" },
+    });
+    const wrapper = mount(ComposerBar);
+    await flushPromises();
+    const before = wrapper.get<HTMLTextAreaElement>(".draft-input").element;
+    expect(before.value).toBe("draft");
+
+    store.activeThreadId = "second";
+    await flushPromises();
+
+    const after = wrapper.get<HTMLTextAreaElement>(".draft-input").element;
+    expect(after).not.toBe(before);
+    expect(after.value).toBe("draft!");
+    wrapper.unmount();
+  });
+
   it("pastes file references into the queue editor selection", async () => {
     const store = useAppStore();
     store.$patch({

@@ -1694,7 +1694,7 @@ html.is-resizing-pane .inspector {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  min-height: 0;
+  min-height: 24px;
   margin-top: 6px;
   margin-bottom: 0;
 }
@@ -2171,7 +2171,6 @@ html.is-resizing-pane .inspector {
   margin-left: -4px;
   padding: 4px 0;
   color: var(--text-secondary);
-  font-size: calc(13px + var(--font-size-delta));
 }
 
 .thinking-icon {
@@ -2261,7 +2260,7 @@ html.is-resizing-pane .inspector {
 }
 
 .tool-subtitle {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   color: var(--text-muted);
@@ -2335,6 +2334,10 @@ html.is-resizing-pane .inspector {
 
 .tool-duration {
   flex: 0 0 auto;
+  min-width: 6ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: calc(10.5px + var(--font-size-delta));
@@ -2484,8 +2487,18 @@ html.is-resizing-pane .inspector {
   border-left-color: var(--red);
 }
 
+.tool-call > summary svg {
+  flex-shrink: 0;
+}
+
+.tool-call {
+  min-width: 0;
+}
+
 .tool-status {
   display: inline-flex;
+  width: 7em;
+  white-space: nowrap;
   flex: 0 0 auto;
   align-items: center;
   gap: 4px;
@@ -2503,16 +2516,25 @@ html.is-resizing-pane .inspector {
 
 .tool-context-action {
   flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .tool-context-badge {
   display: inline-flex;
-  flex: 0 0 auto;
+  min-width: 0;
+  flex: 0 1 auto;
+  margin-left: auto;
   align-items: center;
   gap: 4px;
   color: var(--text-muted);
   font-size: calc(10.5px + var(--font-size-delta));
   white-space: nowrap;
+}
+
+.tool-context-badge > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tool-context-confirm {
