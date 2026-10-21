@@ -302,6 +302,54 @@ describe("ConversationMessage", () => {
     vi.unstubAllGlobals();
   });
 
+  // The report: "panels are closed by default, fine - but when I open one it does not keep
+  // rendering downward, it stays on the line it was on". In `auto` the live window is gone once
+  // the answer has a character, and the inner tail used to be armed only through that window -
+  // yet `.thinking-body` is capped at 300px however it got opened, so the newest reasoning fell
+  // off the bottom of the box.
+  it("follows the tail of a hand-opened reasoning block after the answer has started", async () => {
+    const pinia = createPinia();
+    const message = (thinking: string) => ({
+      id: "hand-open", role: "assistant" as const, text: "Working on it", thinking, timestamp: "10:09",
+      streaming: true, activeExecution: "thinking" as const, tools: [],
+    });
+    const wrapper = mount(ConversationMessage, { props: { message: message("Inspecting the store") }, global: { plugins: [pinia] } });
+    const block = wrapper.get(".thinking-block");
+    const body = wrapper.get(".thinking-block .thinking-body");
+    // An answer on screen means no live window: closed, and not the 168px box.
+    expect(block.attributes("open")).toBeUndefined();
+    expect(body.classes()).not.toContain("is-live");
+    Object.defineProperties(body.element, {
+      clientHeight: { configurable: true, get: () => 168 },
+      scrollHeight: { configurable: true, get: () => 760 },
+    });
+
+    (block.element as HTMLDetailsElement).open = true;
+    block.trigger("toggle");
+    await wrapper.vm.$nextTick();
+    // Opening lands on the newest line instead of the top of a 760px box.
+    expect((body.element as HTMLElement).scrollTop).toBe(760);
+
+    await wrapper.setProps({ message: message("Inspecting the store, and then a great deal more") });
+    await wrapper.vm.$nextTick();
+    expect((body.element as HTMLElement).scrollTop).toBe(760);
+
+    // The reader scrolls up inside the box to re-read: following again would yank them back.
+    (body.element as HTMLElement).scrollTop = 120;
+    body.element.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+    await wrapper.setProps({ message: message("Inspecting the store, and then a great deal more, and more") });
+    await wrapper.vm.$nextTick();
+    expect((body.element as HTMLElement).scrollTop).toBe(120);
+
+    // Coming back to the bottom re-arms it on its own.
+    (body.element as HTMLElement).scrollTop = 600;
+    body.element.dispatchEvent(new Event("scroll"));
+    await wrapper.setProps({ message: message("Inspecting the store, and then a great deal more, and more, and more") });
+    await wrapper.vm.$nextTick();
+    expect((body.element as HTMLElement).scrollTop).toBe(760);
+    wrapper.unmount();
+  });
+
   it("stops opening reasoning as soon as the answer starts streaming", async () => {
     const pinia = createPinia();
     const message = (text: string) => ({

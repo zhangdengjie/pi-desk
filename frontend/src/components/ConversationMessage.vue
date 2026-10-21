@@ -335,8 +335,12 @@ function panelDefault(live: boolean): boolean {
   return panelMode.value === "alwaysOpen";
 }
 
+function isOpenFor(id: string, live: boolean): boolean {
+  return panelOpenState(id) ?? panelDefault(live);
+}
+
 function openFor(id: string, live: boolean): boolean {
-  const open = panelOpenState(id) ?? panelDefault(live);
+  const open = isOpenFor(id, live);
   renderedOpen.set(id, open);
   return open;
 }
@@ -368,24 +372,47 @@ function reasoningOpen(step: ExecutionStep): boolean {
   return openFor(step.id, liveReasoningWindow(step));
 }
 
+function reasoningIsOpen(step: ExecutionStep): boolean {
+  return isOpenFor(step.id, liveReasoningWindow(step));
+}
+
 function syncReasoningOpen(step: ExecutionStep, event: Event) {
   const details = event.currentTarget as HTMLDetailsElement;
   if (details.open === renderedOpen.get(step.id)) return;
   pinPanelOpen(step.id, details.open);
+  // The open-state registry is a plain Map (utils/detailsOpenState), so no computed re-evaluates
+  // when the reader opens a block - `followedReasoning` stays stale until the text moves again.
+  // A reader who opens a still-growing block wants its newest line now, not on the next token.
+  if (details.open && step.active) armReasoningTail(step);
 }
 
 // Only one step is live at a time, and its panel is a fixed-height window (see
 // .thinking-body.is-live). A growing block pushed everything under it down on
 // every token, which is the flicker readers see while the model thinks; now the
 // window keeps its size and pulls its own tail into view instead.
+//
+// The gate is "still growing *and* the reader can see it", not `liveReasoningWindow`: that one
+// needs `livePanelsAllowed`, which `auto` drops the moment the answer has a character. But
+// `.thinking-body` is capped at 300px whatever opened it (layout.css:2190), so a hand-opened block
+// that is still streaming scrolls its newest lines off the bottom of the box and nothing follows
+// them - the report was "opens, then stays on the line it was on". ToolCallPanel has always armed
+// on "open + belongs to the live run"; this makes the reasoning window agree with it. A finished
+// block opened later still starts at the top, because `step.active` is false then.
 const executionDetails = ref<HTMLElement>();
-const liveReasoning = computed(() => executionSteps.value.find((step) => step.kind === "thinking" && liveReasoningWindow(step)));
+const followedReasoning = computed(() => executionSteps.value.find(
+  (step) => step.kind === "thinking" && step.active && reasoningIsOpen(step),
+));
 let reasoningTail: InnerTail | undefined;
 let reasoningTailEl: HTMLElement | undefined;
 
-watch(() => [liveReasoning.value?.id ?? "", liveReasoning.value?.text?.length ?? 0] as const, () => {
-  const step = liveReasoning.value;
-  if (!step) return;
+function armReasoningTail(step: ExecutionStep | undefined) {
+  if (!step) {
+    // Closed or stopped growing: drop the listeners so a re-open arms a fresh follow from the tail.
+    reasoningTail?.destroy();
+    reasoningTail = undefined;
+    reasoningTailEl = undefined;
+    return;
+  }
   const tail = [...executionDetails.value?.querySelectorAll<HTMLElement>(".thinking-block") ?? []]
     .find((panel) => panel.dataset.stepId === step.id)
     ?.querySelector<HTMLElement>(".thinking-body");
@@ -396,6 +423,10 @@ watch(() => [liveReasoning.value?.id ?? "", liveReasoning.value?.text?.length ??
     reasoningTailEl = tail;
   }
   reasoningTail.step();
+}
+
+watch(() => [followedReasoning.value?.id ?? "", followedReasoning.value?.text?.length ?? 0] as const, () => {
+  armReasoningTail(followedReasoning.value);
 }, { flush: "post" });
 
 onBeforeUnmount(() => {
