@@ -117,10 +117,12 @@ const virtualizer = useVirtualizer(computed(() => ({
 
 const virtualRows = computed(() => virtualizer.value.getVirtualItems());
 const virtualTotalSize = computed(() => virtualizer.value.getTotalSize());
-// The DOM observer owns bottom-following; virtual anchoring still handles history browsing.
-watch(stickToBottom, (pinned) => {
-  virtualizer.value.shouldAdjustScrollPositionOnItemSizeChange = pinned ? () => false : undefined;
-}, { immediate: true });
+// Upstream 1.3.0 sets `shouldAdjustScrollPositionOnItemSizeChange = () => false` while pinned, so
+// the virtualizer stops compensating and only the DOM observer moves the tail. Measured on a
+// 2772-message transcript with .pi/bin/hitprobe/devPaneJumpProbe (s4 = inspector open, slide on):
+// that costs 236px of single-frame displacement with 7 sign reversals, against 0 and 0 on develop,
+// which never overrode it. Dropping the override alone gets to 110/3; with the before-paint watcher
+// below, 44/5. So no override here, on purpose - virtual anchoring still handles history browsing.
 
 type SearchMatch = { messageId: string; messageIndex: number };
 type ConversationNavigationItem = SearchMatch & { title: string; answer: string };
@@ -693,10 +695,11 @@ let contentResizeObserver: ResizeObserver | undefined;
 onMounted(() => {
   document.addEventListener("keydown", onDocumentKeydown, true);
   // Upstream 1.3.0's hook, and it is the right one: a ResizeObserver on the content wrapper is
-  // the after-layout, before-paint place where the *committed* document height is known - it fires
-  // for the growing turn (now plain DOM) and for virtual row re-measures alike. That replaces the
-  // per-delta `streamSignal` watcher and the `virtualTotalSize` one. What it calls is our follow,
-  // not a hard jump: a discrete landing eases into place instead of teleporting the screen.
+  // the after-layout place where the *committed* document height is known - it fires for the growing
+  // turn (now plain DOM) and for virtual row re-measures alike. That replaces the per-delta
+  // `streamSignal` watcher. What it calls is our follow, not a hard jump: a discrete landing eases
+  // into place instead of teleporting the screen. It does NOT replace the `virtualTotalSize` watcher
+  // below - that one is before-paint, and only having both is what keeps the bottom edge still.
   contentResizeObserver = new ResizeObserver(() => {
     if (appStore.paneResizing) return;
     noteViewportHeight();
@@ -706,6 +709,15 @@ onMounted(() => {
   });
   if (timelineContent.value) contentResizeObserver.observe(timelineContent.value);
   void openConversation();
+});
+
+// The observer above fires *after* layout, so a virtual-row re-measure during a pane slide paints
+// one displaced frame before we correct it. This watcher is the before-paint half of the pair: the
+// sizer's height changes inside the reactive tick, so the correction lands in the same frame as the
+// reflow. Carried over from develop (a24ced7:673) - upstream's RO-only driver does not cover it.
+watch(virtualTotalSize, () => {
+  noteSelfGrowth();
+  if (stickToBottom.value && shouldVirtualize.value) followTail();
 });
 onBeforeUnmount(() => {
   contentResizeObserver?.disconnect();
