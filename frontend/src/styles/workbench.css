@@ -606,6 +606,19 @@
   flex-basis: 32px;
 }
 
+/* The archive toggle is an icon button that lives in a text row, so `.primary-nav button` above gave
+ * it `padding: 0 12px` while `.icon-button` (base.css) pinned `flex: 0 0 28px` — and in a flex row the
+ * basis decides the used main size, so the template's `size-8` never reached the box. 28 - 24 = a 4px
+ * content box for an 18px glyph: measured in real WebKit it sat 7px right of centre and poked 2px past
+ * its own highlight (`.pi/plans/2026-10-22.md`). Geometry is owned here, one square like the sibling
+ * `.sidebar-toggle`; `min-width`/`min-height` are deliberately untouched so `@media (pointer: coarse)`
+ * still grows the hit target to 44px. */
+.primary-nav-row .icon-button {
+  width: 32px;
+  flex: 0 0 32px;
+  padding: 0;
+}
+
 .primary-nav button:hover,
 .workspace-row:hover,
 .thread-row:hover {

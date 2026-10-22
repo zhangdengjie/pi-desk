@@ -234,6 +234,23 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.thread-time\s*{[^}]*font-variant-numeric:\s*tabular-nums/s);
   });
 
+  it("keeps the archive toggle's geometry in the stylesheet, not in size utilities", async () => {
+    const css = await workbenchText();
+    const sidebar = await vueText("src/components/AppSidebar.vue");
+    // `.primary-nav button` gives every nav button `padding: 0 12px` + `min-height: 40px`, and
+    // `.icon-button` pins `flex: 0 0 28px` - in a flex row the basis wins over `width`, so a `size-8`
+    // utility on the archive toggle never reached the box: 28px wide with 24px of padding held an 18px
+    // glyph 7px right of centre, poking 2px past its own highlight (measured in real WebKit).
+    const rule = css.match(/\.primary-nav-row \.icon-button\s*\{[^}]*\}/s)?.[0] ?? "";
+    expect(rule).toMatch(/flex:\s*0 0 32px/);
+    expect(rule).toMatch(/padding:\s*0/);
+    // The 0,2,0 selector must outrank `.primary-nav button` (0,1,1); a stray `px-*`/`size-*` utility on
+    // the template would beat this rule again, because `tailwind.css` imports the framework `important`.
+    const toggle = sidebar.match(/<button class="(icon-button[^"]*)"[^>]*:aria-label="tr\('sidebar\.archivedTasks'\)"/);
+    expect(toggle?.[1] ?? "").toContain("place-items-center");
+    expect(toggle?.[1] ?? "").not.toMatch(/\b(size|px|mx|w|h|shrink)-[\w.]+/);
+  });
+
   it("gives markdown file previews a calm reading layout", async () => {
     const css = await workbenchText();
     expect(css).toMatch(/\.file-preview-toolbar\s*{[^}]*min-height:\s*40px[^}]*padding:\s*0 10px/s);

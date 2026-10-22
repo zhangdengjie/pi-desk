@@ -421,7 +421,7 @@ onBeforeUnmount(() => {
           <Search :size="20" :stroke-width="1.7" />
           <span>{{ tr("sidebar.search") }}</span>
         </button>
-        <button class="icon-button inline-grid size-8 shrink-0 place-items-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] aria-pressed:bg-[var(--bg-active)] aria-pressed:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]" type="button" :title="tr('sidebar.archivedTasks')" :aria-label="tr('sidebar.archivedTasks')" :aria-pressed="showArchived" @click="showArchived = !showArchived"><Archive :size="18" /></button>
+        <button class="icon-button inline-grid place-items-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] aria-pressed:bg-[var(--bg-active)] aria-pressed:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]" type="button" :title="tr('sidebar.archivedTasks')" :aria-label="tr('sidebar.archivedTasks')" :aria-pressed="showArchived" @click="showArchived = !showArchived"><Archive :size="18" /></button>
       </div>
       <button v-if="!collapsed" class="flex h-8 w-full items-center gap-2 whitespace-nowrap rounded-md border border-transparent bg-transparent px-2.5 text-[var(--font-size-body)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] aria-pressed:bg-[var(--bg-active)] aria-pressed:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]" type="button" :title="tr('sidebar.review')" :aria-label="tr('sidebar.review')" :aria-pressed="appStore.inspectorOpen && appStore.inspectorTab === 'changes'" @click="appStore.toggleInspector('changes')">
         <FileSearch :size="20" :stroke-width="1.7" />
