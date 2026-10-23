@@ -210,6 +210,12 @@ html.is-resizing-pane .inspector {
 
 .sidebar-section {
   padding: 12px 8px 0;
+  /* This is the sidebar's only scroll container, and a classic macOS scrollbar costs 15px of content
+   * width - which is why nothing right-aligned inside it can line up with the icon column in
+   * `.primary-nav` (which does not scroll). `thin` halves the debt and `scrollbar-color` keeps the
+   * thumb visible at rest, same treatment the file tree viewport already uses. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .task-section {
@@ -281,7 +287,10 @@ html.is-resizing-pane .inspector {
 }
 
 .workspace-menu-button {
-  margin-right: 4px;
+  /* 0, not the 4px it used to carry: the box is 26px with a 16px glyph, so the glyph's right edge
+   * lands 5px inside the box edge - exactly where `.thread-row.active-session-row` puts the workspace
+   * tag below it. Both now end 15px off the sidebar's right edge, one column. */
+  margin-right: 0;
 }
 
 .workspace-row span {
@@ -482,7 +491,9 @@ html.is-resizing-pane .inspector {
 
 .thread-row.active-session-row {
   padding-left: 6px;
-  padding-right: 8px;
+  /* 8 -> 5: pairs this tag's right edge with the workspace header's three-dot glyph (see
+   * `.workspace-menu-button`); both sit 15px off the sidebar's right edge. */
+  padding-right: 5px;
 }
 
 /* Head, not tail: in a flat cross-project list the marker is the column you scan for "which ones are
