@@ -1935,6 +1935,37 @@ describe("app store", () => {
     expect(background.unread).toBe(false);
   });
 
+  it("removes tasks from the active list without starting Pi first", async () => {
+    const store = useAppStore();
+    mocks.stopSession.mockResolvedValue(undefined);
+    await store.createThread("D:\\work\\repo", "deny");
+    const unreadOnly = store.activeThread!;
+    unreadOnly.started = false;
+    unreadOnly.unread = true;
+    await store.createThread("D:\\work\\repo", "deny");
+    const running = store.activeThread!;
+    running.generation = 8;
+    running.started = true;
+    running.unread = true;
+
+    // The unread-only row is the one the old menu could not clear: it offered "Start Pi process",
+    // so cleaning the list meant spawning a process just to close it again.
+    expect(await store.dismissActiveSession(unreadOnly.id)).toBe(true);
+    expect(mocks.stopSession).not.toHaveBeenCalled();
+    expect(unreadOnly.unread).toBe(false);
+
+    expect(await store.dismissActiveSession(running.id)).toBe(true);
+    expect(mocks.stopSession).toHaveBeenCalledWith(running.id);
+    expect(running.started).toBe(false);
+    expect(running.unread).toBe(false);
+
+    await store.createThread("D:\\work\\repo", "deny");
+    const leftovers = store.threads.filter((thread) => thread.id !== unreadOnly.id && thread.id !== running.id);
+    leftovers.forEach((thread) => { thread.unread = true; });
+    expect(await store.dismissAllActiveSessions()).toBe(leftovers.length);
+    expect(leftovers.every((thread) => !thread.unread && !thread.started)).toBe(true);
+  });
+
   it("refreshes session stats after every message and calibrates again when settled", async () => {
     const store = useAppStore();
     await store.createThread("D:\\work\\repo", "deny");

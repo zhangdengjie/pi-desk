@@ -420,6 +420,15 @@ html.is-resizing-pane .inspector {
   height: 26px;
 }
 
+/* Sized here, not with utilities: .icon-button is 28px, which would push the 26px heading row. */
+.active-session-clear {
+  width: 22px;
+  height: 22px;
+  flex-basis: 22px;
+  margin-right: 2px;
+  color: var(--text-muted);
+}
+
 .active-session-toggle {
   display: flex;
   min-width: 0;

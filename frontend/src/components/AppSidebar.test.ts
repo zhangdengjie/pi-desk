@@ -683,11 +683,47 @@ describe("AppSidebar", () => {
       "Compact context",
       "Reload Pi resources",
       "Close Pi process",
+      "Remove from active",
       "Archive task",
       "Delete task",
     ]);
 
     await items.find((item) => item.text() === "Reload Pi resources")!.trigger("click");
     expect(store.reloadThreadResources).toHaveBeenCalledWith("thread-1");
+  });
+
+  it("dismisses an unread-only task without spawning a Pi process first", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      catalogLoading: false,
+      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
+      threads: [{
+        id: "thread-1", title: "Quiet task", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
+        status: "idle", started: false, generation: 0, unread: true,
+      }],
+      activeThreadId: "thread-1",
+    });
+    const dismissed = vi.fn().mockResolvedValue(true);
+    store.dismissActiveSession = dismissed;
+    store.startThreadInBackground = vi.fn();
+    const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
+
+    // The row is in "Active sessions" purely because of the unread flag, and there is a one-click
+    // way to empty the whole list from the section heading.
+    expect(wrapper.findAll(".active-session-row")).toHaveLength(1);
+    expect(wrapper.find(".active-session-clear").exists()).toBe(true);
+
+    await wrapper.get(".active-session-row").trigger("contextmenu", { clientX: 40, clientY: 60 });
+    const items = wrapper.get(".thread-context-menu").findAll('[role="menuitem"]');
+    const labels = items.map((item) => item.text());
+    expect(labels).toContain("Start Pi process");
+    const dismiss = items.find((item) => item.text() === "Remove from active");
+    expect(dismiss).toBeTruthy();
+
+    await dismiss!.trigger("click");
+    expect(dismissed).toHaveBeenCalledWith("thread-1");
+    expect(store.startThreadInBackground).not.toHaveBeenCalled();
   });
 });

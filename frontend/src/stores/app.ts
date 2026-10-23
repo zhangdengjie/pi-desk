@@ -2810,6 +2810,33 @@ export const useAppStore = defineStore("app", {
       if (this.activeThread) await this.stopThread(this.activeThread.id);
     },
     /**
+     * Take a task out of the sidebar's "Active sessions" list without starting Pi first.
+     * The list is `started || unread`, so a task that only sits there because of unread output has
+     * no Pi process to close - and the old way of clearing the flag was to click the row, which
+     * activates it and calls `startThreadInBackground`, i.e. spawns a process just to be able to
+     * close it again. Stopping is best-effort: `StopSession` maps ErrThreadNotRunning to nil, so
+     * calling it for a task that died on its own is harmless.
+     */
+    async dismissActiveSession(threadId: string): Promise<boolean> {
+      const thread = this.threads.find((candidate) => candidate.id === threadId);
+      if (!thread) return false;
+      if (thread.started && !await this.stopThread(threadId)) return false;
+      thread.unread = false;
+      this.waitingForOutputByThread[threadId] = false;
+      this.scheduleDesktopStateSave();
+      return true;
+    },
+    async dismissAllActiveSessions(): Promise<number> {
+      const ids = this.threads
+        .filter((thread) => !thread.archived && (thread.started || thread.unread))
+        .map((thread) => thread.id);
+      let dismissed = 0;
+      for (const id of ids) {
+        if (await this.dismissActiveSession(id)) dismissed += 1;
+      }
+      return dismissed;
+    },
+    /**
      * Desktop equivalent of Pi's `/reload`. Pi only implements that command in its interactive TUI
      * and inside an extension's command context (`dist/modes/rpc/rpc-mode.js:233`
      * `commandContextActions`); there is no inbound RPC frame, so typing `/reload` in the composer

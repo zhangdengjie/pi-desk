@@ -6,6 +6,8 @@ import {
   Copy,
   CalendarClock,
   Download,
+  Eraser,
+  EyeOff,
   FileSearch,
   Folder,
   FolderOpen,
@@ -239,6 +241,13 @@ async function runTaskAction(action: "branch" | "clone" | "export" | "compact") 
   else await appStore.compactActiveSession();
 }
 
+async function dismissActiveThread() {
+  const thread = taskMenuThread.value;
+  closeTaskMenu();
+  if (!thread) return;
+  await appStore.dismissActiveSession(thread.id);
+}
+
 function closeWorkspaceMenu() {
   workspaceMenu.value.open = false;
 }
@@ -279,7 +288,7 @@ async function submitWorkspaceRename() {
 
 function openTaskMenu(event: MouseEvent, threadId: string) {
   const width = 210;
-  const height = 340;
+  const height = 372;
   taskMenu.value = {
     open: true,
     threadId,
@@ -454,6 +463,13 @@ onBeforeUnmount(() => {
             <span class="active-session-title">{{ tr("sidebar.activeSessions") }}</span>
             <span class="active-session-count">{{ activeSessionThreads.length }}</span>
           </button>
+          <button
+            class="icon-button active-session-clear"
+            type="button"
+            :title="tr('sidebar.dismissAllActive')"
+            :aria-label="tr('sidebar.dismissAllActive')"
+            @click.stop="void appStore.dismissAllActiveSessions()"
+          ><Eraser :size="14" /></button>
         </div>
         <div v-if="!activeSessionsCollapsed" class="active-session-list">
           <button
@@ -571,6 +587,7 @@ onBeforeUnmount(() => {
       <button v-if="taskMenuThread.started" type="button" role="menuitem" @click="void appStore.reloadThreadResources(taskMenuThread.id)"><RefreshCw :size="14" />{{ tr("sidebar.reloadPi") }}</button>
       <button v-if="taskMenuThread.started" type="button" role="menuitem" @click="void appStore.stopThread(taskMenuThread.id)"><Square :size="14" />{{ tr("sidebar.closePi") }}</button>
       <button v-else type="button" role="menuitem" @click="appStore.startThreadInBackground(taskMenuThread.id)"><Play :size="14" />{{ tr("sidebar.startPi") }}</button>
+      <button v-if="taskMenuThread.started || taskMenuThread.unread" type="button" role="menuitem" :title="tr('sidebar.dismissActiveHelp')" @click="void dismissActiveThread()"><EyeOff :size="14" />{{ tr("sidebar.dismissActive") }}</button>
       <button type="button" role="menuitem" :disabled="!taskMenuThread.archived && !appStore.canArchiveThread(taskMenuThread.id)" @click="appStore.setThreadArchived(taskMenuThread.id, !taskMenuThread.archived)"><component :is="taskMenuThread.archived ? ArchiveRestore : Archive" :size="14" />{{ tr(taskMenuThread.archived ? "sidebar.restoreTask" : "sidebar.archiveTask") }}</button>
       <button type="button" role="menuitem" class="danger" @click="appStore.requestDeleteThread(taskMenuThread.id)"><Trash2 :size="14" />{{ tr("sidebar.delete") }}</button>
     </div>
