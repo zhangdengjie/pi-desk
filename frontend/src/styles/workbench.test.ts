@@ -251,6 +251,25 @@ describe("responsive workbench layout", () => {
     expect(toggle?.[1] ?? "").not.toMatch(/\b(size|px|mx|w|h|shrink)-[\w.]+/);
   });
 
+  it("draws every corner icon button at one glyph size", async () => {
+    const topbar = await vueText("src/components/AppTopbar.vue");
+    const sidebar = await vueText("src/components/AppSidebar.vue");
+    // These five used to stack 16 / 18 / 17 / 17 next to the 14px archive and eraser glyphs, which
+    // reads as three different weights of the same control in one column. 14 is the small end.
+    const glyphs: Array<[string, string]> = [
+      ["PanelLeftClose", topbar],
+      ["ChevronRight v-if=\"appStore.inspectorOpen\"", topbar],
+      ["PanelRightOpen", topbar],
+      ["PanelLeftOpen", sidebar],
+      ["Settings", sidebar],
+      ["Archive", sidebar],
+      ["Eraser", sidebar],
+    ];
+    for (const [name, source] of glyphs) {
+      expect(source).toMatch(new RegExp(`<${name}[^>]*:size="14"`));
+    }
+  });
+
   it("gives markdown file previews a calm reading layout", async () => {
     const css = await workbenchText();
     expect(css).toMatch(/\.file-preview-toolbar\s*{[^}]*min-height:\s*40px[^}]*padding:\s*0 10px/s);

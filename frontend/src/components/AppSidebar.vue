@@ -406,7 +406,7 @@ onBeforeUnmount(() => {
       :aria-label="tr('sidebar.expand')"
       @click="appStore.toggleSidebar"
     >
-      <PanelLeftOpen :size="17" />
+      <PanelLeftOpen :size="14" />
     </button>
     <nav v-else class="primary-nav grid gap-0.5 border-b border-[var(--border)] px-2.5 py-1.5" :aria-label="tr('sidebar.primaryNav')">
       <button v-if="!collapsed" class="new-task-button flex h-8 w-full items-center gap-2 whitespace-nowrap rounded-md border border-transparent bg-transparent px-2.5 text-[var(--font-size-body)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-[var(--focus)]" type="button" :title="tr('sidebar.newTask')" :aria-label="tr('sidebar.newTask')" @click="appStore.openNewTask">
@@ -430,7 +430,9 @@ onBeforeUnmount(() => {
           <Search :size="20" :stroke-width="1.7" />
           <span>{{ tr("sidebar.search") }}</span>
         </button>
-        <button class="icon-button inline-grid place-items-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] aria-pressed:bg-[var(--bg-active)] aria-pressed:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]" type="button" :title="tr('sidebar.archivedTasks')" :aria-label="tr('sidebar.archivedTasks')" :aria-pressed="showArchived" @click="showArchived = !showArchived"><Archive :size="18" /></button>
+        <!-- Corner icon buttons all draw a 14px glyph (topbar toggles, settings, this one, and the
+             eraser in the 活跃会话 heading). Box geometry stays in the stylesheets. -->
+        <button class="icon-button inline-grid place-items-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] aria-pressed:bg-[var(--bg-active)] aria-pressed:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]" type="button" :title="tr('sidebar.archivedTasks')" :aria-label="tr('sidebar.archivedTasks')" :aria-pressed="showArchived" @click="showArchived = !showArchived"><Archive :size="14" /></button>
       </div>
       <button v-if="!collapsed" class="flex h-8 w-full items-center gap-2 whitespace-nowrap rounded-md border border-transparent bg-transparent px-2.5 text-[var(--font-size-body)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] aria-pressed:bg-[var(--bg-active)] aria-pressed:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]" type="button" :title="tr('sidebar.review')" :aria-label="tr('sidebar.review')" :aria-pressed="appStore.inspectorOpen && appStore.inspectorTab === 'changes'" @click="appStore.toggleInspector('changes')">
         <FileSearch :size="20" :stroke-width="1.7" />
@@ -565,7 +567,7 @@ onBeforeUnmount(() => {
     <div v-if="!collapsed" class="sidebar-footer h-11 shrink-0 items-center gap-2 border-t border-[var(--border)] px-3 text-[var(--font-size-label)] text-[var(--text-secondary)]">
       <RuntimeBadge />
       <button class="icon-button inline-grid size-8 place-items-center rounded-lg border border-transparent bg-transparent text-[var(--text-muted)] hover:border-[var(--border)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)]" :class="ui.iconButton" type="button" :title="tr('sidebar.settings')" @click="appStore.openSettings()">
-        <Settings :size="17" />
+        <Settings :size="14" />
       </button>
     </div>
 

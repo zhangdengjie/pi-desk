@@ -92,7 +92,7 @@ onBeforeUnmount(() => {
         :aria-label="tr('sidebar.collapse')"
         @click="appStore.toggleSidebar"
       >
-        <PanelLeftClose :size="16" />
+        <PanelLeftClose :size="14" />
       </button>
     </div>
 
@@ -161,8 +161,8 @@ onBeforeUnmount(() => {
           :aria-label="appStore.inspectorOpen ? tr('topbar.closeInspector') : tr('topbar.openInspector')"
           @click="appStore.toggleInspector()"
         >
-          <ChevronRight v-if="appStore.inspectorOpen" :size="18" />
-          <PanelRightOpen v-else :size="18" />
+          <ChevronRight v-if="appStore.inspectorOpen" :size="14" />
+          <PanelRightOpen v-else :size="14" />
         </button>
       </div>
 

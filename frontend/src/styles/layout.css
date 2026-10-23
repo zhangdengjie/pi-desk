@@ -420,12 +420,16 @@ html.is-resizing-pane .inspector {
   height: 26px;
 }
 
-/* Sized here, not with utilities: .icon-button is 28px, which would push the 26px heading row. */
+/* Sized here, not with utilities: .icon-button is 28px, which would push the 26px heading row.
+ * margin-right lines this glyph up with the archive toggle above: that button is 32px wide inside a
+ * `px-2.5` (10px) nav, so its 14px glyph centres 26px off the sidebar's right edge; a 22px box needs
+ * 26 - 11 = 15px of offset, i.e. 15 - 10 = 5px here. Measured in the running dev window (both glyph
+ * centroids land on the same column) - see .pi/plans/2026-10-23.md. */
 .active-session-clear {
   width: 22px;
   height: 22px;
   flex-basis: 22px;
-  margin-right: 2px;
+  margin-right: 5px;
   color: var(--text-muted);
 }
 
