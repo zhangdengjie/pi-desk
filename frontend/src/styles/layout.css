@@ -210,12 +210,22 @@ html.is-resizing-pane .inspector {
 
 .sidebar-section {
   padding: 12px 8px 0;
-  /* This is the sidebar's only scroll container, and a classic macOS scrollbar costs 15px of content
-   * width - which is why nothing right-aligned inside it can line up with the icon column in
-   * `.primary-nav` (which does not scroll). `thin` halves the debt and `scrollbar-color` keeps the
-   * thumb visible at rest, same treatment the file tree viewport already uses. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
+  /* No reserved scrollbar gutter here, on purpose. Any width the OS reserves for it (15px classic,
+   * 11px `thin`) shifts this container's whole right column - the workspace tag, the time labels, the
+   * eraser - left of the icon column in `.primary-nav`, which does not scroll. Measured: the tag's
+   * right edge sat 30.5px off the sidebar edge against the archive glyph's 20px, and no margin fixes
+   * that across machines because the gutter width is the OS's call. Dropping it makes both frames the
+   * same width, so the one column the design wants is possible at all; wheel / trackpad / keyboard
+   * scrolling is untouched, only the indicator goes. Put `scrollbar-width: thin` + `scrollbar-color:
+   * var(--border-strong) transparent` back here if the indicator should win instead. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sidebar-section::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .task-section {
