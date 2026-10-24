@@ -3361,10 +3361,16 @@ html.is-resizing-pane .inspector {
 }
 
 .image-preview-stage {
-  display: grid;
+  /* flex, not grid: a grid item centred by `place-items: center` is align-self:center,
+     and Blink then treats its containing block as indefinite and drops `max-height: 100%`
+     on the <img> - a tall attachment renders at intrinsic height and the stage scrolls.
+     WebKit keeps the box but still counts the intrinsic height in scrollable overflow.
+     Flex centring parses the percentage in both engines (measured 2026-10-24). */
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
   min-height: 0;
-  place-items: center;
   padding: 16px;
   overflow: auto;
   background: var(--bg-app);
