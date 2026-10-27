@@ -114,8 +114,9 @@
   color: var(--text);
   box-shadow: 0 20px 25px -5px rgb(0 0 0 / 25%), 0 8px 10px -6px rgb(0 0 0 / 25%);
 
-  /* 禁止 Electron/Tauri 拖拽窗口 */
+  /* 禁止 Electron/Tauri 拖拽窗口；--wails-draggable 来自上游 20ffccb（拖拽区域会吞掉文本选中） */
   -webkit-app-region: no-drag;
+  --wails-draggable: no-drag;
 
   /* 允许文本选中与鼠标交互 */
   user-select: text;
