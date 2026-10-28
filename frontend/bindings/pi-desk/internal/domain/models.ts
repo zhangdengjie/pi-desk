@@ -858,6 +858,12 @@ export interface ScrollTuning {
     "factor": number;
     "resumeWithinPx": number;
     "liveWindowDelayMs": number;
+
+    /**
+     * ReasoningFoldMs is how long the live reasoning window takes to fold shut when the
+     * answer's first character lands; 0 closes it immediately.
+     */
+    "reasoningFoldMs": number;
 }
 
 /**

@@ -195,6 +195,7 @@ const streamTuningValues = computed(() => [
   { key: "ease", label: tr("settings.tuningEase"), value: `${Math.round(streamTuning.scroll.factor * 100)}%` },
   { key: "resume", label: tr("settings.tuningResume"), value: `${streamTuning.scroll.resumeWithinPx}px` },
   { key: "live", label: tr("settings.tuningLive"), value: `${streamTuning.scroll.liveWindowDelayMs}ms` },
+  { key: "fold", label: tr("settings.tuningFold"), value: streamTuning.scroll.reasoningFoldMs > 0 ? `${streamTuning.scroll.reasoningFoldMs}ms` : tr("settings.tuningFoldOff") },
 ]);
 
 const copiedConfig = ref(false);

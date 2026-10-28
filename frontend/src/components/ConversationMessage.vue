@@ -10,6 +10,7 @@ import { resolveWorkspaceFileLink, type WorkspaceFileLink } from "../utils/fileL
 import { mergeToolDiffs, completedToolDiff } from "../utils/toolDiff";
 import { parseSkillInvocation, replaceSkillInvocationUserMessage, skillInvocationCommandText } from "../utils/skillInvocation";
 import { splitTaggedThinking } from "../utils/taggedThinking";
+import { streamTuning } from "../utils/streamTuning";
 import { panelOpenState, pinPanelOpen } from "../utils/detailsOpenState";
 import { attachInnerTail, type InnerTail } from "../utils/innerTail";
 import { humanizeRunError } from "../utils/runErrors";
@@ -411,9 +412,9 @@ const followedReasoning = computed(() => executionSteps.value.find(
 // whole transcript lurched down by the window's height the instant the text began (measured 116px
 // in one frame with .pi/bin/hitprobe/devThinkJumpProbe.ts.keep, against 22px per reveal step for a
 // normally streamed line in the same run). The window is folded shut instead: the same height
-// change, spread over REASONING_FOLD_MS, so the transcript slides and the answer lands where the
-// eye already is.
-const REASONING_FOLD_MS = 200;
+// change, spread over `scroll.reasoningFoldMs` (~/.pi-desk/config.json), so the transcript slides
+// and the answer lands where the eye already is. `reasoningFoldMs: 0` turns the fold off and closes
+// the window in the same frame again.
 // The step whose window is animating shut. While it is set the block stays `open` and keeps
 // `is-live`, and `.is-folding` (layout.css) drives the height to zero.
 const foldingStepId = ref("");
@@ -425,12 +426,14 @@ const liveReasoningId = computed(() => executionSteps.value
 function beginReasoningFold(id: string) {
   // A panel the reader pinned open is theirs: it must not fold itself away.
   if (panelOpenState(id) === true) return;
+  const foldMs = streamTuning.scroll.reasoningFoldMs;
+  if (foldMs <= 0) return;
   foldingStepId.value = id;
   if (foldTimer !== undefined) window.clearTimeout(foldTimer);
   foldTimer = window.setTimeout(() => {
     foldingStepId.value = "";
     foldTimer = undefined;
-  }, REASONING_FOLD_MS + 40);
+  }, foldMs + 40);
 }
 
 // `flush: "pre"` on purpose: the fold has to be decided *before* this component re-renders, so the
@@ -594,6 +597,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
               <MarkdownBody
                 class="thinking-body"
                 :class="{ 'is-live': liveReasoningWindow(step) || foldingStepId === step.id, 'is-folding': foldingStepId === step.id }"
+                :style="foldingStepId === step.id ? { '--reasoning-fold-ms': `${streamTuning.scroll.reasoningFoldMs}ms` } : undefined"
                 :text="stepThinking(step)"
                 :streaming="liveReasoningWindow(step)"
                 :search-query="searchQuery"

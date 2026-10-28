@@ -70,6 +70,11 @@ type Scroll struct {
 	// opens on its own; most calls finish faster than a blink and must not move the
 	// transcript at all.
 	LiveWindowDelayMs int `json:"liveWindowDelayMs"`
+	// ReasoningFoldMs is how long the live reasoning window takes to fold shut when the
+	// answer starts. Closing it in one frame dropped 168px out of the document between
+	// two paints, which the pinned tail turned into a single-frame lurch of the whole
+	// transcript. 0 closes it immediately (the behaviour before the fold existed).
+	ReasoningFoldMs int `json:"reasoningFoldMs"`
 }
 
 // Config is the file's content. Unknown keys are preserved on save so a newer
@@ -102,9 +107,10 @@ func Defaults() Config {
 func DefaultReveal() Reveal { return Reveal{Split: 5, Floor: 2, Ceiling: 160} }
 
 // DefaultScroll is the shipped tail follow: snap up to 140px, ease 35% of the rest per
-// frame, re-arm within 24px of a bottom, open a slow call's window after 1200ms.
+// frame, re-arm within 24px of a bottom, open a slow call's window after 1200ms, and
+// fold a finished reasoning window shut over 200ms.
 func DefaultScroll() Scroll {
-	return Scroll{SnapWithinPx: 140, Factor: 0.35, ResumeWithinPx: 24, LiveWindowDelayMs: 1200}
+	return Scroll{SnapWithinPx: 140, Factor: 0.35, ResumeWithinPx: 24, LiveWindowDelayMs: 1200, ReasoningFoldMs: 200}
 }
 
 // Notes lists the values that were out of range and fell back to their default.
@@ -141,6 +147,12 @@ func (config *Config) normalise() {
 	if config.Scroll.LiveWindowDelayMs < 0 || config.Scroll.LiveWindowDelayMs > 60000 {
 		config.note("scroll.liveWindowDelayMs", config.Scroll.LiveWindowDelayMs, DefaultScroll().LiveWindowDelayMs)
 		config.Scroll.LiveWindowDelayMs = DefaultScroll().LiveWindowDelayMs
+	}
+	// 0 is a legal value here (close the window immediately); only a negative or an
+	// absurdly slow fold is replaced.
+	if config.Scroll.ReasoningFoldMs < 0 || config.Scroll.ReasoningFoldMs > 2000 {
+		config.note("scroll.reasoningFoldMs", config.Scroll.ReasoningFoldMs, DefaultScroll().ReasoningFoldMs)
+		config.Scroll.ReasoningFoldMs = DefaultScroll().ReasoningFoldMs
 	}
 }
 

@@ -14,6 +14,9 @@ type ScrollTuning struct {
 	Factor            float64 `json:"factor"`
 	ResumeWithinPx    int     `json:"resumeWithinPx"`
 	LiveWindowDelayMs int     `json:"liveWindowDelayMs"`
+	// ReasoningFoldMs is how long the live reasoning window takes to fold shut when the
+	// answer's first character lands; 0 closes it immediately.
+	ReasoningFoldMs int `json:"reasoningFoldMs"`
 }
 
 // UserConfigView is the resolved content of the user's hand-editable config file.

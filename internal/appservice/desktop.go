@@ -545,6 +545,7 @@ func (service *DesktopService) ReadUserConfig() domain.UserConfigView {
 			Factor:            config.Scroll.Factor,
 			ResumeWithinPx:    config.Scroll.ResumeWithinPx,
 			LiveWindowDelayMs: config.Scroll.LiveWindowDelayMs,
+			ReasoningFoldMs:   config.Scroll.ReasoningFoldMs,
 		},
 	}
 	notes := strings.Join(config.Notes(), "; ")

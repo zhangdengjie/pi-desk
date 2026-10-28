@@ -27,7 +27,7 @@ Vue -> Wails service -> Go host -> pi --mode rpc
 {
   "streamPanels": "auto",
   "reveal": { "split": 5, "floor": 2, "ceiling": 160 },
-  "scroll": { "snapWithinPx": 140, "factor": 0.35, "resumeWithinPx": 24, "liveWindowDelayMs": 1200 }
+  "scroll": { "snapWithinPx": 140, "factor": 0.35, "resumeWithinPx": 24, "liveWindowDelayMs": 1200, "reasoningFoldMs": 200 }
 }
 ```
 
@@ -44,7 +44,9 @@ Vue -> Wails service -> Go host -> pi --mode rpc
 
 `scroll` 管跟随：跳动 ≤ `snapWithinPx` 直接钉到底部，更大的跳动每帧走剩余距离的 `factor`；
 离底部 `resumeWithinPx` 以内算「你还跟着」；工具调用要跑满 `liveWindowDelayMs` 才自动开实时窗
-（大多数调用一瞬间完成，不该为它们挪动版面）。
+（大多数调用一瞬间完成，不该为它们挪动版面）。回答开始打字时，那个固定高度的推理窗口用
+`reasoningFoldMs` 毫秒折起（窗口 168px，一帧内塌掉会让整条正文瞬移，所以默认摊成 200ms）；
+写 `0` 就是立刻收起，即没有折叠的旧行为。
 
 两组都是可选的：只写想改的键，其余用出厂值（上例就是出厂值）。越界或类型不对的单个字段会回落
 出厂值，并在设置 → 常规 顶部给出提示；设置面板里的「当前生效的吐字/跟随参数」显示的就是实际值。

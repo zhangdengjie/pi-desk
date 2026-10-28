@@ -31,11 +31,16 @@ export interface ScrollTuning {
   resumeWithinPx: number;
   /** How long a call must keep running before its output window opens on its own. */
   liveWindowDelayMs: number;
+  /**
+   * How long the live reasoning window takes to fold shut once the answer starts.
+   * 0 closes it in the same frame, which is what the transcript used to do.
+   */
+  reasoningFoldMs: number;
 }
 
 export const SHIPPED: { reveal: RevealTuning; scroll: ScrollTuning } = {
   reveal: { split: 5, floor: 2, ceiling: 160 },
-  scroll: { snapWithinPx: 140, factor: 0.35, resumeWithinPx: 24, liveWindowDelayMs: 1200 },
+  scroll: { snapWithinPx: 140, factor: 0.35, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 200 },
 };
 
 export const streamTuning = reactive({
@@ -66,6 +71,8 @@ export function applyStreamTuning(reveal?: Partial<RevealTuning> | null, scroll?
   streamTuning.scroll.factor = number(scroll?.factor, SHIPPED.scroll.factor, 0.01, 0.99);
   streamTuning.scroll.resumeWithinPx = number(scroll?.resumeWithinPx, SHIPPED.scroll.resumeWithinPx, 1, 2000);
   streamTuning.scroll.liveWindowDelayMs = number(scroll?.liveWindowDelayMs, SHIPPED.scroll.liveWindowDelayMs, 0, 60000);
+  // 0 is legal (fold off); only a negative or an absurdly slow fold is replaced.
+  streamTuning.scroll.reasoningFoldMs = number(scroll?.reasoningFoldMs, SHIPPED.scroll.reasoningFoldMs, 0, 2000);
 }
 
 export function resetStreamTuning() {

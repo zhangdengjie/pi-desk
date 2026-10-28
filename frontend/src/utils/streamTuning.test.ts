@@ -9,7 +9,7 @@ describe("streamTuning", () => {
     // internal/userconfig.DefaultReveal()/DefaultScroll() create the file with these;
     // a drift here means a fresh install and a fresh build disagree about the pace.
     expect(SHIPPED.reveal).toEqual({ split: 5, floor: 2, ceiling: 160 });
-    expect(SHIPPED.scroll).toEqual({ snapWithinPx: 140, factor: 0.35, resumeWithinPx: 24, liveWindowDelayMs: 1200 });
+    expect(SHIPPED.scroll).toEqual({ snapWithinPx: 140, factor: 0.35, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 200 });
     expect(streamTuning.reveal).toEqual(SHIPPED.reveal);
     expect(streamTuning.scroll).toEqual(SHIPPED.scroll);
   });
@@ -22,9 +22,18 @@ describe("streamTuning", () => {
   });
 
   it("rejects out of range values instead of taking a half-broken object", () => {
-    applyStreamTuning({ split: 0, floor: -3, ceiling: 1 }, { factor: 0, snapWithinPx: -5, resumeWithinPx: 0, liveWindowDelayMs: 99999 });
+    applyStreamTuning({ split: 0, floor: -3, ceiling: 1 }, { factor: 0, snapWithinPx: -5, resumeWithinPx: 0, liveWindowDelayMs: 99999, reasoningFoldMs: -1 });
     expect(streamTuning.reveal).toEqual(SHIPPED.reveal);
     expect(streamTuning.scroll).toEqual(SHIPPED.scroll);
+  });
+
+  // 0 is a real setting here (fold off = the pre-fold behaviour), so it must survive while a
+  // negative or absurdly slow fold falls back to the shipped 200ms.
+  it("keeps a zero reasoning fold and rejects an impossible one", () => {
+    applyStreamTuning(null, { reasoningFoldMs: 0 });
+    expect(streamTuning.scroll.reasoningFoldMs).toBe(0);
+    applyStreamTuning(null, { reasoningFoldMs: 5000 });
+    expect(streamTuning.scroll.reasoningFoldMs).toBe(SHIPPED.scroll.reasoningFoldMs);
   });
 
   // Same rule as Go's normalise(): a ceiling under the floor is a contradiction, so the

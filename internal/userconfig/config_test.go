@@ -211,7 +211,7 @@ func TestTuningRoundTripAndRanges(t *testing.T) {
 
 	// Out of range values fall back per field and say so, instead of leaving the
 	// transcript unable to follow or dumping a whole answer in one frame.
-	if err := os.WriteFile(path, []byte(`{"reveal":{"split":0,"ceiling":1},"scroll":{"factor":0,"snapWithinPx":-5,"liveWindowDelayMs":99999}}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"reveal":{"split":0,"ceiling":1},"scroll":{"factor":0,"snapWithinPx":-5,"liveWindowDelayMs":99999,"reasoningFoldMs":-1}}`), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	config, _, err = Load()
@@ -222,7 +222,7 @@ func TestTuningRoundTripAndRanges(t *testing.T) {
 		t.Fatalf("out of range values survived: %+v %+v", config.Reveal, config.Scroll)
 	}
 	notes := strings.Join(config.Notes(), "\n")
-	for _, want := range []string{"reveal.split", "scroll.factor", "scroll.snapWithinPx", "scroll.liveWindowDelayMs"} {
+	for _, want := range []string{"reveal.split", "scroll.factor", "scroll.snapWithinPx", "scroll.liveWindowDelayMs", "scroll.reasoningFoldMs"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("notes missing %q:\n%s", want, notes)
 		}
@@ -256,7 +256,7 @@ func TestTuningRoundTripAndRanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	for _, want := range []string{"reveal", "ceiling", "snapWithinPx", "liveWindowDelayMs"} {
+	for _, want := range []string{"reveal", "ceiling", "snapWithinPx", "liveWindowDelayMs", "reasoningFoldMs"} {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("created file missing %q:\n%s", want, raw)
 		}
