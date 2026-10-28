@@ -5,7 +5,7 @@ import { nextTick } from "vue";
 import ConversationMessage from "./ConversationMessage.vue";
 import { type TimelineMessage, useAppStore } from "../stores/app";
 import { groupConversationTurns } from "../utils/conversationGrouping";
-import { forgetPanelOpenStates } from "../utils/detailsOpenState";
+import { forgetPanelOpenStates, pinPanelOpen } from "../utils/detailsOpenState";
 import { RuntimeState } from "../../bindings/pi-desk/internal/domain";
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
@@ -210,6 +210,7 @@ describe("ConversationMessage", () => {
   });
 
   it.each(["think", "thinking"])("renders GPT %s tags through the existing reasoning UI", async (tag) => {
+    vi.useFakeTimers();
     const pinia = createPinia();
     const wrapper = mount(ConversationMessage, {
       props: {
@@ -236,8 +237,15 @@ describe("ConversationMessage", () => {
     await wrapper.setProps({ message: {
       ...wrapper.props("message"), text: `<${tag}>Still inspecting</${tag}>Done`, streaming: true,
     } });
+    // Closing the tag hands the stage to the answer: the window folds (see REASONING_FOLD_MS)
+    // rather than dropping its height in one frame.
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
+    expect(wrapper.get(".thinking-block .thinking-body").classes()).toContain("is-folding");
+    vi.advanceTimersByTime(300);
+    await wrapper.vm.$nextTick();
     expect(wrapper.get(".thinking-block").attributes("open")).toBeUndefined();
     expect(wrapper.get(".message-content > .markdown-body").text()).toBe("Done");
+    vi.useRealTimers();
   });
 
   it("renders tagged reasoning from JSONL snapshots after merging assistant fragments", () => {
@@ -350,7 +358,8 @@ describe("ConversationMessage", () => {
     wrapper.unmount();
   });
 
-  it("stops opening reasoning as soon as the answer starts streaming", async () => {
+  it("folds the live reasoning window shut instead of dropping its height in one frame", async () => {
+    vi.useFakeTimers();
     const pinia = createPinia();
     const message = (text: string) => ({
       id: "answer-anchor", role: "assistant" as const, text, thinking: "Inspecting", timestamp: "10:08",
@@ -361,15 +370,50 @@ describe("ConversationMessage", () => {
     expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
     expect(wrapper.get(".thinking-block .thinking-body").classes()).toContain("is-live");
 
-    // The answer's first token lands while Pi still reports thinking as the
-    // active step: the window has to be out of the flow already, so the answer
-    // renders at the position it will keep.
+    // The answer's first token lands while Pi still reports thinking as the active step. The window
+    // leaves the flow - but over 200ms of height, not in the single frame that made the transcript
+    // lurch (see REASONING_FOLD_MS). Measured before/after with .pi/bin/hitprobe/devThinkJumpProbe.
     await wrapper.setProps({ message: message("Working on it") });
 
-    expect(wrapper.get(".thinking-block").attributes("open")).toBeUndefined();
-    expect(wrapper.get(".thinking-block .thinking-body").classes()).not.toContain("is-live");
+    const body = wrapper.get(".thinking-block .thinking-body");
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
+    expect(body.classes()).toContain("is-folding");
+    // `is-live` has to survive the fold, otherwise the transition starts from the wrong height.
+    expect(body.classes()).toContain("is-live");
     expect(wrapper.get(".message-content > .markdown-body").text()).toBe("Working on it");
+
+    vi.advanceTimersByTime(300);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeUndefined();
+    expect(wrapper.get(".thinking-block .thinking-body").classes()).not.toContain("is-folding");
+    expect(wrapper.get(".thinking-block .thinking-body").classes()).not.toContain("is-live");
     wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("leaves a reasoning block the reader pinned open alone when the answer starts", async () => {
+    vi.useFakeTimers();
+    const pinia = createPinia();
+    const message = (text: string) => ({
+      id: "pinned-open", role: "assistant" as const, text, thinking: "Inspecting", timestamp: "10:08",
+      streaming: true, activeExecution: "thinking" as const, tools: [],
+    });
+    const wrapper = mount(ConversationMessage, { props: { message: message("") }, global: { plugins: [pinia] } });
+
+    // A block the reader opened by hand (the registry, not the DOM): the fold must leave it alone.
+    pinPanelOpen("pinned-open-thinking", true);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
+
+    await wrapper.setProps({ message: message("Working on it") });
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
+    expect(wrapper.get(".thinking-block .thinking-body").classes()).not.toContain("is-folding");
+
+    vi.advanceTimersByTime(300);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeDefined();
+    wrapper.unmount();
+    vi.useRealTimers();
   });
 
   it("keeps a reader's expanded reasoning open when the next run message remounts the row", async () => {

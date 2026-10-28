@@ -1232,6 +1232,24 @@ html.is-resizing-pane .inspector {
   height: 168px;
 }
 
+/* The hand-over from the live window to the answer. Closing it in one frame dropped 168px out of
+   the document between two paints, and a pinned tail turns that into a single-frame lurch of the
+   whole transcript (116px measured with .pi/bin/hitprobe/devThinkJumpProbe.ts.keep; the same run's
+   normal streamed line moves 22px per reveal step). Folding it over 200ms keeps the same final
+   layout but the height lands a few pixels at a time.
+   Two things this rule depends on, both deliberate:
+   - it sits *after* `.is-live` (same specificity, so source order is what lets 0 win over 168px);
+   - the transition is declared on the folding state, i.e. part of the *new* computed style, which is
+     what makes it run when `is-live` and `is-folding` swap in the same render.
+   Duration must stay in step with REASONING_FOLD_MS in ConversationMessage.vue. */
+.thinking-block .thinking-body.is-folding {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+  transition: height 200ms ease, padding 200ms ease;
+}
+
 /* Floating "back to the tail" control: the transcript only follows output while
    pinned, so once the reader scrolls away they need a way to re-pin it. */
 .timeline-jump-latest {

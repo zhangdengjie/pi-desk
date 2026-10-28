@@ -380,6 +380,8 @@ function syncReasoningOpen(step: ExecutionStep, event: Event) {
   const details = event.currentTarget as HTMLDetailsElement;
   if (details.open === renderedOpen.get(step.id)) return;
   pinPanelOpen(step.id, details.open);
+  // The reader caught the block mid-fold: their click wins over the animation.
+  if (details.open && foldingStepId.value === step.id) foldingStepId.value = "";
   // The open-state registry is a plain Map (utils/detailsOpenState), so no computed re-evaluates
   // when the reader opens a block - `followedReasoning` stays stale until the text moves again.
   // A reader who opens a still-growing block wants its newest line now, not on the next token.
@@ -402,6 +404,43 @@ const executionDetails = ref<HTMLElement>();
 const followedReasoning = computed(() => executionSteps.value.find(
   (step) => step.kind === "thinking" && step.active && reasoningIsOpen(step),
 ));
+
+// Handing the stage over to the answer used to drop 168px in a single painted frame: the live
+// window is a fixed height (.thinking-body.is-live), `auto` closes it on the answer's first
+// character, and with the tail pinned the browser clamps `scrollTop` in that same frame - so the
+// whole transcript lurched down by the window's height the instant the text began (measured 116px
+// in one frame with .pi/bin/hitprobe/devThinkJumpProbe.ts.keep, against 22px per reveal step for a
+// normally streamed line in the same run). The window is folded shut instead: the same height
+// change, spread over REASONING_FOLD_MS, so the transcript slides and the answer lands where the
+// eye already is.
+const REASONING_FOLD_MS = 200;
+// The step whose window is animating shut. While it is set the block stays `open` and keeps
+// `is-live`, and `.is-folding` (layout.css) drives the height to zero.
+const foldingStepId = ref("");
+let foldTimer: number | undefined;
+
+const liveReasoningId = computed(() => executionSteps.value
+  .find((step) => step.kind === "thinking" && liveReasoningWindow(step))?.id ?? "");
+
+function beginReasoningFold(id: string) {
+  // A panel the reader pinned open is theirs: it must not fold itself away.
+  if (panelOpenState(id) === true) return;
+  foldingStepId.value = id;
+  if (foldTimer !== undefined) window.clearTimeout(foldTimer);
+  foldTimer = window.setTimeout(() => {
+    foldingStepId.value = "";
+    foldTimer = undefined;
+  }, REASONING_FOLD_MS + 40);
+}
+
+// `flush: "pre"` on purpose: the fold has to be decided *before* this component re-renders, so the
+// render that drops `is-live` already carries `is-folding` and the transition starts from 168px
+// instead of from whatever the body collapses to on its own.
+watch(liveReasoningId, (id, previous) => {
+  // A finished run folds with its whole execution panel (executionOpen), so there is nothing to ease.
+  if (!previous || id || !props.message.streaming) return;
+  beginReasoningFold(previous);
+});
 let reasoningTail: InnerTail | undefined;
 let reasoningTailEl: HTMLElement | undefined;
 
@@ -433,6 +472,8 @@ onBeforeUnmount(() => {
   reasoningTail?.destroy();
   reasoningTail = undefined;
   reasoningTailEl = undefined;
+  if (foldTimer !== undefined) window.clearTimeout(foldTimer);
+  foldTimer = undefined;
   document.removeEventListener("pointerdown", onAnswerOutlinePointerDown, true);
   document.removeEventListener("keydown", onAnswerOutlineKeydown);
 });
@@ -544,7 +585,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
         </summary>
         <div ref="executionDetails" class="execution-process-details">
           <template v-for="step in executionSteps" :key="step.id">
-            <details v-if="step.kind === 'thinking'" class="thinking-block" :data-step-id="step.id" :open="reasoningOpen(step)" @toggle="syncReasoningOpen(step, $event)">
+            <details v-if="step.kind === 'thinking'" class="thinking-block" :data-step-id="step.id" :open="reasoningOpen(step) || foldingStepId === step.id" @toggle="syncReasoningOpen(step, $event)">
               <summary>
                 <ChevronRight class="disclosure-icon" :size="13" aria-hidden="true" />
                 <BrainCircuit class="thinking-icon" :size="15" aria-hidden="true" />
@@ -552,7 +593,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
               </summary>
               <MarkdownBody
                 class="thinking-body"
-                :class="{ 'is-live': liveReasoningWindow(step) }"
+                :class="{ 'is-live': liveReasoningWindow(step) || foldingStepId === step.id, 'is-folding': foldingStepId === step.id }"
                 :text="stepThinking(step)"
                 :streaming="liveReasoningWindow(step)"
                 :search-query="searchQuery"
