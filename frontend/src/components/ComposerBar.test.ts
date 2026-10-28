@@ -141,6 +141,48 @@ describe("ComposerBar", () => {
     wrapper.unmount();
   });
 
+  it("fetches the file list the first time @ needs it, instead of staying silent", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{ id: "fresh", title: "Fresh", workspace: "baby", workspaceId: "baby", workspacePath: "/repo/baby", trust: "approve", status: "idle", started: false, generation: 0 }],
+      activeThreadId: "fresh",
+      // No `repositoryByWorkspace` entry at all: the shape of a brand-new task whose inspector never
+      // mounted (closed panel, or a window under 1280px).
+    });
+    const refresh = store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    const wrapper = mount(ComposerBar, { global: { plugins: [pinia] } });
+    await flushPromises();
+    const field = wrapper.find("textarea");
+    const write = async (value: string) => {
+      (field.element as HTMLTextAreaElement).value = value;
+      (field.element as HTMLTextAreaElement).setSelectionRange(value.length, value.length);
+      await field.trigger("input");
+      await flushPromises();
+    };
+    await write("@");
+    expect(refresh).toHaveBeenCalledTimes(1);
+    // While the list is in flight the composer has to say so rather than look dead.
+    store.$patch({ repositoryLoadingByWorkspace: { baby: true } });
+    await flushPromises();
+    expect(wrapper.find(".composer-notice").text()).toContain("Listing");
+
+    store.$patch({ repositoryByWorkspace: { baby: { files: [{ path: "app/src/main.ts", name: "main.ts" }], git: { isRepository: true, files: [] } } } });
+    await flushPromises();
+    expect(wrapper.find(".file-completion-menu").exists()).toBe(true);
+    expect(wrapper.find(".composer-notice").exists()).toBe(false);
+
+    // A denied workspace must not even be asked for a list, and must explain the dead `@`.
+    // `$patch` deep-merges, so clearing a bucket needs the direct write.
+    store.repositoryByWorkspace = {};
+    store.$patch({ threads: [{ id: "fresh", title: "Fresh", workspace: "baby", workspaceId: "baby", workspacePath: "/repo/baby", trust: "deny", status: "idle", started: false, generation: 0 }] });
+    await write("@main");
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(wrapper.find(".composer-notice").text()).toContain("not trusted");
+    wrapper.unmount();
+  });
+
   it("mentions a picked file and flags it when it is outside the workspace", async () => {
     const store = useAppStore();
     store.$patch({

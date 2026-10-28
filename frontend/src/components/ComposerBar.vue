@@ -85,6 +85,24 @@ const matchingFiles = computed(() => {
   return rankFuzzy(appStore.activeRepository?.files ?? [], query, (file) => [file.name, file.path]).slice(0, 8);
 });
 const mentionMenuOpen = computed(() => !commandButtonOpen.value && !modelMenuOpen.value && !accessMenuOpen.value && !mentionDismissed.value && Boolean(mentionMatch.value) && matchingFiles.value.length > 0);
+/*
+ * The `@` menu can only list what the repository snapshot holds, and that snapshot used to be fetched
+ * exclusively by the inspector mounting, a workspace-trust change, or a turn settling. A task that has
+ * never run — or any task in a window narrow enough to auto-close the inspector (`App.vue`'s
+ * `innerWidth < 1280`) — therefore had no list at all, and every `@` silently did nothing. The
+ * composer now fetches its own data on the first trigger, and says why it still has nothing.
+ */
+const mentionNotice = computed(() => {
+  if (!mentionMatch.value || appStore.activeRepository) return "";
+  if (appStore.activeThread && appStore.activeThread.trust !== "approve") return tr("composer.mentionUntrusted");
+  if (appStore.activeRepositoryLoading) return tr("composer.mentionIndexing");
+  return appStore.activeRepositoryError;
+});
+watch(mentionMatch, (match) => {
+  if (!match || appStore.activeRepository || appStore.activeRepositoryLoading) return;
+  if (appStore.activeThread?.trust !== "approve") return;
+  void appStore.refreshActiveRepository();
+});
 const currentModel = computed(() => appStore.pendingModelByThread[appStore.activeThreadId] ?? appStore.activeSessionState?.model);
 const modelButtonLabel = computed(() => {
   const label = modelLabel(currentModel.value);
@@ -784,6 +802,7 @@ onBeforeUnmount(() => {
       <div v-if="appStore.activeAttachments.some(image => !image.data) || queuedMessages.some(prompt => prompt.images.some(image => !image.data))" class="attachment-error" role="alert">{{ tr("composer.missingCachedImage") }}</div>
       <div v-if="attachmentError" class="attachment-error" role="alert">{{ attachmentError }}</div>
       <div v-if="externalFileNotice" class="attachment-error composer-notice" role="status">{{ externalFileNotice }}</div>
+      <div v-if="mentionNotice" class="attachment-error composer-notice" role="status">{{ mentionNotice }}</div>
       <!-- Startup precheck: a `$VAR` API key that never reached this process makes Pi drop the whole
            provider, and the only symptom is a model list that silently lacks it. -->
       <div
