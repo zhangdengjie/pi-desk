@@ -12,7 +12,7 @@ const props = defineProps<{
   ariaLabel: string;
 }>();
 
-const emit = defineEmits<{ "update:modelValue": [value: string] }>();
+const emit = defineEmits<{ "update:modelValue": [value: string]; caret: [offset: number] }>();
 
 const input = ref<HTMLTextAreaElement>();
 let lastValue = props.modelValue;
@@ -73,6 +73,17 @@ function resize() {
   element.style.height = `${next}px`;
 }
 
+/**
+ * Where the caret sits. The `@` completion has to ask "what is behind the caret", not "what is at
+ * the end of the draft" — a newline typed in the middle of a pasted title leaves text after the
+ * caret, and an end-anchored match then never fires. The field is the only thing that ever knows the
+ * caret, so it reports it: on every edit, on every caret move, and after every programmatic write.
+ */
+function emitCaret() {
+  const element = input.value;
+  if (element) emit("caret", element.selectionStart ?? element.value.length);
+}
+
 function write(value: string, caret: number | null) {
   const element = input.value;
   lastValue = value;
@@ -85,9 +96,13 @@ function write(value: string, caret: number | null) {
   if (value !== props.modelValue) emit("update:modelValue", value);
   void nextTick(() => {
     resize();
-    if (!element || caret === null) return;
+    if (!element || caret === null) {
+      emitCaret();
+      return;
+    }
     element.focus();
     element.setSelectionRange(caret, caret);
+    emitCaret();
   });
 }
 
@@ -175,6 +190,7 @@ function onInput(event: Event) {
   const before = lastValue.length;
   lastValue = element.value;
   emit("update:modelValue", element.value);
+  emitCaret();
   resize();
   // The engine coalesces a whole run of typing into ONE undo group no matter how long the pauses are
   // (0 / 300 / 900 / 2000 ms measured identical), so a single `Cmd+Z` deletes the entire draft. It
@@ -200,11 +216,16 @@ function focus() {
   input.value?.focus();
 }
 
-function replaceMarkdown(value: string) {
-  if (value === (input.value?.value ?? value)) focus();
+function replaceMarkdown(value: string, caret = value.length) {
+  if (value === (input.value?.value ?? value)) {
+    focus();
+    input.value?.setSelectionRange(caret, caret);
+    emit("caret", caret);
+    return;
+  }
   // The caller wants the caret after what just landed, and that is also what the patch path leaves
   // behind; `write` only re-asserts it (and focuses) when the text had to go in as a raw write.
-  else write(value, value.length);
+  write(value, caret);
 }
 
 // Plain Enter and Shift+Enter are the field's own newline, and Cmd+Enter is consumed by ComposerBar
@@ -262,6 +283,9 @@ defineExpose({ focus, replaceMarkdown, handleEnter, captureTextInsertion });
     rows="1"
     enterkeyhint="enter"
     @input="onInput"
+    @keyup="emitCaret"
+    @click="emitCaret"
+    @select="emitCaret"
     @compositionstart="onCompositionStart"
     @compositionend="onCompositionEnd"
   />

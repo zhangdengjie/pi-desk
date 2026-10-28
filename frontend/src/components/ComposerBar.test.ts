@@ -95,6 +95,52 @@ describe("ComposerBar", () => {
     wrapper.unmount();
   });
 
+  it("opens the @ menu behind the caret, flush against CJK text, and keeps the text after it", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({
+      threads: [{ id: "caret", title: "Caret", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
+      activeThreadId: "caret",
+      repositoryByWorkspace: { "d:/repo": {
+        files: [{ path: "src/main.ts", name: "main.ts" }, { path: "src/view.ts", name: "view.ts" }],
+        git: { isRepository: true, files: [] },
+      } },
+    });
+    const wrapper = mount(ComposerBar, { global: { plugins: [pinia] } });
+    await flushPromises();
+    const field = wrapper.find("textarea");
+    // The field is uncontrolled, so the draft has to go in the way a keystroke does: text and caret
+    // first, then the event - `DraftInput` reads `selectionStart` and reports it to the composer.
+    const write = async (value: string, caret = value.length) => {
+      (field.element as HTMLTextAreaElement).value = value;
+      (field.element as HTMLTextAreaElement).setSelectionRange(caret, caret);
+      await field.trigger("input");
+      await flushPromises();
+    };
+    const open = () => wrapper.find(".file-completion-menu").exists();
+
+    // The two reported dead keys: `@` flush after Chinese (no word spaces to satisfy the old
+    // `(^|\s)` boundary), and `@` after a newline typed in the middle of the draft.
+    await write("非英语下@");
+    expect(open()).toBe(true);
+    await write("bug:7787\n@\n下一行", 10);
+    expect(open()).toBe(true);
+    // An e-mail or a path must stay quiet, and so must an `@` the caret has walked away from.
+    await write("mail someone@example");
+    expect(open()).toBe(false);
+    await write("@src/main", 0);
+    expect(open()).toBe(false);
+
+    // Picking must replace only the `@query` behind the caret.
+    await write("说明@vie 结尾", 6);
+    expect(open()).toBe(true);
+    await wrapper.findAll(".file-completion-menu button")[0].trigger("click");
+    await flushPromises();
+    expect(store.activeDraft).toBe("说明@src/view.ts 结尾");
+    wrapper.unmount();
+  });
+
   it("mentions a picked file and flags it when it is outside the workspace", async () => {
     const store = useAppStore();
     store.$patch({

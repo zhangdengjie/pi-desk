@@ -19,7 +19,7 @@ import PiDeskGoalPanel from "./PiDeskGoalPanel.vue";
 import { vSpin } from "../utils/spin";
 
 const appStore = useAppStore();
-const markdownEditor = ref<{ focus(): void; replaceMarkdown(value: string): void; handleEnter(event: KeyboardEvent): boolean; captureTextInsertion(): (text: string, separate?: boolean) => boolean }>();
+const markdownEditor = ref<{ focus(): void; replaceMarkdown(value: string, caret?: number): void; handleEnter(event: KeyboardEvent): boolean; captureTextInsertion(): (text: string, separate?: boolean) => boolean }>();
 const commandMenu = ref<HTMLElement>();
 const commandButton = ref<HTMLElement>();
 const composer = ref<HTMLElement>();
@@ -66,7 +66,19 @@ const draft = computed({
 });
 const commandMatch = computed(() => /(^|\s)\/([^\s]*)$/.exec(draft.value));
 const commandMenuOpen = computed(() => !modelMenuOpen.value && !accessMenuOpen.value && (commandButtonOpen.value || (!commandDismissed.value && Boolean(commandMatch.value))));
-const mentionMatch = computed(() => /(^|\s)@([^\s"]*)\s*$/.exec(draft.value));
+// The caret, as reported by the field (null until the field has said anything = "end of the draft").
+const caretOffset = ref<number | null>(null);
+const draftCaret = computed(() => Math.min(caretOffset.value ?? draft.value.length, draft.value.length));
+/*
+ * The `@` trigger reads the text *behind the caret*, never the end of the draft: a newline typed in
+ * the middle of a pasted title leaves text after the caret, and an end-anchored match then never
+ * fires ("换行后键入 @ 没反应"). And `@` may follow anything except what would make it part of an
+ * e-mail, a URL or a path (`\w . : / \ -`) - the old `(^|\s)` boundary meant a mention could not sit
+ * flush against Chinese, which has no word spaces, so "说明@" was a dead key. A full-width `＠` (what
+ * a Chinese IME commits for Shift+2) counts too and is replaced by a real `@` on insert.
+ */
+const mentionTrigger = /(^|[^A-Za-z0-9_.:\/\\-])[@＠]([^\s"]*)$/;
+const mentionMatch = computed(() => mentionTrigger.exec(draft.value.slice(0, draftCaret.value)));
 const matchingFiles = computed(() => {
   const query = mentionMatch.value?.[2] ?? "";
   if (query === undefined) return [];
@@ -172,6 +184,7 @@ async function refreshSlashCommands() {
 
 watch(draft, (value, previousValue) => {
   if (value !== previousValue) commandButtonOpen.value = false;
+  if (caretOffset.value !== null && caretOffset.value > value.length) caretOffset.value = value.length;
   commandIndex.value = 0;
   mentionIndex.value = 0;
   commandDismissed.value = false;
@@ -202,6 +215,9 @@ watch([commandMenuOpen, mentionMenuOpen, commandButtonOpen], async () => {
 watch(() => appStore.activeThreadId, () => {
   previewImage.value = undefined;
   externalFileNotice.value = "";
+  // The field remounts (`:key="activeThreadId"`) with the other thread's draft and its caret; until
+  // it reports, "end of the draft" is the only honest reading.
+  caretOffset.value = null;
 });
 
 watch(() => [appStore.activeThreadId, appStore.activeThread?.workspaceId, appStore.activeThread?.workspacePath, appStore.activeThread?.trust], () => {
@@ -371,16 +387,28 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
-function updateEditorMarkdown(value: string) {
+function onCaret(offset: number) {
+  caretOffset.value = offset;
+}
+
+function updateEditorMarkdown(value: string, caret = value.length) {
   draft.value = value;
-  markdownEditor.value?.replaceMarkdown(value);
+  caretOffset.value = caret;
+  markdownEditor.value?.replaceMarkdown(value, caret);
 }
 
 function chooseFileMention(path: string) {
   const match = mentionMatch.value;
   if (!match) return;
-  const prefix = `${draft.value.slice(0, match.index)}${match[1]}`;
-  updateEditorMarkdown(`${prefix}${formatFileMention(path)} `);
+  // Replace exactly the `@query` behind the caret and hand back everything after it - the draft can
+  // continue on the same line, and a mention picked mid-sentence must not eat the rest of the text.
+  const start = match.index + match[1].length;
+  const mention = formatFileMention(path);
+  const after = draft.value.slice(draftCaret.value);
+  // The separator only when the text does not already start with one - a mention picked in front of
+  // " 结尾" must not leave a double space behind.
+  const gap = /^\s/.test(after) ? "" : " ";
+  updateEditorMarkdown(`${draft.value.slice(0, start)}${mention}${gap}${after}`, start + mention.length + gap.length);
 }
 
 async function insertPickedFile() {
@@ -771,6 +799,7 @@ onBeforeUnmount(() => {
           v-model="draft"
           :placeholder="tr('composer.placeholder')"
           :ariaLabel="tr('composer.promptLabel')"
+          @caret="onCaret"
         />
       </div>
       <div v-if="commandMenuOpen && matchingCommands.length" ref="commandMenu" class="completion-menu !fixed !overflow-y-auto" :class="ui.menuSurface" :style="commandMenuStyle" role="listbox" :aria-label="tr('composer.commands')">
