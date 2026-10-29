@@ -560,6 +560,11 @@ func (service *DesktopService) ReadUserConfig() domain.UserConfigView {
 // WriteUserConfig stores the panel policy in the same file the user edits by
 // hand, which keeps one source of truth: the dialog writes it, and so does a
 // text editor. Unknown keys survive because userconfig keeps them verbatim.
+//
+// Reveal.Mode is written only when it is non-empty: the dialog sends the whole
+// reveal object it read, and an empty mode must mean "leave the file alone"
+// rather than "set plain", so the numbers the user tuned by hand survive a
+// change of the panel policy.
 func (service *DesktopService) WriteUserConfig(view domain.UserConfigView) (domain.UserConfigView, error) {
 	mode, ok := userconfig.Normal(view.StreamPanels)
 	if !ok {
@@ -570,6 +575,13 @@ func (service *DesktopService) WriteUserConfig(view domain.UserConfigView) (doma
 		return service.ReadUserConfig(), fmt.Errorf("read configuration: %w", err)
 	}
 	config.StreamPanels = mode
+	if revealMode := strings.TrimSpace(view.Reveal.Mode); revealMode != "" {
+		normalized, ok := userconfig.NormalRevealMode(revealMode)
+		if !ok {
+			return service.ReadUserConfig(), fmt.Errorf("unknown reveal mode %q", revealMode)
+		}
+		config.Reveal.Mode = normalized
+	}
 	if _, err := userconfig.Save(config); err != nil {
 		return service.ReadUserConfig(), err
 	}

@@ -8,7 +8,7 @@ import { remoteWorkspaceService } from "../services/remoteWorkspaces";
 import { onTerminalEvent, terminalService, type TerminalEvent } from "../services/terminal";
 import { browserService, type BrowserEvent } from "../services/browser";
 import { modelConfigService } from "../services/modelconfig";
-import { applyStreamTuning } from "../utils/streamTuning";
+import { applyStreamTuning, type RevealMode } from "../utils/streamTuning";
 import { FONT_FAMILY_INPUT_MAX } from "../utils/fontFamily";
 import { BATCH_ASK_PLACEHOLDER, parseBatchAskEnvelope, type BatchAskQuestion } from "../utils/batchAsk";
 import { formatFileMention } from "../utils/fileMentions";
@@ -4467,6 +4467,21 @@ export const useAppStore = defineStore("app", {
       this.userConfigLoading = true;
       try {
         this.applyUserConfig(await writeUserConfig(mode));
+      } catch (error) {
+        this.userConfigError = errorMessage(error);
+      } finally {
+        this.userConfigLoading = false;
+      }
+    },
+    /**
+     * Switches the live-render mode in the same hand-editable file. `raw` is the one that
+     * never re-lays out a block mid-answer; the other two keep more formatting on screen.
+     */
+    async setRevealMode(mode: RevealMode) {
+      if (this.userConfigLoading) return;
+      this.userConfigLoading = true;
+      try {
+        this.applyUserConfig(await writeUserConfig(this.streamPanels, mode));
       } catch (error) {
         this.userConfigError = errorMessage(error);
       } finally {

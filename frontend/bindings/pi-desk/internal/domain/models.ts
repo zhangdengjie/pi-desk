@@ -803,7 +803,8 @@ export interface ResumeRemoteWorkspaceRequest {
  */
 export interface RevealTuning {
     /**
-     * Mode is "plain" (the live tail is plain text until the run settles) or
+     * Mode is "plain" (the live tail is plain text, closed blocks render as they
+     * close), "raw" (the whole answer stays plain text until the run settles), or
      * "markdown" (the tail is re-parsed every frame).
      */
     "mode": string;

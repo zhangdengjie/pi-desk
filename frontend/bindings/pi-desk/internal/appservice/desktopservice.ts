@@ -50,6 +50,11 @@ export function ToggleDebugMode(): $CancellablePromise<boolean> {
  * WriteUserConfig stores the panel policy in the same file the user edits by
  * hand, which keeps one source of truth: the dialog writes it, and so does a
  * text editor. Unknown keys survive because userconfig keeps them verbatim.
+ * 
+ * Reveal.Mode is written only when it is non-empty: the dialog sends the whole
+ * reveal object it read, and an empty mode must mean "leave the file alone"
+ * rather than "set plain", so the numbers the user tuned by hand survive a
+ * change of the panel policy.
  */
 export function WriteUserConfig(view: domain$0.UserConfigView): $CancellablePromise<domain$0.UserConfigView> {
     return $Call.ByID(706529932, view);

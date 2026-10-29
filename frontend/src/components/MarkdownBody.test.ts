@@ -588,6 +588,28 @@ describe("MarkdownBody typewriter mode", () => {
     vi.useRealTimers();
   });
 
+  // `raw` removes the one re-layout `plain` still performs: handing a closed block over from
+  // source to the Markdown renderer (a heading grows, a fence gains a panel). Nothing is handed
+  // over, so nothing on screen can change shape while the reader watches it.
+  it("keeps the whole answer as source in raw mode", async () => {
+    vi.useFakeTimers();
+    applyStreamTuning({ mode: "raw" }, null);
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text: "seed\n\n**done**\n\nstill typing" });
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(wrapper.find(".md-settled strong").exists()).toBe(false);
+    expect(wrapper.get(".md-plain-text").text()).toContain("**done**");
+    expect(wrapper.get(".md-plain-text").text()).toContain("still typing");
+
+    // And the Markdown render still takes over the moment the run settles.
+    await wrapper.setProps({ streaming: false });
+    expect(wrapper.get("strong").text()).toBe("done");
+    expect(wrapper.find(".md-plain-caret").exists()).toBe(false);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it("does not keep the typewriter for a block that was already settled", () => {
     const { wrapper } = mountMarkdown("**done**");
     expect(wrapper.get("strong").text()).toBe("done");

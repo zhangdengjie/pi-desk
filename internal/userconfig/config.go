@@ -50,7 +50,18 @@ const (
 	// backwards (`**bold` loses two characters) and table columns are sized from rows
 	// that have not arrived yet. Plain text is the only shape where appending a
 	// character can never move one already painted.
+	//
+	// Blocks that a blank line has already closed are still rendered as Markdown, so
+	// the live block is the only one that stays source. That hand-over is itself a
+	// re-layout - a heading grows from one text line to a 26px-margin block, a code
+	// fence loses its backticks and gains a panel - which is the residual jump readers
+	// still report. RevealModeRaw removes it.
 	RevealModePlain = "plain"
+	// RevealModeRaw keeps the whole answer as plain text until the run settles, then
+	// renders it as Markdown in one pass. Nothing is handed over mid-run, so no block
+	// can change shape while the reader is watching it: the most stable shape there is,
+	// at the price of showing `**` and fence markers while the answer streams.
+	RevealModeRaw = "raw"
 	// RevealModeMarkdown keeps the old behaviour: the tail is parsed and rendered as
 	// Markdown on every frame. Prettier while it streams, and it is what jumps.
 	RevealModeMarkdown = "markdown"
@@ -60,8 +71,10 @@ const (
 // together decide the pace: each frame releases `backlog / split` characters, clamped to
 // [floor, ceiling].
 type Reveal struct {
-	// Mode is "plain" (typewriter: the live tail is plain text until the run settles)
-	// or "markdown" (the tail is parsed every frame).
+	// Mode is "plain" (typewriter: the live tail is plain text and closed blocks are
+	// rendered as they close), "raw" (the whole answer stays plain text until the run
+	// settles, so no block changes shape mid-run), or "markdown" (the tail is parsed
+	// every frame).
 	Mode string `json:"mode"`
 	// Split is the fraction of the backlog shown per frame. 5 = one fifth.
 	Split int `json:"split"`
@@ -137,6 +150,8 @@ func NormalRevealMode(value string) (string, bool) {
 	switch strings.TrimSpace(value) {
 	case "", RevealModePlain:
 		return RevealModePlain, true
+	case RevealModeRaw:
+		return RevealModeRaw, true
 	case RevealModeMarkdown:
 		return RevealModeMarkdown, true
 	default:

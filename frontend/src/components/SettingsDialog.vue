@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { streamTuning } from "../utils/streamTuning";
+import { streamTuning, type RevealMode } from "../utils/streamTuning";
 import { ArrowLeft, BarChart3, BookOpen, Boxes, Copy, Database, Download, ExternalLink, FileArchive, FileText, Info, Palette, PlugZap, Puzzle, RefreshCw, RotateCw, Search, Settings2 } from "lucide-vue-next";
 import { computed, onMounted, ref } from "vue";
 import { PiMaintenanceAction, type PiMaintenanceResult } from "../../bindings/pi-desk/internal/domain";
@@ -184,6 +184,12 @@ onMounted(() => { void appStore.loadUserConfig(); });
 
 async function applyStreamPanelMode(event: Event) {
   await appStore.setStreamPanels((event.target as HTMLSelectElement).value as StreamPanelMode);
+}
+
+// The render mode lives in the same config file as the panel policy, so it uses the same write
+// path: one file, one read on focus, no restart.
+async function applyRevealMode(event: Event) {
+  await appStore.setRevealMode((event.target as HTMLSelectElement).value as RevealMode);
 }
 
 // Read from the same singleton the renderer paces itself with, so the dialog can never
@@ -564,6 +570,19 @@ function sourceIcon(source: SlashCommand["source"]) {
                   <option value="auto">{{ tr("settings.streamPanelsAuto") }}</option>
                   <option value="alwaysOpen">{{ tr("settings.streamPanelsAlwaysOpen") }}</option>
                   <option value="alwaysClosed">{{ tr("settings.streamPanelsAlwaysClosed") }}</option>
+                </select>
+              </label>
+              <label class="setting-row setting-row-select" :class="ui.row">
+                <span><strong>{{ tr("settings.revealMode") }}</strong><small>{{ tr("settings.revealModeHelp") }}</small></span>
+                <select class="appearance-select !w-56 !basis-56" :class="ui.select"
+                  :value="streamTuning.reveal.mode"
+                  :aria-label="tr('settings.revealMode')"
+                  :disabled="appStore.userConfigLoading"
+                  @change="void applyRevealMode($event)"
+                >
+                  <option value="raw">{{ tr("settings.revealModeRaw") }}</option>
+                  <option value="plain">{{ tr("settings.revealModePlain") }}</option>
+                  <option value="markdown">{{ tr("settings.revealModeMarkdown") }}</option>
                 </select>
               </label>
               <div data-testid="user-config-row" class="setting-row" :class="ui.row">

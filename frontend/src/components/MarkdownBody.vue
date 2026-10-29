@@ -78,22 +78,36 @@ const incremental = computed(() => props.streaming === true && renderMarkdown.va
 /**
  * Typewriter mode: while the source is live, show it as text and never parse it.
  *
- * This is the one shape that can promise "appending a character never moves one already
- * painted". A Markdown tail cannot: an inline marker closing deletes characters that were on
- * screen (`**bold` -> **bold**), a table re-sizes its columns as rows arrive, and a lone `-`
- * becomes a list item. Those are re-flows of *earlier* content, which is exactly what reads as
- * the transcript jumping. The Markdown render takes over in the same frame `streaming` turns
- * false, so formatting appears exactly when the text stops moving.
+ * A text run laid out from its prefix can only extend: appending a character never moves one
+ * already painted. A Markdown tail cannot promise that - an inline marker closing deletes
+ * characters that were on screen (`**bold` -> **bold**), a table re-sizes its columns as rows
+ * arrive, and a lone `-` becomes a list item. Those are re-flows of *earlier* content, which is
+ * exactly what reads as the transcript jumping. The Markdown render takes over in the same frame
+ * `streaming` turns false, so formatting appears exactly when the text stops moving.
+ *
+ * Covers both stable modes: `plain` (closed blocks render as they close) and `raw` (nothing does).
+ * Which one applies is decided in `split` and `rawStream` below.
  *
  * `renderMarkdown` is the same size ceiling as the whole-block path; past it the `<pre>`
  * fallback below is already plain text.
  */
 const plainStream = computed(() => props.streaming === true
-  && streamTuning.reveal.mode === "plain"
+  && (streamTuning.reveal.mode === "plain" || streamTuning.reveal.mode === "raw")
   && renderMarkdown.value
   // Search numbers matches across the whole document; highlighting halves separately would
   // restart the ordinals in the tail, so a search falls back to the one-pass Markdown render.
   && !(props.searchQuery ?? "").trim());
+
+/**
+ * Raw mode: the whole answer stays source until the run settles.
+ *
+ * `plain` already appends without moving painted characters, but it still hands every closed
+ * block over to the Markdown renderer, and that hand-over is a re-layout: a heading goes from
+ * one text line to a 26px-margin block, a fence loses its backticks and gains a panel, a table
+ * grows its column floors. Raw mode removes that hand-over entirely - the price is that `**`
+ * and fence markers are visible while the answer streams.
+ */
+const rawStream = computed(() => plainStream.value && streamTuning.reveal.mode === "raw");
 
 /**
  * Plain mode still settles finished blocks: everything above the cut renders as Markdown, and only
@@ -110,10 +124,16 @@ const plainStream = computed(() => props.streaming === true
  * `minChars` is 0 here on purpose: the 2,000-character floor exists to keep the Markdown mode from
  * paying for two renders on a short answer, and it is what made a short reply look like raw text
  * from start to finish.
+ *
+ * Raw mode skips the cut entirely - see `rawStream` for why the hand-over it would perform is the
+ * last re-layout left in this branch.
  */
-const split = computed(() => (incremental.value
-  ? splitSettledMarkdown(shownText.value, plainStream.value ? 0 : undefined)
-  : { settledLength: 0, settled: "", tail: shownText.value, reason: "ok" as const }));
+const split = computed(() => {
+  if (!incremental.value) return { settledLength: 0, settled: "", tail: shownText.value, reason: "ok" as const };
+  // Raw mode settles nothing: the only stable shape is "the whole answer is still source".
+  if (rawStream.value) return { settledLength: 0, settled: "", tail: shownText.value, reason: "ok" as const };
+  return splitSettledMarkdown(shownText.value, plainStream.value ? 0 : undefined);
+});
 
 /**
  * The settled region's HTML, accumulated between frames.

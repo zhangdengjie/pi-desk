@@ -2,7 +2,8 @@ package domain
 
 // RevealTuning is the text pacing the renderer uses while an answer streams in.
 type RevealTuning struct {
-	// Mode is "plain" (the live tail is plain text until the run settles) or
+	// Mode is "plain" (the live tail is plain text, closed blocks render as they
+	// close), "raw" (the whole answer stays plain text until the run settles), or
 	// "markdown" (the tail is re-parsed every frame).
 	Mode    string `json:"mode"`
 	Split   int    `json:"split"`

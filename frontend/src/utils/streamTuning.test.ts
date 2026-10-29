@@ -49,6 +49,8 @@ describe("streamTuning", () => {
   it("takes the render mode and rejects an unknown one", () => {
     applyStreamTuning({ mode: "markdown" }, null);
     expect(streamTuning.reveal.mode).toBe("markdown");
+    applyStreamTuning({ mode: "raw" }, null);
+    expect(streamTuning.reveal.mode).toBe("raw");
     applyStreamTuning({ mode: "typewriter" as never }, null);
     expect(streamTuning.reveal.mode).toBe(SHIPPED.reveal.mode);
   });

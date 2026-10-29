@@ -13,13 +13,16 @@ import { reactive } from "vue";
  * internal/userconfig/config.go - the file is created from those, and the front end falls
  * back to these when the read fails. Keep the two in step.
  */
-export type RevealMode = "plain" | "markdown";
+export type RevealMode = "plain" | "raw" | "markdown";
 
 export interface RevealTuning {
   /**
    * What the growing tail is rendered as. `plain` is the typewriter: characters are
    * appended as text and nothing already painted moves, because no syntax reaches
-   * backwards. `markdown` parses the tail every frame, which keeps formatting live but
+   * backwards; closed blocks are still rendered as they close. `raw` goes one step
+   * further and keeps the whole answer as text until the run settles, which removes
+   * the one remaining re-layout - the hand-over of a closed block from source to
+   * Markdown. `markdown` parses the tail every frame, which keeps formatting live but
    * re-flows lines when an inline marker closes and re-sizes a table as rows arrive.
    */
   mode: RevealMode;
@@ -64,7 +67,7 @@ function number(value: unknown, fallback: number, low: number, high: number): nu
 }
 
 function revealMode(value: unknown, fallback: RevealMode): RevealMode {
-  return value === "plain" || value === "markdown" ? value : fallback;
+  return value === "plain" || value === "raw" || value === "markdown" ? value : fallback;
 }
 
 /**

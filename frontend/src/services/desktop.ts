@@ -29,10 +29,16 @@ export async function readUserConfig(): Promise<UserConfigView> {
   return DesktopService.ReadUserConfig();
 }
 
-export async function writeUserConfig(streamPanels: string): Promise<UserConfigView> {
+export async function writeUserConfig(streamPanels: string, revealMode?: string): Promise<UserConfigView> {
   // Only the policy is written: Go reads the file again and keeps reveal/scroll (and any
-  // key it does not model) exactly as the user left them.
-  return DesktopService.WriteUserConfig({ path: "", streamPanels, reveal: SHIPPED.reveal, scroll: SHIPPED.scroll });
+  // key it does not model) exactly as the user left them. An empty `mode` means "leave the
+  // reveal mode alone", which is why it is not filled from SHIPPED here.
+  return DesktopService.WriteUserConfig({
+    path: "",
+    streamPanels,
+    reveal: { ...SHIPPED.reveal, mode: revealMode ?? "" },
+    scroll: SHIPPED.scroll,
+  });
 }
 
 export async function checkRuntime(): Promise<PiRuntimeStatus> {

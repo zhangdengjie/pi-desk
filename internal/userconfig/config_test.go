@@ -264,8 +264,9 @@ func TestTuningRoundTripAndRanges(t *testing.T) {
 }
 
 // The render mode is the one tuning field that is not a number: "plain" is the shipped
-// typewriter (the live tail is never parsed), "markdown" keeps the old per-frame re-parse.
-// It has to survive a partial hand edit and a round trip like every other field.
+// typewriter (the live tail is never parsed), "raw" keeps the whole answer as source until it
+// settles, "markdown" keeps the old per-frame re-parse. It has to survive a partial hand edit
+// and a round trip like every other field.
 func TestRevealMode(t *testing.T) {
 	path := t.TempDir() + "/config.json"
 	t.Setenv(PathEnv, path)
@@ -274,22 +275,24 @@ func TestRevealMode(t *testing.T) {
 		t.Fatalf("default reveal mode = %q, want %q", got, RevealModePlain)
 	}
 
-	if err := os.WriteFile(path, []byte(`{"reveal":{"mode":"markdown","split":4}}`), 0o600); err != nil {
-		t.Fatalf("write: %v", err)
-	}
-	config, _, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if config.Reveal.Mode != RevealModeMarkdown || config.Reveal.Split != 4 {
-		t.Fatalf("reveal = %+v, want mode honoured and split kept", config.Reveal)
+	for _, mode := range []string{RevealModeMarkdown, RevealModeRaw} {
+		if err := os.WriteFile(path, []byte(`{"reveal":{"mode":"`+mode+`","split":4}}`), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		config, _, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if config.Reveal.Mode != mode || config.Reveal.Split != 4 {
+			t.Fatalf("reveal = %+v, want mode %q honoured and split kept", config.Reveal, mode)
+		}
 	}
 
 	// A hand edit that names only a number keeps the shipped mode.
 	if err := os.WriteFile(path, []byte(`{"reveal":{"split":3}}`), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	config, _, err = Load()
+	config, _, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
