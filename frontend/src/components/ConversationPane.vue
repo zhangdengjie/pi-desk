@@ -267,6 +267,13 @@ let tailFrame = 0;
 // engines, on the next frame in others. Both cases have to be recognised, or the
 // follow reads its own steps as "the reader left the tail" and releases itself.
 let applyingTail = false;
+// Where our last step landed. The eased follow now runs for several frames per line (the snap
+// band is 4px, so a 26px line travels over 3-4 frames), and `tailFrame` stays non-zero for all of
+// them. Treating "an animation frame is in flight" as "this scroll event is mine" swallowed the
+// reader's own scroll for that whole window: a wheel or scrollbar move mid-stream could not
+// release the follow until it ran out of distance. Comparing against the value we wrote is exact
+// in both directions - the reader's scroll always changes it.
+let lastAppliedTop: number | null = null;
 
 // The end of a run delivers its height in mixed-sign batches inside ~1.2s of the
 // scroll.stop edge: `agent_end` collapses the execution panels and inserts the
@@ -358,6 +365,7 @@ function stepTail(): boolean {
   if (next !== element.scrollTop) {
     applyingTail = true;
     element.scrollTop = next;
+    lastAppliedTop = element.scrollTop;
     applyingTail = false;
   }
   const chasing = element.scrollHeight - element.scrollTop - element.clientHeight > 1;
@@ -418,9 +426,10 @@ function onTimelineScroll() {
   const element = timeline.value;
   if (!element) return;
   noteViewportHeight();
-  // One of our own steps (in flight, or being written right now): the reader has not
-  // moved, so the follow stays armed.
-  if (applyingTail || tailFrame) {
+  // One of our own steps (being written right now, or already landed): the reader has not
+  // moved, so the follow stays armed. `tailFrame` is deliberately not part of this test - see
+  // `lastAppliedTop` for the wheel it used to swallow.
+  if (applyingTail || (lastAppliedTop !== null && Math.abs(element.scrollTop - lastAppliedTop) < 1)) {
     updateActiveNavigation();
     return;
   }

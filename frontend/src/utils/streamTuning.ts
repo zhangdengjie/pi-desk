@@ -52,7 +52,12 @@ export interface ScrollTuning {
 
 export const SHIPPED: { reveal: RevealTuning; scroll: ScrollTuning } = {
   reveal: { mode: "plain", split: 20, floor: 2, ceiling: 60 },
-  scroll: { snapWithinPx: 140, factor: 0.35, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 0 },
+  // `snapWithinPx` used to be 140, on the theory that a typing step moves the bottom by
+  // "a couple of pixels". Measured against a real stream (dev tail probe, 2026-10-29): one line
+  // of Markdown prose is 17-34px, so every line fell inside the snap band and the follow
+  // pinned the bottom in a single step - `factor` was never once applied. The band now only
+  // absorbs sub-pixel noise; a line's growth eases over 3-4 frames with `factor`.
+  scroll: { snapWithinPx: 4, factor: 0.32, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 0 },
 };
 
 export const streamTuning = reactive({

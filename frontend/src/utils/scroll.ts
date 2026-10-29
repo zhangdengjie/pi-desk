@@ -50,12 +50,15 @@ import { streamTuning } from "./streamTuning";
 /**
  * Where the transcript tail should sit on the next frame while it is being followed.
  *
- * A typing step moves the bottom by a couple of pixels, and pinning straight to it is
- * what a smooth run looks like. What is *not* smooth is a discrete jump - a reasoning
- * window releasing its fixed height, an image finishing decoding, a fenced block
- * closing - where the exact pin throws the whole screen in one frame. Anything past
- * `snapWithin` therefore travels a fraction of the remaining distance per frame, which
- * reads as the tail being caught up with rather than teleported to.
+ * A typing step moves the bottom by one line, and a line of Markdown prose is 17-34px tall
+ * (measured 2026-10-29 with the dev tail probe: `h:26 t:26` step after step). That is not
+ * "a couple of pixels", so a band wide enough to cover it pins the bottom in one step on
+ * every line, and `factor` is never applied - which reads as the transcript jumping once per
+ * line rather than scrolling. The band is therefore only wide enough for sub-pixel noise, and
+ * a line's growth travels a fraction of the remaining distance per frame: caught up with, not
+ * teleported to. What the ease is really for is the discrete jump - a reasoning window
+ * releasing its fixed height, an image finishing decoding, a fenced block closing - where an
+ * exact pin would throw the whole screen in one frame.
  *
  * The target is `scrollHeight`, not a clamped offset: content keeps growing underneath,
  * and always aiming at the newest bottom is what stops the ease from lagging behind.

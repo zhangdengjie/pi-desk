@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createSettleSnap, isNearBottom, nextTailScroll, TAIL_PIN_OFFSET } from "./scroll";
+import { SHIPPED } from "./streamTuning";
 
 describe("TAIL_PIN_OFFSET", () => {
   it("stays under the ceiling where WebKit drops a scrollTop write at the top", () => {
@@ -42,13 +43,23 @@ describe("nextTailScroll", () => {
     const next = nextTailScroll(200, 1000, 200);
     expect(next).toBeGreaterThan(200);
     expect(next).toBeLessThan(1000);
-    expect(next).toBeCloseTo(410, 0);   // 200 + 600 * 0.35
+    // The share is the shipped `factor`, read from the same place the app reads it, so tuning
+    // the pace cannot leave a test asserting a number nobody ships.
+    expect(next).toBeCloseTo(200 + 600 * SHIPPED.scroll.factor, 0);
   });
 
-  it("converges on the bottom within a few frames", () => {
+  it("converges on the bottom", () => {
+    // 1,400px is the worst case the follow ever sees (a session switch, a collapsed panel).
+    // With the shipped 4px band it takes ~35 frames of easing instead of a snap, which is the
+    // point: the screen travels there instead of teleporting.
     let top = 0;
-    for (let frame = 0; frame < 12; frame += 1) top = nextTailScroll(top, 2000, 600);
+    let frames = 0;
+    while (top < 2000 && frames < 60) {
+      top = nextTailScroll(top, 2000, 600);
+      frames += 1;
+    }
     expect(top).toBe(2000);
+    expect(frames).toBeLessThan(60);
   });
 
   it("never moves backwards when the content shrinks", () => {
@@ -70,8 +81,9 @@ describe("createSettleSnap", () => {
     // The window: a snap of Infinity sends nextTailScroll straight to the bottom.
     expect(snap.limit(140)).toBe(Number.POSITIVE_INFINITY);
     expect(nextTailScroll(200, 1000, 200, snap.limit(140))).toBe(1000);
-    // 600px in one frame would otherwise ease: 200 + 600 * 0.35.
-    expect(nextTailScroll(200, 1000, 200, 140)).toBeCloseTo(410, 0);
+    // 600px in one frame would otherwise ease: 200 + 600 * the shipped factor.
+    expect(nextTailScroll(200, 1000, 200, 140, SHIPPED.scroll.factor))
+      .toBeCloseTo(200 + 600 * SHIPPED.scroll.factor, 0);
     clock = 2_200;
     expect(snap.limit(140)).toBe(140);
   });

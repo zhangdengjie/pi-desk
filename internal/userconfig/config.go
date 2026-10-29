@@ -163,7 +163,11 @@ func NormalRevealMode(value string) (string, bool) {
 // frame, re-arm within 24px of a bottom, open a slow call's window after 1200ms, and
 // fold a finished reasoning window shut over 200ms.
 func DefaultScroll() Scroll {
-	return Scroll{SnapWithinPx: 140, Factor: 0.35, ResumeWithinPx: 24, LiveWindowDelayMs: 1200, ReasoningFoldMs: 0}
+	// SnapWithinPx is deliberately small: it only absorbs sub-pixel noise. A line of Markdown
+	// prose is 17-34px tall, and a band wide enough to swallow a line makes the follow pin the
+	// bottom in one step (measured 2026-10-29), which reads as a jump per line rather than a
+	// scroll. Keep in step with frontend/src/utils/streamTuning.ts SHIPPED.scroll.
+	return Scroll{SnapWithinPx: 4, Factor: 0.32, ResumeWithinPx: 24, LiveWindowDelayMs: 1200, ReasoningFoldMs: 0}
 }
 
 // Notes lists the values that were out of range and fell back to their default.

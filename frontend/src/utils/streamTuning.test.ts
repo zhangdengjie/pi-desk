@@ -9,7 +9,7 @@ describe("streamTuning", () => {
     // internal/userconfig.DefaultReveal()/DefaultScroll() create the file with these;
     // a drift here means a fresh install and a fresh build disagree about the pace.
     expect(SHIPPED.reveal).toEqual({ mode: "plain", split: 20, floor: 2, ceiling: 60 });
-    expect(SHIPPED.scroll).toEqual({ snapWithinPx: 140, factor: 0.35, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 0 });
+    expect(SHIPPED.scroll).toEqual({ snapWithinPx: 4, factor: 0.32, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 0 });
     expect(streamTuning.reveal).toEqual(SHIPPED.reveal);
     expect(streamTuning.scroll).toEqual(SHIPPED.scroll);
   });
