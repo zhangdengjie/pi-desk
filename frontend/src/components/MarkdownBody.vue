@@ -270,26 +270,46 @@ const tailHtml = computed(() => pieces.value.tail);
 const seam = computed(() => pieces.value.tail !== "");
 
 const bodyElement = ref<HTMLElement>();
-
 /**
- * Writes the live tail into its own element, after the shell has been patched.
+ * The settled region's element, written by hand instead of by `v-html`.
  *
- * `watchPostEffect` because the placeholder is created by the same update: pre-flush would run
- * against the previous DOM and find nothing to write.
+ * `v-html` is `el.innerHTML = value`, and `value` here is always "the old HTML plus whatever the
+ * block that just closed appended". So a string that only grew rebuilt the entire subtree: the
+ * parse is incremental (`settledMemo.html +=`) but the DOM was not, and every paragraph above the
+ * seam lost its node identity on each block close - measured in `MarkdownBody.test.ts` ("keeps a
+ * settled node when the settled boundary advances").
  *
- * The `is-seamed` class is decided from the DOM rather than from the Markdown source on purpose -
- * "what are the two blocks that meet at the seam" is a question the rendered tree answers exactly,
- * and the CSS rule it feeds has to fire on the same conditions `.markdown-body p + p` fires on.
- */watchPostEffect(() => {
+ * Appending the delta with `insertAdjacentHTML` keeps every existing node, its sibling order (the
+ * `p + p` rhythm rules read it) and the reader's scroll anchor. The full rewrite stays for the two
+ * cases that really do replace content: a different answer (a shorter prefix) and a remounted
+ * element (the `v-if` branch above changed, or the host re-created the row).
+ */
+const settledElement = ref<HTMLElement>();
+let patchedShell = "";
+let patchedElement: HTMLElement | null = null;
+
+watchPostEffect(() => {
+  const element = settledElement.value;
+  if (!element) return;
+  const shell = pieces.value.shell;
+  if (element !== patchedElement || !shell.startsWith(patchedShell)) {
+    element.innerHTML = shell;
+  } else if (shell.length > patchedShell.length) {
+    element.insertAdjacentHTML("beforeend", shell.slice(patchedShell.length));
+  }
+  patchedElement = element;
+  patchedShell = shell;
+
+  // The seam class has to be decided *after* the settled HTML is in the DOM - it reads the last
+  // block of this element. Keeping it in the same post effect as the write is what guarantees that
+  // order; as a separate effect it ran before the write and always saw an empty shell.
   const placeholder = bodyElement.value?.querySelector(".md-tail");
   if (!placeholder) return;
-  // The two blocks that actually meet at the seam. Read from the DOM, not from the Markdown source:
-  // "what is the last settled block" has a single honest answer, and it is the one the CSS above
-  // would have tested had the wrapper not been there.
   const before = placeholder.previousElementSibling?.lastElementChild ?? null;
   const after = placeholder.firstElementChild;
   placeholder.classList.toggle("is-seamed", seamNeedsSpacing(before?.tagName, after?.tagName));
 });
+
 
 function anchorSelector(anchor: string): string {
   return anchor.replace(/["\\\s]/g, "");
@@ -400,7 +420,7 @@ function openContextMenu(event: MouseEvent) {
     :class="[ui.root]"
     :data-markdown-uid="instanceUid"
   >
-    <div class="md-settled" v-html="rendered" />
+    <div ref="settledElement" class="md-settled" />
     <div class="md-tail-plain" :class="{ 'is-seamed': rendered !== '' }"><span class="md-plain-text">{{ split.tail }}</span><span class="md-plain-caret" aria-hidden="true" /></div>
   </div>
   <!-- One pass: the whole block in a single v-html. This is the settled shape every layout.css rule
@@ -431,7 +451,7 @@ function openContextMenu(event: MouseEvent) {
     @click="openPreview"
     @contextmenu="openContextMenu"
   >
-    <div class="md-settled" v-html="rendered" />
+    <div ref="settledElement" class="md-settled" />
     <div class="md-tail" v-html="tailHtml" />
   </div>
   <pre v-else v-bind="$attrs" class="oversized-message" :class="ui.code">{{ text }}</pre>

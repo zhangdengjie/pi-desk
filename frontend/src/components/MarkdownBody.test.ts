@@ -459,6 +459,45 @@ describe("MarkdownBody streaming split", () => {
     vi.useRealTimers();
   });
 
+  // The sibling of the case above, and the one it could not cover: that one keeps the settled
+  // boundary still (an unclosed fence), so `rendered` never changes and `v-html` never writes.
+  // Here the boundary *advances*, which is what happens every time a block closes in plain mode.
+  // `v-html` writes `el.innerHTML = value`, so the whole settled subtree is rebuilt even though
+  // the new HTML is the old HTML plus a suffix. Measured below rather than assumed.
+  it("keeps a settled node when the settled boundary advances", async () => {
+    vi.useFakeTimers();
+    applyStreamTuning({ mode: "plain" }, null);
+    const before = "alpha\n\nbeta\n\n";
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text: before });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+    const settledBefore = wrapper.get(".md-settled").element.innerHTML;
+    const first = wrapper.get(".md-settled p").element as HTMLElement;
+    first.dataset.marker = "pinned";
+
+    // A closed paragraph plus its blank line is a boundary `splitSettledMarkdown` accepts, so the
+    // settled region swallows it and `rendered` grows. That is exactly what happens every time a
+    // block closes while the answer is still streaming.
+    // Two steps: the cut always lands at the *start* of the last closed paragraph, so `gamma`
+    // only becomes settled once something is written after it.
+    await wrapper.setProps({ text: before + "gamma\n\n" });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+    await wrapper.setProps({ text: before + "gamma\n\ndelta\n\n" });
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+    const settledElement = wrapper.get(".md-settled").element;
+
+    // Not a length assertion: setting `dataset.marker` above already lengthened the string, and a
+    // rebuild would throw that DOM away while a stale `length` still looked bigger.
+    expect(settledElement.innerHTML).toContain("gamma");
+    expect(settledBefore).not.toContain("gamma");
+    expect((settledElement.querySelector("p") as HTMLElement).dataset.marker).toBe("pinned");
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it("marks the seam exactly where the sibling rule would have fired", async () => {
     // The rhythm rule is `styles/workbench.css`'s four sibling selectors (12px), not layout.css's
     // older 9px one, and it covers a heading followed by a paragraph. The full pair matrix is
