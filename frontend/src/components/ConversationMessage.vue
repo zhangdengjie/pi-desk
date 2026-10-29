@@ -427,17 +427,16 @@ const followedReasoning = computed(() => executionSteps.value.find(
   (step) => step.kind === "thinking" && step.active && reasoningIsOpen(step),
 ));
 
-// Handing the stage over to the answer used to drop 168px in a single painted frame: the live
-// window is a fixed height (.thinking-body.is-live), `auto` closes it on the answer's first
-// character, and with the tail pinned the browser clamps `scrollTop` in that same frame - so the
-// whole transcript lurched down by the window's height the instant the text began (measured 116px
-// in one frame with .pi/bin/hitprobe/devThinkJumpProbe.ts.keep, against 22px per reveal step for a
-// normally streamed line in the same run). The window is folded shut instead: the same height
-// change, spread over `scroll.reasoningFoldMs` (~/.pi-desk/config.json), so the transcript slides
-// and the answer lands where the eye already is. `reasoningFoldMs: 0` turns the fold off and closes
-// the window in the same frame again.
-// The step whose window is animating shut. While it is set the block stays `open` and keeps
-// `is-live`, and `.is-folding` (layout.css) drives the height to zero.
+// Handing the stage over to the answer takes 168px out of the document: the live window is a fixed
+// height (.thinking-body.is-live), `auto` closes it on the answer's first character, and the tail is
+// pinned. That height has to go somewhere, so every value of `scroll.reasoningFoldMs` moves the
+// transcript by 168px - the only choice is whether it happens in one step or over twelve frames.
+// 0 (the default) closes it in the frame the text begins: the transcript settles at once and the
+// reveal after it never moves (measured with .pi/bin/hitprobe/devThinkJumpProbe.ts.keep). ~200 slid
+// the same 168px over twelve frames, which read as the transcript creeping on every hand-over. Set a
+// duration in ~/.pi-desk/config.json to get the slide back.
+// The step whose window is folding. While it is set the block stays `open` and keeps `is-live`, and
+// `.is-folding` (layout.css) drives the height to zero over `--reasoning-fold-ms`.
 const foldingStepId = ref("");
 let foldTimer: number | undefined;
 

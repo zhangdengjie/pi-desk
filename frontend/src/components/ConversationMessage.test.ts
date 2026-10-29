@@ -6,6 +6,7 @@ import ConversationMessage from "./ConversationMessage.vue";
 import { type TimelineMessage, useAppStore } from "../stores/app";
 import { groupConversationTurns } from "../utils/conversationGrouping";
 import { forgetPanelOpenStates, pinPanelOpen } from "../utils/detailsOpenState";
+import { streamTuning } from "../utils/streamTuning";
 import { RuntimeState } from "../../bindings/pi-desk/internal/domain";
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
@@ -19,6 +20,9 @@ describe("ConversationMessage", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     forgetPanelOpenStates();
+    // The shipped default is 0 (one 168px step); the fold-animation cases below need a duration to
+    // observe, so they opt back into the slide. The instantaneous path has its own case.
+    streamTuning.scroll.reasoningFoldMs = 200;
   });
 
   it("allows deleting and forking an image-only persisted message", async () => {
@@ -389,6 +393,29 @@ describe("ConversationMessage", () => {
     expect(wrapper.get(".thinking-block .thinking-body").classes()).not.toContain("is-live");
     wrapper.unmount();
     vi.useRealTimers();
+  });
+
+  it("closes the live reasoning window in one step when the fold duration is 0", async () => {
+    streamTuning.scroll.reasoningFoldMs = 0;
+    const pinia = createPinia();
+    const message = (text: string) => ({
+      id: "answer-anchor-instant", role: "assistant" as const, text, thinking: "Inspecting", timestamp: "10:08",
+      streaming: true, activeExecution: "thinking" as const, tools: [],
+    });
+    const wrapper = mount(ConversationMessage, { props: { message: message("") }, global: { plugins: [pinia] } });
+
+    expect(wrapper.get(".thinking-block .thinking-body").classes()).toContain("is-live");
+
+    await wrapper.setProps({ message: message("Working on it") });
+    // Shipped default: no intermediate frames, so no `is-folding` and no pending timer - the window
+    // is already shut in the same render that shows the answer.
+    const body = wrapper.get(".thinking-block .thinking-body");
+    expect(body.classes()).not.toContain("is-folding");
+    expect(body.classes()).not.toContain("is-live");
+    expect(wrapper.get(".thinking-block").attributes("open")).toBeUndefined();
+    expect(wrapper.get(".message-content > .markdown-body").text()).toBe("Working on it");
+
+    wrapper.unmount();
   });
 
   it("leaves a reasoning block the reader pinned open alone when the answer starts", async () => {

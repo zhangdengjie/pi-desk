@@ -87,9 +87,11 @@ type Scroll struct {
 	// transcript at all.
 	LiveWindowDelayMs int `json:"liveWindowDelayMs"`
 	// ReasoningFoldMs is how long the live reasoning window takes to fold shut when the
-	// answer starts. Closing it in one frame dropped 168px out of the document between
-	// two paints, which the pinned tail turned into a single-frame lurch of the whole
-	// transcript. 0 closes it immediately (the behaviour before the fold existed).
+	// answer starts. Any value moves the transcript: the window is 168px tall, so closing
+	// it takes that much out of the document and the pinned tail follows. 0 (the default)
+	// takes it out in one frame - one 168px step, then a stable transcript. ~200 spreads
+	// the same 168px over twelve frames, which reads as the transcript creeping on every
+	// hand-over; raise it if a single step is the thing that bothers you.
 	ReasoningFoldMs int `json:"reasoningFoldMs"`
 }
 
@@ -146,7 +148,7 @@ func NormalRevealMode(value string) (string, bool) {
 // frame, re-arm within 24px of a bottom, open a slow call's window after 1200ms, and
 // fold a finished reasoning window shut over 200ms.
 func DefaultScroll() Scroll {
-	return Scroll{SnapWithinPx: 140, Factor: 0.35, ResumeWithinPx: 24, LiveWindowDelayMs: 1200, ReasoningFoldMs: 200}
+	return Scroll{SnapWithinPx: 140, Factor: 0.35, ResumeWithinPx: 24, LiveWindowDelayMs: 1200, ReasoningFoldMs: 0}
 }
 
 // Notes lists the values that were out of range and fell back to their default.

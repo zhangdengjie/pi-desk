@@ -49,7 +49,7 @@ export interface ScrollTuning {
 
 export const SHIPPED: { reveal: RevealTuning; scroll: ScrollTuning } = {
   reveal: { mode: "plain", split: 20, floor: 2, ceiling: 60 },
-  scroll: { snapWithinPx: 140, factor: 0.35, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 200 },
+  scroll: { snapWithinPx: 140, factor: 0.35, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 0 },
 };
 
 export const streamTuning = reactive({
