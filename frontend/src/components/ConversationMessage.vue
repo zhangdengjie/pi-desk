@@ -3,7 +3,7 @@
 import { ui } from "../ui/classes";
 import { ArrowUp, BrainCircuit, Check, CheckCircle2, ChevronDown, ChevronRight, ChevronUp, Copy, FileDiff, GitFork, List, MessageSquareOff, Pencil, RefreshCw, Save, Sparkles, Trash2, TriangleAlert, X } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import type { ExecutionStep, StreamPanelMode, TimelineMessage, ToolDiff } from "../stores/app";
+import type { ExecutionStep, StreamPanelMode, TimelineMessage, ToolDiff, ToolExecution } from "../stores/app";
 import { useAppStore } from "../stores/app";
 import type { PreparedImage } from "../utils/imageAttachments";
 import { resolveWorkspaceFileLink, type WorkspaceFileLink } from "../utils/fileLinks";
@@ -149,6 +149,21 @@ const executionSteps = computed(() => [
   ...(props.message.tools.length ? [{ id: `${props.message.id}-tools`, kind: "tools" as const, tools: props.message.tools }] : []),
   ]),
 ]);
+// `plan_mode_complete` ends the turn without writing an assistant message, so its result *is* the
+// answer. Rendering it inside the tool card put the deliverable under "执行过程" (itself collapsed)
+// and behind a tool label. The card stays as a one-line receipt; the document is drawn here, where
+// an ordinary answer lives - outline, search highlight and reading width included.
+const hoistedPlan = computed(() => {
+  if (props.message.role !== "assistant") return undefined;
+  let plan: ToolExecution | undefined;
+  for (const step of executionSteps.value) {
+    for (const tool of step.tools ?? []) {
+      if (tool.name === "plan_mode_complete" && tool.status !== "running" && tool.output.trim()) plan = tool;
+    }
+  }
+  return plan;
+});
+
 type ChangedFileSummary = WorkspaceFileLink & { additions: number; deletions: number; diff: string };
 
 function diffStats(diff: string): { additions: number; deletions: number } {
@@ -613,12 +628,20 @@ watch(() => props.message.id, () => closeAnswerOutline());
                 :run-is-live="everLive"
                 :context-busy="sessionBusy"
                 :exclude-from-context="appStore.contextEditsAvailable ? excludeEntryFromContext : undefined"
+                :hoist-output="tool.id === hoistedPlan?.id"
               />
             </template>
             <MarkdownBody v-else-if="step.text" :text="step.text" :streaming="false" :search-query="searchQuery" />
           </template>
         </div>
       </details>
+      <MarkdownBody
+        v-if="hoistedPlan"
+        class="plan-completion-body"
+        :text="hoistedPlan.output"
+        :streaming="false"
+        :search-query="searchQuery"
+      />
       <div v-if="message.images?.length" class="message-images">
         <button
           v-for="image in message.images"

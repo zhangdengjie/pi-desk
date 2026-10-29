@@ -1126,6 +1126,26 @@ describe("ConversationMessage", () => {
     }
   });
 
+  it("draws a finished plan outside the tool card, not buried in it", async () => {
+    // `plan_mode_complete` writes no assistant message, so the tool result is the answer. Inside the
+    // card it sat under "执行过程" (itself collapsed) behind a tool label; the document belongs on the
+    // answer axis, and the card shrinks to a receipt so the plan is not painted twice.
+    const plan = "# 方案\n\n| 面 | 位置 |\n| --- | --- |\n| Go | index.go:507 |";
+    const wrapper = mount(ConversationMessage, { props: { message: {
+      id: "plan-turn", role: "assistant", text: "", thinking: "", timestamp: "10:00", streaming: false,
+      tools: [{ id: "tool-plan", name: "plan_mode_complete", arguments: { plan }, output: plan, status: "complete" }],
+    } } });
+    await flushPromises();
+
+    const body = wrapper.get(".plan-completion-body");
+    expect(body.find("h1").text()).toBe("方案");
+    expect(body.findAll("td")[1].text()).toBe("index.go:507");
+    expect(wrapper.get(".execution-process").element.contains(body.element)).toBe(false);
+    expect(wrapper.find(".tool-markdown").exists()).toBe(false);
+    expect(wrapper.get("details.tool-call").attributes("open")).toBeUndefined();
+    wrapper.unmount();
+  });
+
   it("renders expanded skill context as a compact invocation and preserves it when editing", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

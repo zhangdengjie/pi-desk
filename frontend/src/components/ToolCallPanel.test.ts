@@ -492,6 +492,18 @@ async function openPanel(wrapper: ReturnType<typeof mount>) {
     wrapper.unmount();
   });
 
+  it("leaves a hoisted plan's card closed and shows no second copy", () => {
+    const plan = "# 方案\n\n正文";
+    const wrapper = mount(ToolCallPanel, {
+      props: { hoistOutput: true, tool: { id: "tool-plan-hoisted", name: "plan_mode_complete", arguments: { plan }, output: plan, status: "complete" } },
+    });
+
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    expect(wrapper.find(".tool-markdown").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("正文");
+    wrapper.unmount();
+  });
+
   it("keeps every other tool's output a monospaced log", () => {
     pinPanelOpen("tool-log", true);
     const wrapper = mount(ToolCallPanel, {

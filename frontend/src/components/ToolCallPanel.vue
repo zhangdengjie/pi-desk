@@ -14,7 +14,7 @@ import ImagePreviewDialog from "./ImagePreviewDialog.vue";
 import LoadingRing from "./LoadingRing.vue";
 import MarkdownBody from "./MarkdownBody.vue";
 
-const props = withDefaults(defineProps<{ tool: ToolExecution; allowLive?: boolean; panelMode?: StreamPanelMode; runIsLive?: boolean; contextBusy?: boolean; excludeFromContext?: (entryId: string) => Promise<boolean> }>(), { allowLive: true, panelMode: "auto", runIsLive: false });
+const props = withDefaults(defineProps<{ tool: ToolExecution; allowLive?: boolean; panelMode?: StreamPanelMode; runIsLive?: boolean; contextBusy?: boolean; excludeFromContext?: (entryId: string) => Promise<boolean>; hoistOutput?: boolean }>(), { allowLive: true, panelMode: "auto", runIsLive: false, hoistOutput: false });
 const copied = ref<"input" | "output" | "">("");
 const detailsEl = ref<HTMLDetailsElement>();
 const confirmingContextExclusion = ref(false);
@@ -85,7 +85,9 @@ const panelOpen = computed(() => {
   // A plan is the deliverable of the whole turn, not a log line. Collapsed, plan mode reads as
   // "nothing happened" - the reader has to open the panel to find out the answer existed at all.
   // The reader's own toggle still wins, because `panelOpenState` is checked first.
-  if (markdownOutput.value) return true;
+  // `hoistOutput` means the parent renders that document outside the card instead, so opening the
+  // card here would show it twice; it stays a one-line receipt.
+  if (markdownOutput.value && !props.hoistOutput) return true;
   if (!belongsToLiveRun.value) return false;
   return props.panelMode === "alwaysOpen";
 });
@@ -140,7 +142,10 @@ const everOpened = ref(false);
 watch(panelOpen, (open) => {
   if (open) everOpened.value = true;
 }, { immediate: true });
-const bodyMounted = computed(() => panelOpen.value || belongsToLiveRun.value || everOpened.value);
+const bodyMounted = computed(() => {
+  if (props.hoistOutput) return panelOpen.value || everOpened.value;
+  return panelOpen.value || belongsToLiveRun.value || everOpened.value;
+});
 const inputText = computed(() => {
   if (props.tool.arguments === undefined) return "";
   if (typeof props.tool.arguments === "string") return props.tool.arguments;
@@ -391,7 +396,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </div>
-    <div v-if="tool.output" class="tool-section">
+    <div v-if="tool.output && !hoistOutput" class="tool-section">
       <div class="tool-section-header">
         <span>
           {{ tr("tools.output") }}
