@@ -452,6 +452,21 @@ function followLatest() {
   scrollToBottom();
   updateActiveNavigation();
 }
+
+/**
+ * A panel the reader opened or closed is theirs to look at, so the follow lets go.
+ *
+ * Expanding the execution block at the end of a run used to yank the transcript to the newest bottom:
+ * the block sits above the viewport, its height change wakes the row observer, and the follow read
+ * that as "the tail grew". `overflow-anchor: none` (layout.css) means nothing else compensates, so
+ * the reader lost the block they had just opened. Releasing here keeps `scrollTop` where it was, and
+ * the block expands in place; the jump-latest button is still there to come back.
+ */
+function onReaderTakeover() {
+  markReaderInput();
+  stickToBottom.value = false;
+  stopFollowingTail();
+}
 function updateActiveNavigation() {
   const element = timeline.value;
   if (!element || !navigationItems.value.length) return;
@@ -824,11 +839,11 @@ onBeforeUnmount(() => {
           :data-index="row.index"
           :style="{ transform: `translateY(${row.start}px)` }"
         >
-          <ConversationMessage :message="messages[row.index]" :search-query="searchQuery" :search-active="messages[row.index]?.id === activeSearchMessageId" :search-active-index="activeSearchHitIndex" />
+          <ConversationMessage :message="messages[row.index]" :search-query="searchQuery" :search-active="messages[row.index]?.id === activeSearchMessageId" :search-active-index="activeSearchHitIndex" @reader-takeover="onReaderTakeover" />
         </div>
       </div>
 
-      <ConversationMessage v-for="message in directMessages" :key="message.renderKey ?? message.id" :ref="observeTranscriptRow" :message="message" :search-query="searchQuery" :search-active="message.id === activeSearchMessageId" :search-active-index="activeSearchHitIndex" />
+      <ConversationMessage v-for="message in directMessages" :key="message.renderKey ?? message.id" :ref="observeTranscriptRow" :message="message" :search-query="searchQuery" :search-active="message.id === activeSearchMessageId" :search-active-index="activeSearchHitIndex" @reader-takeover="onReaderTakeover" />
       </template>
       <div
         v-if="messages.length > 0"

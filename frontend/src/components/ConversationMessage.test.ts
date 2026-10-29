@@ -632,6 +632,19 @@ describe("ConversationMessage", () => {
     expect(wrapper.get(".execution-process").attributes("open")).toBeUndefined();
   });
 
+  it("tells the transcript to let go of the tail when the reader opens a panel", async () => {
+    const pinia = createPinia();
+    const { wrapper } = liveRun(pinia, "assistant-reader-open");
+
+    await wrapper.get(".execution-process > summary").trigger("click");
+    await wrapper.vm.$nextTick();
+
+    // The panel sits above the viewport and `overflow-anchor: none` means only the transcript's own
+    // follow would move the offset - so a reader's click has to release it, or the block they just
+    // opened is yanked off screen.
+    expect(wrapper.emitted("reader-takeover")).toHaveLength(1);
+  });
+
   it("keeps a loaded session shut in alwaysOpen, because only a live turn is reading material", () => {
     const pinia = createPinia();
     const { store, wrapper } = liveRun(pinia, "assistant-history", false);

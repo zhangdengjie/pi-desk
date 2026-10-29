@@ -36,6 +36,10 @@ const props = defineProps<{
    */
   searchActiveIndex?: number;
 }>();
+// A reader opening or closing a panel is a scroll instruction: the transcript must let go of the
+// tail instead of pinning the newest bottom, because the panel they just expanded sits above the
+// viewport and `overflow-anchor: none` means only that follow would move the offset.
+const emit = defineEmits<{ (event: "reader-takeover"): void }>();
 const appStore = useAppStore();
 const editing = ref(false);
 const editText = ref("");
@@ -250,6 +254,7 @@ function syncExecutionOpen(event: Event) {
   // to be reverted mid-stream, which read as a control that did not work.
   if (details.open === renderedOpen.get(executionKey.value)) return;
   pinPanelOpen(executionKey.value, details.open);
+  emit("reader-takeover");
 }
 
 function openChangedFile(file: ChangedFileSummary) {
@@ -402,6 +407,7 @@ function syncReasoningOpen(step: ExecutionStep, event: Event) {
   // when the reader opens a block - `followedReasoning` stays stale until the text moves again.
   // A reader who opens a still-growing block wants its newest line now, not on the next token.
   if (details.open && step.active) armReasoningTail(step);
+  emit("reader-takeover");
 }
 
 // Only one step is live at a time, and its panel is a fixed-height window (see
