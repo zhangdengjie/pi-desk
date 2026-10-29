@@ -211,7 +211,9 @@ func TestTuningRoundTripAndRanges(t *testing.T) {
 
 	// Out of range values fall back per field and say so, instead of leaving the
 	// transcript unable to follow or dumping a whole answer in one frame.
-	if err := os.WriteFile(path, []byte(`{"reveal":{"split":0,"ceiling":1},"scroll":{"factor":0,"snapWithinPx":-5,"liveWindowDelayMs":99999,"reasoningFoldMs":-1}}`), 0o600); err != nil {
+	// `catchUpPx` present so this is a *new* file: without it the old-file migration below
+	// would rewrite factor before the range check could reject it.
+	if err := os.WriteFile(path, []byte(`{"reveal":{"split":0,"ceiling":1},"scroll":{"catchUpPx":160,"factor":0,"snapWithinPx":-5,"liveWindowDelayMs":99999,"reasoningFoldMs":-1}}`), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
 	config, _, err = Load()
@@ -260,6 +262,33 @@ func TestTuningRoundTripAndRanges(t *testing.T) {
 		if !strings.Contains(string(raw), want) {
 			t.Fatalf("created file missing %q:\n%s", want, raw)
 		}
+	}
+}
+
+// A config written before `catchUpPx` existed still has factor 0.32 and a 4px snap band, which
+// mean something else in the new control law. The missing key is the version marker: the pair is
+// replaced with the shipped one instead of being reinterpreted (0.32 would put a line back to a
+// single-frame jump, i.e. the upgrade would change nothing).
+func TestOldScrollFileMigrates(t *testing.T) {
+	path := t.TempDir() + "/config.json"
+	t.Setenv(PathEnv, path)
+	old := `{"scroll":{"snapWithinPx":4,"factor":0.32,"resumeWithinPx":40,"liveWindowDelayMs":1200,"reasoningFoldMs":0}}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	config, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if config.Scroll.Factor != DefaultScroll().Factor || config.Scroll.SnapWithinPx != DefaultScroll().SnapWithinPx {
+		t.Fatalf("old scroll survived: %+v", config.Scroll)
+	}
+	if config.Scroll.CatchUpPx != DefaultScroll().CatchUpPx {
+		t.Fatalf("catchUpPx = %d, want the shipped %d", config.Scroll.CatchUpPx, DefaultScroll().CatchUpPx)
+	}
+	// A value the reader set on purpose is not touched by the migration.
+	if config.Scroll.ResumeWithinPx != 40 {
+		t.Fatalf("resumeWithinPx = %d, want the hand-edited 40", config.Scroll.ResumeWithinPx)
 	}
 }
 

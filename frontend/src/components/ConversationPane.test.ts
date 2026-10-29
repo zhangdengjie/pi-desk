@@ -133,7 +133,9 @@ describe("ConversationPane", () => {
     scrollerObserver!.callback();
     frames.at(-1)?.(0);
     await flushPromises();
-    expect(timeline.scrollTop).toBe(1400);
+    // The follow writes the exact bottom (scrollHeight - clientHeight), not an oversized
+    // offset the engine has to clamp: 1400 - 400.
+    expect(timeline.scrollTop).toBe(1000);
 
     wrapper.unmount();
     expect(scrollerObserver!.disconnect).toHaveBeenCalled();
@@ -332,7 +334,7 @@ describe("ConversationPane", () => {
     await wrapper.get(".timeline").trigger("scroll");
     await stream("and still growing", 2020);
 
-    expect(timeline.scrollTop).toBe(2020);
+    expect(timeline.scrollTop).toBe(1420);
 
     // Real input still releases it, grace or not.
     await wrapper.get(".timeline").trigger("wheel", { deltaY: -30 });
@@ -356,7 +358,7 @@ describe("ConversationPane", () => {
     await wrapper.get(".timeline").trigger("scroll");
     await stream("Message 3 finished writing", 2020);
 
-    expect(timeline.scrollTop).toBe(2020);
+    expect(timeline.scrollTop).toBe(1420);
     wrapper.unmount();
   });
 
@@ -374,7 +376,7 @@ describe("ConversationPane", () => {
     await wrapper.findAll(".stub-message")[1].trigger("wheel", { deltaY: -30 });
     await stream("Message 3 is still writing", 1900);
 
-    expect(timeline.scrollTop).toBe(1900);
+    expect(timeline.scrollTop).toBe(1300);
     wrapper.unmount();
   });
 
@@ -396,7 +398,7 @@ describe("ConversationPane", () => {
     expect(wrapper.find(".timeline-jump-latest").exists()).toBe(false);
 
     await stream("Message 3 finished writing", 2020);
-    expect(timeline.scrollTop).toBe(2020);
+    expect(timeline.scrollTop).toBe(1420);
     wrapper.unmount();
   });
 
@@ -435,7 +437,7 @@ describe("ConversationPane", () => {
     timeline.scrollTop = 1032;
     rowObserver!.callback();
 
-    expect(timeline.scrollTop).toBe(1632);
+    expect(timeline.scrollTop).toBe(1032);
     wrapper.unmount();
     expect(rowObserver!.disconnect).toHaveBeenCalled();
   });
@@ -571,8 +573,8 @@ describe("ConversationPane", () => {
     expect(timeline.scrollTop).toBeLessThan(2100);
 
     await wrapper.get(".timeline").trigger("scroll");
-    for (let guard = 0; guard < 40 && frames.length; guard += 1) frames.shift()!(0);
-    expect(timeline.scrollTop).toBe(2700);
+    for (let guard = 0; guard < 900 && frames.length; guard += 1) frames.shift()!(0);
+    expect(timeline.scrollTop).toBe(2100);
     wrapper.unmount();
   });
 
@@ -679,7 +681,7 @@ describe("ConversationPane", () => {
       clientHeight: { configurable: true, get: () => sizes.clientHeight },
       scrollHeight: { configurable: true, get: () => sizes.scrollHeight },
     });
-    const settle = () => { for (let guard = 0; guard < 60 && frames.length; guard += 1) frames.shift()!(0); };
+    const settle = () => { for (let guard = 0; guard < 900 && frames.length; guard += 1) frames.shift()!(0); };
 
     timeline.scrollTop = 600;
     await wrapper.get(".timeline").trigger("scroll");
@@ -689,9 +691,9 @@ describe("ConversationPane", () => {
     sizes.scrollHeight = 2000;
     observer.callback();
     settle();
-    expect(timeline.scrollTop).toBe(2000);
+    expect(timeline.scrollTop).toBe(1400);
     await wrapper.get(".timeline").trigger("scroll");
-    expect(timeline.scrollTop).toBe(2000);
+    expect(timeline.scrollTop).toBe(1400);
 
     // A 5px flick is the reader leaving, but the position it lands on is still inside the 24px
     // "arrived at the tail" band, so move well clear of it before checking the pin stays released.
@@ -709,7 +711,7 @@ describe("ConversationPane", () => {
     sizes.scrollHeight = 3200;
     observer.callback();
     settle();
-    expect(timeline.scrollTop).toBe(3200);
+    expect(timeline.scrollTop).toBe(2600);
     wrapper.unmount();
     expect(observer.disconnect).toHaveBeenCalled();
   });

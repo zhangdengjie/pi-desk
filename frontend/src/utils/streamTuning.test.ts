@@ -9,7 +9,7 @@ describe("streamTuning", () => {
     // internal/userconfig.DefaultReveal()/DefaultScroll() create the file with these;
     // a drift here means a fresh install and a fresh build disagree about the pace.
     expect(SHIPPED.reveal).toEqual({ mode: "plain", split: 20, floor: 2, ceiling: 60 });
-    expect(SHIPPED.scroll).toEqual({ snapWithinPx: 4, factor: 0.32, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 0 });
+    expect(SHIPPED.scroll).toEqual({ snapWithinPx: 2, factor: 0.005, catchUpPx: 160, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 0 });
     expect(streamTuning.reveal).toEqual(SHIPPED.reveal);
     expect(streamTuning.scroll).toEqual(SHIPPED.scroll);
   });
@@ -57,9 +57,11 @@ describe("streamTuning", () => {
 
   it("is read per call by the scroll geometry", () => {
     applyStreamTuning(null, { snapWithinPx: 10, factor: 0.5 });
-    // A 40px jump used to snap (inside the shipped 140px); with a 10px snap band it eases.
+    // A 40px jump used to snap (inside the old 140px band); with a 10px band it eases, and a
+    // factor above the full share means "always at least this fast".
     expect(nextTailScroll(1000, 1140, 100)).toBe(1020);
     applyStreamTuning(null, { snapWithinPx: 100 });
-    expect(nextTailScroll(1000, 1140, 100)).toBe(1140);
+    // Inside the band the follow writes the exact bottom, not an oversized offset.
+    expect(nextTailScroll(1000, 1140, 100)).toBe(1040);
   });
 });

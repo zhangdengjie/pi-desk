@@ -60,9 +60,52 @@ import { streamTuning } from "./streamTuning";
  * releasing its fixed height, an image finishing decoding, a fenced block closing - where an
  * exact pin would throw the whole screen in one frame.
  *
- * The target is `scrollHeight`, not a clamped offset: content keeps growing underneath,
- * and always aiming at the newest bottom is what stops the ease from lagging behind.
+ * The target is `scrollHeight - clientHeight`, not an oversized offset: content keeps growing
+ * underneath, and always aiming at the newest bottom is what stops the ease from lagging.
  */
+/**
+ * The share of the gap the follow covers per 60fps frame for a gap of one line.
+ *
+ * A line of prose is 17-34px and it lands as a *step*, not as growth: the browser only
+ * re-flows when the line breaks, so the tail is still for a second or two and then the
+ * document is 26px taller in one frame. Easing that 26px in 3-4 frames is a 8px jump
+ * followed by a 5px, a 3px and a final snap that is *larger* than the step before it -
+ * the reader sees the screen being pushed once per line. At 0.5% per frame the same 22px is
+ * still travelling when the next line lands: one CSS pixel every 2-8 frames, measured on the
+ * sandbox WKWebView (dev follow probe, 2026-10-30), which reads as the text scrolling.
+ *
+ * The cost is lag: a continuously growing tail sits about a line behind the bottom. The
+ * transcript's 24px bottom padding absorbs it, so the newest line stays fully visible.
+ *
+ * The value itself lives in `streamTuning.scroll.factor` (0.5% shipped) so a hand edit to
+ * `~/.pi-desk/config.json` can retune it without a rebuild.
+ */
+
+/**
+ * The gap at which the follow is allowed to use the full share again.
+ *
+ * The slow share above is only right for a line. A reasoning window collapsing, an image
+ * decoding or a fenced block closing moves the bottom by hundreds of pixels at once, and
+ * easing that at 0.5% per frame would leave the newest content off screen for a second.
+ * The share ramps up with the square of `gap / CATCH_UP_PX`, so a one-line step stays
+ * slow while a panel-sized step is chased at the old pace.
+ */
+export const CATCH_UP_PX = 160;
+
+/** The share used at and past `CATCH_UP_PX` - the value `factor` used to be everywhere. */
+export const FULL_EASE_SHARE = 0.32;
+
+/**
+ * Smallest step the control law may ask for.
+ *
+ * Sub-pixel steps do not survive the engine: a 0.78px write came back as 0 for five frames in
+ * a row on the sandbox WKWebView (dev follow probe, 2026-10-30: the gap fell 4px over 25
+ * frames while the control law asked for 0.78px per frame), which is why the tail used to sit
+ * 18px behind. The caller therefore accumulates the fractional step and writes whole pixels
+ * (`pendingStep` in ConversationPane). This floor only keeps the request non-zero.
+ */
+const MIN_STEP_PX = 0.01;
+
 export function nextTailScroll(
   currentTop: number,
   scrollHeight: number,
@@ -71,10 +114,29 @@ export function nextTailScroll(
   // effect on the next frame without a restart.
   snapWithin = streamTuning.scroll.snapWithinPx,
   factor = streamTuning.scroll.factor,
+  catchUpPx = streamTuning.scroll.catchUpPx,
+  // The frame interval, so the same time constant holds on a 120Hz display. The default
+  // is one 60fps frame; callers that can measure it should pass the real one.
+  dtMs = 1000 / 60,
 ): number {
-  const distance = scrollHeight - clientHeight - currentTop;
-  if (distance <= snapWithin) return scrollHeight;
-  return currentTop + Math.max(1, distance * factor);
+  const target = scrollHeight - clientHeight;
+  const distance = target - currentTop;
+  // `<=` also covers a shrinking document: the engine has already clamped scrollTop to
+  // the new bottom, and the follow must not ease upward through content that no longer
+  // exists (that is the "content got shorter" shake, not a scroll).
+  if (distance <= snapWithin) return target;
+  const ramp = Math.min(1, distance / Math.max(1, catchUpPx));
+  // `factor` above the full share is a deliberate "always fast" setting; the ramp must not
+  // slow a large gap below it.
+  const full = Math.max(FULL_EASE_SHARE, factor);
+  const share = factor + (full - factor) * ramp * ramp;
+  // Frame-rate independent: `share` is defined per 60fps frame, so a 120Hz frame must
+  // cover the fraction of it that one 60Hz frame's worth of time buys.
+  const alpha = 1 - Math.pow(1 - share, dtMs / (1000 / 60));
+  const step = Math.max(MIN_STEP_PX, distance * alpha);
+  // Never overshoot: a step past the target would be read back as "content shrank" and
+  // bounce for a frame.
+  return currentTop + Math.min(step, distance);
 }
 
 /**

@@ -275,6 +275,16 @@ let applyingTail = false;
 // in both directions - the reader's scroll always changes it.
 let lastAppliedTop: number | null = null;
 
+// The frame interval the ease is scaled by. A 120Hz display would otherwise cover half the
+// intended distance per frame and turn the slow one-line ease into a crawl. Two calls inside one
+// frame (a row ResizeObserver and the rAF continuation) must not collapse the share either, so
+// anything that is not a plausible frame gap is treated as exactly one frame.
+let lastStepAt = 0;
+const STEP_DT_MAX_MS = 64;
+// Fraction of a pixel the control law has asked for but the engine would round away. Carried
+// between frames so a slow ease still advances instead of stalling (see stepTail).
+let pendingStep = 0;
+
 // The end of a run delivers its height in mixed-sign batches inside ~1.2s of the
 // scroll.stop edge: `agent_end` collapses the execution panels and inserts the
 // changed-files card, `agent_settled` replaces the transcript rows with their
@@ -351,24 +361,53 @@ watch(() => appStore.paneResizing, (resizing) => {
 function stepTail(): boolean {
   const element = timeline.value;
   if (!element || !stickToBottom.value) return false;
+  const now = performance.now();
+  // Below 4ms this is the same frame (two observers firing in one tick), not a fast display:
+  // scaling the share by a 0.2ms delta would make the follow crawl. Treat it as one frame.
+  const sinceLast = lastStepAt ? now - lastStepAt : 0;
+  const dtMs = sinceLast >= 4 && sinceLast <= STEP_DT_MAX_MS ? sinceLast : 1000 / 60;
+  lastStepAt = now;
+  // Either window pins: they are independent causes with the same remedy, and `limit` answers
+  // either the configured band or Infinity, so the wider one wins.
+  const snapBand = Math.max(
+    settleSnap.limit(streamTuning.scroll.snapWithinPx),
+    paneMotionSnap.limit(streamTuning.scroll.snapWithinPx),
+  );
   const next = nextTailScroll(
     element.scrollTop,
     element.scrollHeight,
     element.clientHeight,
-    // Either window pins: they are independent causes with the same remedy, and `limit` answers
-    // either the configured band or Infinity, so the wider one wins.
-    Math.max(
-      settleSnap.limit(streamTuning.scroll.snapWithinPx),
-      paneMotionSnap.limit(streamTuning.scroll.snapWithinPx),
-    ),
+    snapBand,
+    streamTuning.scroll.factor,
+    streamTuning.scroll.catchUpPx,
+    dtMs,
   );
-  if (next !== element.scrollTop) {
+  const gapBefore = element.scrollHeight - element.clientHeight - element.scrollTop;
+  const delta = next - element.scrollTop;
+  let step = 0;
+  if (gapBefore <= snapBand || delta <= 0) {
+    // Inside the snap band, or the document shrank: take the whole delta in one write and
+    // forget any fraction - those are the two cases where "exactly at the bottom" matters.
+    pendingStep = 0;
+    step = delta;
+  } else {
+    // Sub-pixel writes are dropped by the engine (measured 2026-10-30: a 0.78px step came back
+    // as 0 for five frames), so the fraction is carried until it makes a whole pixel. A 22px
+    // line at 1.5% per frame then moves 1px every ~3 frames for the whole gap until the next
+    // line, instead of 2px every frame for ten frames followed by a second of stillness.
+    pendingStep += delta;
+    step = Math.floor(pendingStep);
+    pendingStep -= step;
+  }
+  if (step !== 0) {
     applyingTail = true;
-    element.scrollTop = next;
+    element.scrollTop += step;
     lastAppliedTop = element.scrollTop;
     applyingTail = false;
   }
-  const chasing = element.scrollHeight - element.scrollTop - element.clientHeight > 1;
+  // `0.5` is the sub-pixel threshold, not `1`: a step can leave a gap the next call would have
+  // snapped, and stopping at 1px left the tail visibly short in the tests.
+  const chasing = element.scrollHeight - element.scrollTop - element.clientHeight > 0.5;
   if (!chasing) updateActiveNavigation();
   return chasing;
 }
@@ -383,6 +422,7 @@ function followTail() {
 }
 
 function stopFollowingTail() {
+  pendingStep = 0;
   if (!tailFrame) return;
   cancelAnimationFrame(tailFrame);
   tailFrame = 0;

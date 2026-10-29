@@ -37,8 +37,10 @@ export interface RevealTuning {
 export interface ScrollTuning {
   /** A jump no larger than this pins straight to the bottom. */
   snapWithinPx: number;
-  /** Share of the remaining distance travelled per frame while easing a larger jump. */
+  /** Share of the remaining distance travelled per frame for a one-line gap. */
   factor: number;
+  /** Gap at which the follow is back to the full share (a panel-sized jump). */
+  catchUpPx: number;
   /** How close to a bottom - timeline or capped output window - re-arms the follow. */
   resumeWithinPx: number;
   /** How long a call must keep running before its output window opens on its own. */
@@ -55,9 +57,14 @@ export const SHIPPED: { reveal: RevealTuning; scroll: ScrollTuning } = {
   // `snapWithinPx` used to be 140, on the theory that a typing step moves the bottom by
   // "a couple of pixels". Measured against a real stream (dev tail probe, 2026-10-29): one line
   // of Markdown prose is 17-34px, so every line fell inside the snap band and the follow
-  // pinned the bottom in a single step - `factor` was never once applied. The band now only
-  // absorbs sub-pixel noise; a line's growth eases over 3-4 frames with `factor`.
-  scroll: { snapWithinPx: 4, factor: 0.32, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 0 },
+  // pinned the bottom in a single step - `factor` was never once applied.
+  //
+  // 2026-10-30: the 4px band plus 0.32 per frame still moved a line in 3-4 frames, and the last
+  // of those frames was the 3.8px snap - a larger step than the two before it. `factor` is now
+  // the one-line share (~one frame per pixel, so a 22px line travels for the whole gap until
+  // the next line) and `catchUpPx` hands the old
+  // 0.32 back for panel-sized jumps. The band is down to sub-pixel rounding. See scroll.ts.
+  scroll: { snapWithinPx: 2, factor: 0.005, catchUpPx: 160, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 0 },
 };
 
 export const streamTuning = reactive({
@@ -94,6 +101,7 @@ export function applyStreamTuning(
   streamTuning.reveal.ceiling = ceiling < streamTuning.reveal.floor ? SHIPPED.reveal.ceiling : ceiling;
   streamTuning.scroll.snapWithinPx = number(scroll?.snapWithinPx, SHIPPED.scroll.snapWithinPx, 1, 10000);
   streamTuning.scroll.factor = number(scroll?.factor, SHIPPED.scroll.factor, 0.01, 0.99);
+  streamTuning.scroll.catchUpPx = number(scroll?.catchUpPx, SHIPPED.scroll.catchUpPx, 32, 4000);
   streamTuning.scroll.resumeWithinPx = number(scroll?.resumeWithinPx, SHIPPED.scroll.resumeWithinPx, 1, 2000);
   streamTuning.scroll.liveWindowDelayMs = number(scroll?.liveWindowDelayMs, SHIPPED.scroll.liveWindowDelayMs, 0, 60000);
   // 0 is legal (fold off); only a negative or an absurdly slow fold is replaced.

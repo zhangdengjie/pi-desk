@@ -90,8 +90,11 @@ type Scroll struct {
 	// SnapWithinPx: a jump no larger than this pins straight to the bottom; a larger
 	// one is eased over frames instead of teleporting.
 	SnapWithinPx int `json:"snapWithinPx"`
-	// Factor is the share of the remaining distance travelled per frame while easing.
+	// Factor is the share of the remaining distance travelled per frame for a one-line gap.
 	Factor float64 `json:"factor"`
+	// CatchUpPx is the gap at which the follow is back to the full share. A line of prose is
+	// 17-34px and must ease slowly; a collapsing panel moves hundreds of pixels and must not.
+	CatchUpPx int `json:"catchUpPx"`
 	// ResumeWithinPx: how close to a bottom the reader has to be - in the timeline or
 	// inside a capped output window - for the follow to (re)arm.
 	ResumeWithinPx int `json:"resumeWithinPx"`
@@ -159,15 +162,18 @@ func NormalRevealMode(value string) (string, bool) {
 	}
 }
 
-// DefaultScroll is the shipped tail follow: snap up to 140px, ease 35% of the rest per
-// frame, re-arm within 24px of a bottom, open a slow call's window after 1200ms, and
-// fold a finished reasoning window shut over 200ms.
+// DefaultScroll is the shipped tail follow: ease a one-line step at 0.5% per frame, ramp
+// back to 32% for jumps past 160px, snap within 2px, re-arm within 24px of a bottom, open
+// a slow call's window after 1200ms, and fold a finished reasoning window shut in one frame.
 func DefaultScroll() Scroll {
 	// SnapWithinPx is deliberately small: it only absorbs sub-pixel noise. A line of Markdown
 	// prose is 17-34px tall, and a band wide enough to swallow a line makes the follow pin the
 	// bottom in one step (measured 2026-10-29), which reads as a jump per line rather than a
-	// scroll. Keep in step with frontend/src/utils/streamTuning.ts SHIPPED.scroll.
-	return Scroll{SnapWithinPx: 4, Factor: 0.32, ResumeWithinPx: 24, LiveWindowDelayMs: 1200, ReasoningFoldMs: 0}
+	// scroll. Factor is the one-line share (0.5% per frame, so a 22px line is about one pixel
+	// per frame for the whole gap until the next line); CatchUpPx
+	// ramps it back to the old 32% for panel-sized jumps. Keep in step with
+	// frontend/src/utils/streamTuning.ts SHIPPED.scroll.
+	return Scroll{SnapWithinPx: 2, Factor: 0.005, CatchUpPx: 160, ResumeWithinPx: 24, LiveWindowDelayMs: 1200, ReasoningFoldMs: 0}
 }
 
 // Notes lists the values that were out of range and fell back to their default.
@@ -202,6 +208,10 @@ func (config *Config) normalise() {
 	if config.Scroll.Factor <= 0 || config.Scroll.Factor >= 1 {
 		config.note("scroll.factor", config.Scroll.Factor, DefaultScroll().Factor)
 		config.Scroll.Factor = DefaultScroll().Factor
+	}
+	if config.Scroll.CatchUpPx < 32 || config.Scroll.CatchUpPx > 4000 {
+		config.note("scroll.catchUpPx", config.Scroll.CatchUpPx, DefaultScroll().CatchUpPx)
+		config.Scroll.CatchUpPx = DefaultScroll().CatchUpPx
 	}
 	if config.Scroll.ResumeWithinPx < 1 || config.Scroll.ResumeWithinPx > 2000 {
 		config.note("scroll.resumeWithinPx", config.Scroll.ResumeWithinPx, DefaultScroll().ResumeWithinPx)
@@ -312,6 +322,19 @@ func Load() (Config, string, error) {
 			if err := json.Unmarshal(value, &config.Scroll); err != nil {
 				config.note("scroll", string(value), DefaultScroll())
 				config.Scroll = DefaultScroll()
+				break
+			}
+			// A file written before `catchUpPx` existed carries the old semantics: `factor` was
+			// "the share of the gap per frame" (0.32) and the snap band was 4px. Both numbers mean
+			// something different now - 0.32 would put a line back to a single-frame jump - so
+			// reinterpreting them would make an upgrade look like no change at all. The missing key
+			// is the version marker. Values the reader set on purpose (resumeWithinPx etc.) survive.
+			var scrollKeys map[string]json.RawMessage
+			if json.Unmarshal(value, &scrollKeys) == nil {
+				if _, ok := scrollKeys["catchUpPx"]; !ok {
+					config.Scroll.Factor = DefaultScroll().Factor
+					config.Scroll.SnapWithinPx = DefaultScroll().SnapWithinPx
+				}
 			}
 		default:
 			config.extra[key] = value
