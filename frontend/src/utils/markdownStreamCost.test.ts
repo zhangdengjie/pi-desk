@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderMarkdownDocument } from "./markdownRenderer";
 import { MIN_SETTLED_CHARS, splitSettledMarkdown } from "./markdownSettled";
+import { SHIPPED } from "./streamTuning";
 
 /**
  * What one revealed frame makes the parser read.
@@ -36,8 +37,9 @@ interface Cost {
   ms: number;
 }
 
-/** The reveal step `utils/streamTuning.ts` allows at its ceiling: 160 chars per frame. */
-const FRAME_CHARS = 160;
+/** The reveal step `utils/streamTuning.ts` allows at its ceiling. Read, not copied, so a
+ *  shipped-pace change cannot leave this simulation measuring a step the app no longer takes. */
+const FRAME_CHARS = SHIPPED.reveal.ceiling;
 
 function render(text: string, slugCounts: Map<string, number>, preserveSlugs: boolean): void {
   renderMarkdownDocument(text, { slugCounts, preserveSlugs }, "u", false);

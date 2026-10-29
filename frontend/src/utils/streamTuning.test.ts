@@ -8,7 +8,7 @@ describe("streamTuning", () => {
   it("ships the same numbers the Go defaults write into a new file", () => {
     // internal/userconfig.DefaultReveal()/DefaultScroll() create the file with these;
     // a drift here means a fresh install and a fresh build disagree about the pace.
-    expect(SHIPPED.reveal).toEqual({ split: 5, floor: 2, ceiling: 160 });
+    expect(SHIPPED.reveal).toEqual({ mode: "plain", split: 20, floor: 2, ceiling: 60 });
     expect(SHIPPED.scroll).toEqual({ snapWithinPx: 140, factor: 0.35, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 200 });
     expect(streamTuning.reveal).toEqual(SHIPPED.reveal);
     expect(streamTuning.scroll).toEqual(SHIPPED.scroll);
@@ -42,6 +42,15 @@ describe("streamTuning", () => {
     applyStreamTuning({ floor: 40, ceiling: 5 }, null);
     expect(streamTuning.reveal.floor).toBe(40);
     expect(streamTuning.reveal.ceiling).toBe(SHIPPED.reveal.ceiling);
+  });
+
+  // Same rule as Go's normalise(): an unknown render mode falls back to the shipped one instead
+  // of being handed to the renderer.
+  it("takes the render mode and rejects an unknown one", () => {
+    applyStreamTuning({ mode: "markdown" }, null);
+    expect(streamTuning.reveal.mode).toBe("markdown");
+    applyStreamTuning({ mode: "typewriter" as never }, null);
+    expect(streamTuning.reveal.mode).toBe(SHIPPED.reveal.mode);
   });
 
   it("is read per call by the scroll geometry", () => {

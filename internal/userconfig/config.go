@@ -43,10 +43,26 @@ const (
 	StreamPanelsAlwaysClosed = "alwaysClosed"
 )
 
+const (
+	// RevealModePlain renders the live tail as plain text while it grows, and switches
+	// to Markdown once the run settles. A terminal types without re-laying out what is
+	// already on screen; Markdown cannot promise that, because inline markers close
+	// backwards (`**bold` loses two characters) and table columns are sized from rows
+	// that have not arrived yet. Plain text is the only shape where appending a
+	// character can never move one already painted.
+	RevealModePlain = "plain"
+	// RevealModeMarkdown keeps the old behaviour: the tail is parsed and rendered as
+	// Markdown on every frame. Prettier while it streams, and it is what jumps.
+	RevealModeMarkdown = "markdown"
+)
+
 // Reveal controls how streamed text is spread over animation frames. The three numbers
 // together decide the pace: each frame releases `backlog / split` characters, clamped to
 // [floor, ceiling].
 type Reveal struct {
+	// Mode is "plain" (typewriter: the live tail is plain text until the run settles)
+	// or "markdown" (the tail is parsed every frame).
+	Mode string `json:"mode"`
 	// Split is the fraction of the backlog shown per frame. 5 = one fifth.
 	Split int `json:"split"`
 	// Floor is the smallest number of characters a frame may reveal, so a trickle of
@@ -102,9 +118,29 @@ func Defaults() Config {
 	}
 }
 
-// DefaultReveal is the shipped pacing: a fifth of the backlog per frame, at least two
-// characters and at most a hundred and sixty.
-func DefaultReveal() Reveal { return Reveal{Split: 5, Floor: 2, Ceiling: 160} }
+// DefaultReveal is the shipped pacing: plain text while the answer grows, one twentieth of the
+// backlog per frame, at least two characters and at most sixty.
+//
+// The old numbers (5 / 160) released a fifth of the backlog per frame, so a long answer arrived in
+// blocks of up to 160 characters - readers described it as text landing rather than typing. A
+// twentieth keeps a normal stream at two or three characters a frame (still 120+ chars/s, faster
+// than any model writes), and sixty caps a burst at roughly a quarter of a line instead of a wall.
+func DefaultReveal() Reveal {
+	return Reveal{Mode: RevealModePlain, Split: 20, Floor: 2, Ceiling: 60}
+}
+
+// NormalRevealMode accepts the two render modes, treating an empty value as the shipped
+// one. Used by the loader and by the settings dialog.
+func NormalRevealMode(value string) (string, bool) {
+	switch strings.TrimSpace(value) {
+	case "", RevealModePlain:
+		return RevealModePlain, true
+	case RevealModeMarkdown:
+		return RevealModeMarkdown, true
+	default:
+		return "", false
+	}
+}
 
 // DefaultScroll is the shipped tail follow: snap up to 140px, ease 35% of the rest per
 // frame, re-arm within 24px of a bottom, open a slow call's window after 1200ms, and
@@ -120,6 +156,12 @@ func (config Config) Notes() []string { return config.notes }
 // typo in a hand edit cannot make the transcript stop following or dump a whole answer in
 // a single frame.
 func (config *Config) normalise() {
+	if mode, ok := NormalRevealMode(config.Reveal.Mode); ok {
+		config.Reveal.Mode = mode
+	} else {
+		config.note("reveal.mode", config.Reveal.Mode, DefaultReveal().Mode)
+		config.Reveal.Mode = DefaultReveal().Mode
+	}
 	if config.Reveal.Split < 2 || config.Reveal.Split > 1000 {
 		config.note("reveal.split", config.Reveal.Split, DefaultReveal().Split)
 		config.Reveal.Split = DefaultReveal().Split

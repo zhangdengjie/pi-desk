@@ -123,7 +123,7 @@ function isBlank(line: Line): boolean {
  * *above* the fence - which is most of what a streaming code answer contains. The fence's own
  * contents stay in the tail until it closes.
  */
-export function splitSettledMarkdown(text: string): SettledSplit {
+export function splitSettledMarkdown(text: string, minChars = MIN_SETTLED_CHARS): SettledSplit {
   const rows = lines(text);
   const empty = (reason: SettledReason): SettledSplit => ({ settledLength: 0, settled: "", tail: text, reason });
 
@@ -187,7 +187,7 @@ export function splitSettledMarkdown(text: string): SettledSplit {
   }
 
   if (settledLength < 0) return empty(reason);
-  if (settledLength < MIN_SETTLED_CHARS) return empty("too-short");
+  if (settledLength < minChars) return empty("too-short");
 
   return {
     settledLength,

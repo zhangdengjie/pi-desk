@@ -802,6 +802,11 @@ export interface ResumeRemoteWorkspaceRequest {
  * RevealTuning is the text pacing the renderer uses while an answer streams in.
  */
 export interface RevealTuning {
+    /**
+     * Mode is "plain" (the live tail is plain text until the run settles) or
+     * "markdown" (the tail is re-parsed every frame).
+     */
+    "mode": string;
     "split": number;
     "floor": number;
     "ceiling": number;

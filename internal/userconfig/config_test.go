@@ -262,3 +262,80 @@ func TestTuningRoundTripAndRanges(t *testing.T) {
 		}
 	}
 }
+
+// The render mode is the one tuning field that is not a number: "plain" is the shipped
+// typewriter (the live tail is never parsed), "markdown" keeps the old per-frame re-parse.
+// It has to survive a partial hand edit and a round trip like every other field.
+func TestRevealMode(t *testing.T) {
+	path := t.TempDir() + "/config.json"
+	t.Setenv(PathEnv, path)
+
+	if got := Defaults().Reveal.Mode; got != RevealModePlain {
+		t.Fatalf("default reveal mode = %q, want %q", got, RevealModePlain)
+	}
+
+	if err := os.WriteFile(path, []byte(`{"reveal":{"mode":"markdown","split":4}}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	config, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if config.Reveal.Mode != RevealModeMarkdown || config.Reveal.Split != 4 {
+		t.Fatalf("reveal = %+v, want mode honoured and split kept", config.Reveal)
+	}
+
+	// A hand edit that names only a number keeps the shipped mode.
+	if err := os.WriteFile(path, []byte(`{"reveal":{"split":3}}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	config, _, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if config.Reveal.Mode != RevealModePlain {
+		t.Fatalf("absent mode = %q, want %q", config.Reveal.Mode, RevealModePlain)
+	}
+
+	// An unknown mode is replaced and reported, not passed through to the renderer.
+	if err := os.WriteFile(path, []byte(`{"reveal":{"mode":"typewriter"}}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	config, _, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if config.Reveal.Mode != RevealModePlain {
+		t.Fatalf("unknown mode survived: %q", config.Reveal.Mode)
+	}
+	if notes := strings.Join(config.Notes(), "; "); !strings.Contains(notes, "reveal.mode") {
+		t.Fatalf("unknown mode was not reported: %q", notes)
+	}
+
+	// Both Save and Ensure must write the key, or a fresh file would be missing the field a
+	// reader is told to edit.
+	if _, err := Save(Config{StreamPanels: StreamPanelsAuto, Reveal: Reveal{Mode: RevealModeMarkdown, Split: 5, Floor: 2, Ceiling: 160}, Scroll: DefaultScroll()}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(raw), `"mode": "markdown"`) {
+		t.Fatalf("saved file lost the mode:\n%s", raw)
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, err := Ensure(); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	raw, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(raw), `"mode": "plain"`) {
+		t.Fatalf("created file lost the mode:\n%s", raw)
+	}
+}

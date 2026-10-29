@@ -967,6 +967,46 @@
   margin-top: var(--md-block-gap);
 }
 
+/* Typewriter mode (`reveal.mode: "plain"`, the shipped default).
+
+   The whole mechanism is `white-space: pre-wrap`: a browser lays a text run out from its prefix,
+   so appending characters can only extend the last line and can never move a character already
+   painted. That is the property a Markdown tail cannot have - an inline marker closing deletes
+   characters that were on screen, and a table re-sizes every column as a row arrives - which is
+   why this branch exists at all (`components/MarkdownBody.vue`).
+
+   The font size, line height and wrapping come from `.markdown-body` above, so the switch to the
+   Markdown render at the end of the run changes block spacing only, not the text scale. */
+.markdown-body.is-plain-stream {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The settled blocks above the cut are real Markdown, so the live block needs the same block gap the
+   rhythm rule would have given it as a sibling. Same value, same owner (`--md-block-gap`). */
+.markdown-body.is-plain-stream > .md-tail-plain.is-seamed {
+  margin-top: var(--md-block-gap);
+}
+
+/* The caret sits after the last character, so it reads as a terminal cursor. `steps(2, start)` is
+   a hard on/off blink; a fade would look like a loading pulse. The element is aria-hidden and the
+   text is untouched, so it is neither announced nor copied. */
+.markdown-body.is-plain-stream .md-plain-caret {
+  display: inline-block;
+  width: 0.45em;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: var(--text);
+  opacity: 0.6;
+  animation: md-plain-caret 1.1s steps(2, start) infinite;
+}
+
+@keyframes md-plain-caret {
+  0%, 50% { opacity: 0.6; }
+  50.01%, 100% { opacity: 0; }
+}
+
 /* Ordered-list markers: a column this app owns, not one the browser places.
 
    The browser right-aligns an outside marker to the text column, so every attempt to square off the
@@ -2233,5 +2273,10 @@ html:not(.is-resizing-pane) .timeline-jump-latest {
   html:not(.is-resizing-pane) .topbar,
   .inspector {
     transition: none;
+  }
+
+  /* A blink reduced to one 150ms flash reads as a glitch; hold the caret steady instead. */
+  .markdown-body.is-plain-stream .md-plain-caret {
+    animation: none;
   }
 }

@@ -13,7 +13,16 @@ import { reactive } from "vue";
  * internal/userconfig/config.go - the file is created from those, and the front end falls
  * back to these when the read fails. Keep the two in step.
  */
+export type RevealMode = "plain" | "markdown";
+
 export interface RevealTuning {
+  /**
+   * What the growing tail is rendered as. `plain` is the typewriter: characters are
+   * appended as text and nothing already painted moves, because no syntax reaches
+   * backwards. `markdown` parses the tail every frame, which keeps formatting live but
+   * re-flows lines when an inline marker closes and re-sizes a table as rows arrive.
+   */
+  mode: RevealMode;
   /** Each frame releases `backlog / split` characters. */
   split: number;
   /** Never reveal fewer than this per frame, so a trickle still moves. */
@@ -39,7 +48,7 @@ export interface ScrollTuning {
 }
 
 export const SHIPPED: { reveal: RevealTuning; scroll: ScrollTuning } = {
-  reveal: { split: 5, floor: 2, ceiling: 160 },
+  reveal: { mode: "plain", split: 20, floor: 2, ceiling: 60 },
   scroll: { snapWithinPx: 140, factor: 0.35, resumeWithinPx: 24, liveWindowDelayMs: 1200, reasoningFoldMs: 200 },
 };
 
@@ -54,12 +63,20 @@ function number(value: unknown, fallback: number, low: number, high: number): nu
   return parsed;
 }
 
+function revealMode(value: unknown, fallback: RevealMode): RevealMode {
+  return value === "plain" || value === "markdown" ? value : fallback;
+}
+
 /**
  * Copies what the config file says over the current tuning, rejecting anything out of
  * range per field instead of taking a half-broken object. The Go side clamps the same
  * way; this only protects against a failed read or an older build's payload.
  */
-export function applyStreamTuning(reveal?: Partial<RevealTuning> | null, scroll?: Partial<ScrollTuning> | null) {
+export function applyStreamTuning(
+  reveal?: (Partial<Omit<RevealTuning, "mode">> & { mode?: string }) | null,
+  scroll?: Partial<ScrollTuning> | null,
+) {
+  streamTuning.reveal.mode = revealMode(reveal?.mode, SHIPPED.reveal.mode);
   streamTuning.reveal.split = number(reveal?.split, SHIPPED.reveal.split, 2, 1000);
   streamTuning.reveal.floor = number(reveal?.floor, SHIPPED.reveal.floor, 1, 500);
   // A ceiling under the floor is not a slow reveal, it is a contradiction; the Go side

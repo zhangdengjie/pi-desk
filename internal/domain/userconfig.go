@@ -2,9 +2,12 @@ package domain
 
 // RevealTuning is the text pacing the renderer uses while an answer streams in.
 type RevealTuning struct {
-	Split   int `json:"split"`
-	Floor   int `json:"floor"`
-	Ceiling int `json:"ceiling"`
+	// Mode is "plain" (the live tail is plain text until the run settles) or
+	// "markdown" (the tail is re-parsed every frame).
+	Mode    string `json:"mode"`
+	Split   int    `json:"split"`
+	Floor   int    `json:"floor"`
+	Ceiling int    `json:"ceiling"`
 }
 
 // ScrollTuning is how the transcript chases the streaming tail, in the timeline and

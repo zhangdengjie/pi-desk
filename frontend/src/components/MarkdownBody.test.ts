@@ -1,9 +1,10 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
 import MarkdownBody from "./MarkdownBody.vue";
 import { markdownRenderCache, renderMarkdownDocument } from "../utils/markdownRenderer";
+import { applyStreamTuning, resetStreamTuning } from "../utils/streamTuning";
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -30,6 +31,13 @@ function mountMarkdown(text: string, extraProps: Record<string, unknown> = {}) {
   });
   return { store, wrapper: mount(MarkdownBody, { props: { text, ...extraProps }, attachTo: document.body, global: { plugins: [pinia] } }) };
 }
+
+// The shipped mode is "plain"; these cases are about the Markdown paths (split rendering,
+// search, heading ids), so they pin the mode they were written against. The typewriter suite
+// below covers the other one.
+beforeEach(() => {
+  applyStreamTuning({ mode: "markdown" }, null);
+});
 
 describe("MarkdownBody", () => {
   beforeEach(() => {
@@ -516,5 +524,74 @@ describe("MarkdownBody streaming split", () => {
     expect(wrapper.findAll("mark")).toHaveLength(2);
     wrapper.unmount();
     vi.useRealTimers();
+  });
+});
+
+/**
+ * The shipped render mode. A Markdown tail re-flows content that is already on screen - a closing
+ * `**` deletes two characters, a table re-sizes its columns as rows arrive - and that re-flow is
+ * what the transcript showed as jumping. Plain text has no such reach: appending a character can
+ * only extend the last line, so a painted character never moves.
+ */
+describe("MarkdownBody typewriter mode", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    applyStreamTuning({ mode: "plain" }, null);
+  });
+
+  afterEach(() => {
+    resetStreamTuning();
+  });
+
+  it("shows the live tail as text, so an arriving character can only append", async () => {
+    vi.useFakeTimers();
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text: "seed **bo" });
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    // Not bold: no inline syntax is applied while the text grows, which is exactly what stops a
+    // closing marker from deleting the two characters the reader was already looking at.
+    expect(wrapper.find("strong").exists()).toBe(false);
+    expect(wrapper.get(".md-plain-text").text()).toBe("seed **bo");
+    expect(wrapper.find(".md-plain-caret").exists()).toBe(true);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("switches to Markdown the moment the run settles", async () => {
+    vi.useFakeTimers();
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text: "seed **bold**" });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(wrapper.find("strong").exists()).toBe(false);
+
+    await wrapper.setProps({ streaming: false });
+    expect(wrapper.get("strong").text()).toBe("bold");
+    expect(wrapper.find(".md-plain-caret").exists()).toBe(false);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  // The useful half of "partial rendering": a block that a blank line has already closed can no
+  // longer be changed by anything that arrives later, so it is rendered instead of being held back
+  // with the live block. Only the block still being written stays source.
+  it("renders closed blocks as Markdown while the live block stays source", async () => {
+    vi.useFakeTimers();
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text: "seed\n\n**done**\n\nstill typing\n\nmore" });
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(wrapper.find(".md-settled strong").text()).toBe("done");
+    expect(wrapper.get(".md-plain-text").text()).toContain("still typing");
+    expect(wrapper.find(".md-plain-caret").exists()).toBe(true);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("does not keep the typewriter for a block that was already settled", () => {
+    const { wrapper } = mountMarkdown("**done**");
+    expect(wrapper.get("strong").text()).toBe("done");
+    expect(wrapper.find(".md-plain-caret").exists()).toBe(false);
+    wrapper.unmount();
   });
 });

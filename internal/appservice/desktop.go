@@ -528,7 +528,7 @@ func normalizeSemver(value string) string {
 func (service *DesktopService) ReadUserConfig() domain.UserConfigView {
 	if _, err := userconfig.Ensure(); err != nil {
 		// Advisory only: a read-only home must still show the working defaults.
-		view := domain.UserConfigView{StreamPanels: userconfig.StreamPanelsAuto}
+		view := domain.UserConfigView{StreamPanels: userconfig.StreamPanelsAuto, Reveal: domain.RevealTuning{Mode: userconfig.RevealModePlain}}
 		if path, pathErr := userconfig.Path(); pathErr == nil {
 			view.Path = path
 		}
@@ -539,7 +539,7 @@ func (service *DesktopService) ReadUserConfig() domain.UserConfigView {
 	view := domain.UserConfigView{
 		Path:         path,
 		StreamPanels: config.StreamPanels,
-		Reveal:       domain.RevealTuning{Split: config.Reveal.Split, Floor: config.Reveal.Floor, Ceiling: config.Reveal.Ceiling},
+		Reveal:       domain.RevealTuning{Mode: config.Reveal.Mode, Split: config.Reveal.Split, Floor: config.Reveal.Floor, Ceiling: config.Reveal.Ceiling},
 		Scroll: domain.ScrollTuning{
 			SnapWithinPx:      config.Scroll.SnapWithinPx,
 			Factor:            config.Scroll.Factor,

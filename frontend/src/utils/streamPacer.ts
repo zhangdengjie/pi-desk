@@ -37,7 +37,7 @@ interface Stream {
   sink: (text: string) => void;
 }
 
-const DEFAULTS = { split: 5, floor: 2, ceiling: 160 };
+const DEFAULTS = { split: 20, floor: 2, ceiling: 60 };
 
 export interface StreamPacer {
   /** Grow a stream by one delta. */

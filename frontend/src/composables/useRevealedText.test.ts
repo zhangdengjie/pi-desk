@@ -56,7 +56,8 @@ describe("useRevealedText + streamTuning", () => {
 
   it("lands a whole chunk in one frame when the ceiling is generous", async () => {
     vi.useFakeTimers();
-    applyStreamTuning({ split: 1, floor: 1, ceiling: 100000 }, null);
+    // `split` is clamped to [2, 1000] by the loader, so 2 is the fastest legal reveal.
+    applyStreamTuning({ split: 2, floor: 1, ceiling: 100000 }, null);
     const { wrapper, source } = harness("");
     try {
       source.value = "x".repeat(500);
@@ -65,6 +66,7 @@ describe("useRevealedText + streamTuning", () => {
       // about half a second - but that is still whole-sentence-free compared with a raw
       // render, and it is what a large ceiling buys.
       await vi.advanceTimersByTimeAsync(1000);
+      await flushPromises();
       expect(wrapper.text()).toBe("x".repeat(500));
     } finally {
       wrapper.unmount();

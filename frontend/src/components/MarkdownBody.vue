@@ -7,6 +7,7 @@ import type { WorkspaceFileLink } from "../utils/fileLinks";
 import { slugifyHeading } from "../utils/markdown";
 import { renderMarkdownDocument } from "../utils/markdownRenderer";
 import { seamNeedsSpacing, splitSettledMarkdown } from "../utils/markdownSettled";
+import { streamTuning } from "../utils/streamTuning";
 import { collectMarkdownOutline, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import FileLinkContextMenu from "./FileLinkContextMenu.vue";
 
@@ -74,8 +75,44 @@ const renderMarkdown = computed(() => shownText.value.length
 const incremental = computed(() => props.streaming === true && renderMarkdown.value
   && !(props.searchQuery ?? "").trim());
 
+/**
+ * Typewriter mode: while the source is live, show it as text and never parse it.
+ *
+ * This is the one shape that can promise "appending a character never moves one already
+ * painted". A Markdown tail cannot: an inline marker closing deletes characters that were on
+ * screen (`**bold` -> **bold**), a table re-sizes its columns as rows arrive, and a lone `-`
+ * becomes a list item. Those are re-flows of *earlier* content, which is exactly what reads as
+ * the transcript jumping. The Markdown render takes over in the same frame `streaming` turns
+ * false, so formatting appears exactly when the text stops moving.
+ *
+ * `renderMarkdown` is the same size ceiling as the whole-block path; past it the `<pre>`
+ * fallback below is already plain text.
+ */
+const plainStream = computed(() => props.streaming === true
+  && streamTuning.reveal.mode === "plain"
+  && renderMarkdown.value
+  // Search numbers matches across the whole document; highlighting halves separately would
+  // restart the ordinals in the tail, so a search falls back to the one-pass Markdown render.
+  && !(props.searchQuery ?? "").trim());
+
+/**
+ * Plain mode still settles finished blocks: everything above the cut renders as Markdown, and only
+ * the block that is still being written is shown as source. That is the useful half of "partial
+ * rendering" - a paragraph, list or table that has already been closed by a blank line cannot be
+ * changed by anything that arrives later (`utils/markdownSettled.ts` proves the cut is safe), so
+ * parsing it costs nothing in stability.
+ *
+ * Inside the live block there is no safe cut. A `**` can reach across lines, a single newline is a
+ * `<br>` inside one paragraph, and a table row re-sizes every column above it - measured against
+ * this renderer in `markdownSettled.test.ts`, all four splits come out DIFFERENT from one pass.
+ * That block therefore stays source until it closes, which is the typewriter's whole contract.
+ *
+ * `minChars` is 0 here on purpose: the 2,000-character floor exists to keep the Markdown mode from
+ * paying for two renders on a short answer, and it is what made a short reply look like raw text
+ * from start to finish.
+ */
 const split = computed(() => (incremental.value
-  ? splitSettledMarkdown(shownText.value)
+  ? splitSettledMarkdown(shownText.value, plainStream.value ? 0 : undefined)
   : { settledLength: 0, settled: "", tail: shownText.value, reason: "ok" as const }));
 
 /**
@@ -157,7 +194,7 @@ const pieces = computed(() => {
     slugCounts,
   };
   const { settledLength, settled, tail } = split.value;
-  if (incremental.value && settledLength) {
+  if (incremental.value && (settledLength || plainStream.value)) {
     // A moved workspace means different file links, and a *shorter* prefix means this block was
     // handed a new answer. Both throw the accumulation away rather than append to stale HTML.
     const envKey = `${env.workspacePath ?? ""}\u0000${env.baseDir ?? ""}`;
@@ -183,9 +220,13 @@ const pieces = computed(() => {
     }
     // Two separate elements, two separate writes: a frame that only reveals more text touches
     // `.md-tail` and leaves every settled node exactly where it is - no re-parse, no re-layout.
+    // In plain mode the tail is not HTML at all: the template prints it as text, which is what
+    // makes the live block impossible to re-flow.
     return {
       shell: settledMemo.html,
-      tail: renderMarkdownDocument(tail, { ...env, preserveSlugs: true }, instanceUid, false),
+      tail: plainStream.value
+        ? tail
+        : renderMarkdownDocument(tail, { ...env, preserveSlugs: true }, instanceUid, false),
     };
   }
   settledMemo.chars = 0;
@@ -328,10 +369,24 @@ function openContextMenu(event: MouseEvent) {
 </script>
 
 <template>
+  <!-- Typewriter: finished blocks render as Markdown (the cut is safe - nothing that arrives later
+       can change them), and only the block still being written is printed as source, so a revealed
+       frame can only append. See `plainStream` for why the live block cannot be parsed. -->
+  <div
+    v-if="plainStream"
+    ref="bodyElement"
+    v-bind="$attrs"
+    class="markdown-body is-plain-stream"
+    :class="[ui.root]"
+    :data-markdown-uid="instanceUid"
+  >
+    <div class="md-settled" v-html="rendered" />
+    <div class="md-tail-plain" :class="{ 'is-seamed': rendered !== '' }"><span class="md-plain-text">{{ split.tail }}</span><span class="md-plain-caret" aria-hidden="true" /></div>
+  </div>
   <!-- One pass: the whole block in a single v-html. This is the settled shape every layout.css rule
        was written against, and it is what a non-streaming block keeps using. -->
   <div
-    v-if="renderMarkdown && !seam"
+    v-else-if="renderMarkdown && !seam"
     ref="bodyElement"
     v-bind="$attrs"
     class="markdown-body"
