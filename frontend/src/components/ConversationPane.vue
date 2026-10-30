@@ -285,6 +285,17 @@ const STEP_DT_MAX_MS = 64;
 // between frames so a slow ease still advances instead of stalling (see stepTail).
 let pendingStep = 0;
 
+// `factor` (0.5%/frame) is tuned for a line of text that is *growing*: those steps arrive every
+// few hundred ms, so a slow chase reads as scrolling. A gap left by a one-off layout change -
+// the assistant row inserted when a run starts, the waiting indicator - never grows again, and
+// chasing it at 0.5% takes seconds: that is the "no output yet, but the whole transcript is
+// still creeping upward, then stops at some height" report (2026-10-30). Once the document has
+// not changed for QUIET_MS the remaining gap is a leftover, so it is closed at QUIET_SHARE.
+const QUIET_MS = 200;
+const QUIET_SHARE = 0.2;
+let lastContentHeight = -1;
+let contentSettledAt = 0;
+
 // The end of a run delivers its height in mixed-sign batches inside ~1.2s of the
 // scroll.stop edge: `agent_end` collapses the execution panels and inserts the
 // changed-files card, `agent_settled` replaces the transcript rows with their
@@ -373,12 +384,20 @@ function stepTail(): boolean {
     settleSnap.limit(streamTuning.scroll.snapWithinPx),
     paneMotionSnap.limit(streamTuning.scroll.snapWithinPx),
   );
+  // Growing content keeps the configured share; a still document means the gap is a leftover
+  // layout change and is closed quickly (see QUIET_SHARE above).
+  if (element.scrollHeight !== lastContentHeight) {
+    lastContentHeight = element.scrollHeight;
+    contentSettledAt = now;
+  }
+  const quiet = now - contentSettledAt > QUIET_MS;
+  const share = quiet ? Math.max(streamTuning.scroll.factor, QUIET_SHARE) : streamTuning.scroll.factor;
   const next = nextTailScroll(
     element.scrollTop,
     element.scrollHeight,
     element.clientHeight,
     snapBand,
-    streamTuning.scroll.factor,
+    share,
     streamTuning.scroll.catchUpPx,
     dtMs,
   );
@@ -712,6 +731,9 @@ watch(() => composerBar.value?.$el, (element, _previous, onCleanup) => {
 async function openConversation() {
   activeNavigationId.value = navigationItems.value[0]?.messageId ?? "";
   stickToBottom.value = true;
+  // A different transcript must not inherit the previous one's "document is still" verdict.
+  lastContentHeight = -1;
+  contentSettledAt = 0;
   openPinWindow();
   await nextTick();
   // `measure()` used to sit here. It is `itemSizeCache.clear()` plus a notify, and the cache is
@@ -740,6 +762,17 @@ watch(() => lastMessage.value?.id, () => {
     stickToBottom.value = true;
     void nextTick().then(() => { if (stickToBottom.value) scrollToBottom(); });
   }
+});
+
+// A run's first assistant row is *inserted*, not grown: its header, execution summary and live
+// reasoning window all land in one layout. Easing that in is what reads as "the transcript
+// creeps upward while nothing is being printed, then stops at some height" (2026-10-30).
+// Inserting a row pins; the text that then streams into it still follows the ease.
+watch(() => appStore.activeMessages.length, (count, previous) => {
+  if (count <= previous || !stickToBottom.value) return;
+  void nextTick().then(() => {
+    requestAnimationFrame(() => { if (stickToBottom.value) scrollToBottom(); });
+  });
 });
 
 watch(navigationItems, (items) => {
