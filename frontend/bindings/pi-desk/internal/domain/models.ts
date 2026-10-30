@@ -6,6 +6,7 @@
 import * as json$0 from "../../../encoding/json/models.js";
 
 export interface AddModelsConfigRequest {
+    "clearApiKey"?: boolean;
     "originalProviderId"?: string;
     "providerId": string;
     "baseUrl"?: string;
@@ -104,6 +105,11 @@ export interface DecideRemoteRootRequest {
     "trust": string;
 }
 
+export interface DefaultModelRequest {
+    "providerId": string;
+    "modelId": string;
+}
+
 export interface DeleteModelConfigRequest {
     "providerId": string;
     "modelId": string;
@@ -197,6 +203,7 @@ export interface DesktopThreadState {
 }
 
 export interface DiscoverModelsRequest {
+    "credentialProviderId"?: string;
     "baseUrl": string;
     "api": string;
     "apiKey"?: string;
@@ -314,6 +321,7 @@ export interface ManagedModelProvider {
     "baseUrl"?: string;
     "api"?: string;
     "apiKey"?: string;
+    "hasApiKey"?: boolean;
     "headers"?: { [_ in string]?: string } | null;
     "compatJson"?: string;
     "models": ManagedModel[] | null;
@@ -430,6 +438,40 @@ export interface McpServerTestResult {
     "durationMillis": number;
 }
 
+export interface ModelAuthProvider {
+    "id": string;
+    "name": string;
+    "oauth": boolean;
+    "apiKey": boolean;
+    "configured": boolean;
+    "stored": boolean;
+    "authType": string;
+    "authSource": string;
+    "warning"?: string;
+    "catalogRestricted"?: boolean;
+}
+
+export interface ModelAuthReply {
+    "operationId": string;
+    "promptId": number;
+    "value": string;
+}
+
+export interface ModelAuthRequest {
+    "operationId"?: string;
+    "providerId": string;
+    "apiKey"?: string;
+}
+
+export interface ModelCatalogSnapshot {
+    "agentDir": string;
+    "providers": ModelAuthProvider[] | null;
+    "models": SelectableModel[] | null;
+    "defaultProvider": string;
+    "defaultModel": string;
+    "warning"?: string;
+}
+
 export interface ModelConfigSnapshot {
     "path": string;
     "providers": ManagedModelProvider[] | null;
@@ -441,6 +483,7 @@ export interface ModelDiscoveryResult {
 }
 
 export interface ModelQuotaRequest {
+    "credentialProviderId"?: string;
     "baseUrl": string;
     "api": string;
     "apiKey"?: string;
@@ -881,6 +924,7 @@ export interface SelectableModel {
     "provider": string;
     "contextWindow"?: number;
     "reasoning"?: boolean;
+    "source"?: string;
 }
 
 export interface SessionBranchEntry {
@@ -1082,6 +1126,7 @@ export interface TestMcpServerRequest {
 }
 
 export interface TestModelConfigRequest {
+    "credentialProviderId"?: string;
     "providerId"?: string;
     "baseUrl": string;
     "api": string;
@@ -1132,6 +1177,7 @@ export interface UpsertMcpServerRequest {
 }
 
 export interface UpsertModelConfigRequest {
+    "clearApiKey"?: boolean;
     "originalProviderId"?: string;
     "originalModelId"?: string;
     "providerId": string;
