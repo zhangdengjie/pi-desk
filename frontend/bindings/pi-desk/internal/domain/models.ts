@@ -990,6 +990,32 @@ export interface SessionNameRequest {
     "name": string;
 }
 
+export interface SessionSearchHit {
+    "path": string;
+    "role": string;
+    "snippet": string;
+    "matches": number;
+    "modifiedAt": string;
+}
+
+/**
+ * SessionSearchRequest is a cross-session prose search. Limit caps the sessions returned, not the
+ * matches inside them.
+ */
+export interface SessionSearchRequest {
+    "query": string;
+    "limit"?: number;
+}
+
+/**
+ * SessionSearchResult carries Truncated because "no more hits" and "stopped looking" are different
+ * answers, and only one of them is worth telling the reader there is nothing to find.
+ */
+export interface SessionSearchResult {
+    "hits": SessionSearchHit[] | null;
+    "truncated": boolean;
+}
+
 export interface SessionSearchText {
     "text": string;
     "messageCount": number;

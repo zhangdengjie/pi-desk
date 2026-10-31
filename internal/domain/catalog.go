@@ -139,6 +139,28 @@ type SessionSearchText struct {
 	MessageCount int    `json:"messageCount"`
 }
 
+// SessionSearchRequest is a cross-session prose search. Limit caps the sessions returned, not the
+// matches inside them.
+type SessionSearchRequest struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+type SessionSearchHit struct {
+	Path       string    `json:"path"`
+	Role       string    `json:"role"`
+	Snippet    string    `json:"snippet"`
+	Matches    int       `json:"matches"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+}
+
+// SessionSearchResult carries Truncated because "no more hits" and "stopped looking" are different
+// answers, and only one of them is worth telling the reader there is nothing to find.
+type SessionSearchResult struct {
+	Hits      []SessionSearchHit `json:"hits"`
+	Truncated bool               `json:"truncated"`
+}
+
 type SessionTokenUsage struct {
 	Input      int64 `json:"input"`
 	Output     int64 `json:"output"`

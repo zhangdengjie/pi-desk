@@ -14,6 +14,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Search } from "lucide-vue-next";
 import { tr } from "../i18n";
+import { catalogService } from "../services/catalog";
 import { useAppStore } from "../stores/app";
 import { rankFuzzy } from "../utils/fuzzySearch";
 import { relativeTimeText } from "../utils/relativeTime";
@@ -29,6 +30,17 @@ const list = ref<HTMLElement>();
 const now = ref(Date.now());
 
 const candidates = computed(() => appStore.threads.filter((thread) => !thread.archived));
+
+// Cross-session prose search. Title matching is instant because the desktop state already holds
+// every title; this part reads transcripts off disk (386ms for 417MB of history on the machine this
+// was measured on), so it is debounced and never blocks the first results from appearing.
+const CONTENT_QUERY_MIN = 2;
+const CONTENT_DEBOUNCE_MS = 300;
+const contentHits = ref<Array<{ thread: ThreadSummary; snippet: string; matches: number }>>([]);
+const contentLoading = ref(false);
+const contentTruncated = ref(false);
+let contentTimer: ReturnType<typeof setTimeout> | undefined;
+let contentSequence = 0;
 
 function label(thread: ThreadSummary): string {
   return threadTitleText(thread.title) || tr("sidebar.untitled");
@@ -49,6 +61,54 @@ const results = computed(() => {
   ]).slice(0, 12);
 });
 
+function clearContentSearch() {
+  if (contentTimer) clearTimeout(contentTimer);
+  contentTimer = undefined;
+  contentSequence += 1;
+  contentHits.value = [];
+  contentLoading.value = false;
+  contentTruncated.value = false;
+}
+
+async function runContentSearch(needle: string) {
+  const sequence = ++contentSequence;
+  try {
+    const result = await catalogService.searchAllSessions(needle, 20);
+    if (sequence !== contentSequence || !open.value) return;
+    const byPath = new Map<string, ThreadSummary>();
+    for (const thread of appStore.threads) {
+      if (thread.sessionFile) byPath.set(thread.sessionFile, thread);
+    }
+    const titleMatched = new Set(results.value.map((thread) => thread.id));
+    const hits: Array<{ thread: ThreadSummary; snippet: string; matches: number }> = [];
+    for (const hit of result.hits ?? []) {
+      const thread = byPath.get(hit.path);
+      // A hit whose session has no thread in the desktop state is an orphan file; there is nowhere
+      // to jump to, so it is dropped rather than rendered as a dead row.
+      if (!thread || titleMatched.has(thread.id)) continue;
+      hits.push({ thread, snippet: hit.snippet, matches: hit.matches });
+    }
+    contentHits.value = hits;
+    contentTruncated.value = result.truncated === true;
+  } catch {
+    // A failed content search must not take the palette down: the title results still work.
+    if (sequence === contentSequence) contentHits.value = [];
+  } finally {
+    if (sequence === contentSequence) contentLoading.value = false;
+  }
+}
+
+function scheduleContentSearch() {
+  if (contentTimer) clearTimeout(contentTimer);
+  const needle = query.value.trim();
+  if (needle.length < CONTENT_QUERY_MIN) {
+    clearContentSearch();
+    return;
+  }
+  contentLoading.value = true;
+  contentTimer = setTimeout(() => void runContentSearch(needle), CONTENT_DEBOUNCE_MS);
+}
+
 function openPalette() {
   if (open.value) return close();
   // Another dialog owns the keyboard: stacking a second modal over it is how Escape ends up
@@ -61,6 +121,7 @@ function openPalette() {
   open.value = true;
   query.value = "";
   activeIndex.value = 0;
+  clearContentSearch();
   now.value = Date.now();
   void nextTick(() => input.value?.focus());
 }
@@ -68,16 +129,24 @@ function openPalette() {
 function close() {
   open.value = false;
   query.value = "";
+  clearContentSearch();
 }
 
+// One flat list so the arrow keys walk title hits and content hits without a special case; the two
+// groups are only a visual distinction.
+const rows = computed(() => [
+  ...results.value.map((thread) => ({ key: `thread:${thread.id}`, kind: "thread" as const, thread })),
+  ...contentHits.value.map((hit) => ({ key: `content:${hit.thread.id}`, kind: "content" as const, thread: hit.thread, snippet: hit.snippet, matches: hit.matches })),
+]);
+
 function move(delta: number) {
-  const total = results.value.length;
+  const total = rows.value.length;
   if (!total) return;
   activeIndex.value = (activeIndex.value + delta + total) % total;
 }
 
 async function choose(index = activeIndex.value) {
-  const thread = results.value[index];
+  const thread = rows.value[index]?.thread;
   if (!thread) return;
   close();
   appStore.selectThread(thread.id);
@@ -113,6 +182,7 @@ function onKeydown(event: KeyboardEvent) {
 
 watch(query, () => {
   activeIndex.value = 0;
+  scheduleContentSearch();
 });
 
 watch(activeIndex, async () => {
@@ -125,7 +195,10 @@ watch(activeIndex, async () => {
 // bubble phase after focus lands in the search box, so binding the same handler to the input too
 // ran every arrow key twice (one press = two rows).
 onMounted(() => document.addEventListener("keydown", onKeydown));
-onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
+onBeforeUnmount(() => {
+  document.removeEventListener("keydown", onKeydown);
+  if (contentTimer) clearTimeout(contentTimer);
+});
 </script>
 
 <template>
@@ -144,27 +217,30 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
             :aria-label="tr('quickSwitch.placeholder')"
           />
         </div>
-        <ul v-if="results.length" ref="list" class="quick-switcher-list" role="listbox" :aria-label="tr('quickSwitch.title')">
+        <ul v-if="rows.length" ref="list" class="quick-switcher-list" role="listbox" :aria-label="tr('quickSwitch.title')">
           <li
-            v-for="(thread, index) in results"
-            :key="thread.id"
+            v-for="(row, index) in rows"
+            :key="row.key"
             class="quick-switcher-row"
-            :class="{ 'is-active': index === activeIndex, 'is-current': thread.id === appStore.activeThreadId }"
+            :class="{ 'is-active': index === activeIndex, 'is-current': row.thread.id === appStore.activeThreadId, 'is-content': row.kind === 'content' }"
             role="option"
             :aria-selected="index === activeIndex"
             @pointermove="activeIndex = index"
             @click="void choose(index)"
           >
-            <span class="quick-switcher-title">{{ label(thread) }}</span>
+            <span class="quick-switcher-title">{{ label(row.thread) }}</span>
+            <span v-if="row.kind === 'content'" class="quick-switcher-snippet">{{ row.snippet }}</span>
             <span class="quick-switcher-meta">
-              <span class="quick-switcher-workspace">{{ thread.workspace }}</span>
-              <span v-if="thread.status === 'running'" class="quick-switcher-running">{{ tr("quickSwitch.running") }}</span>
-              <span v-else-if="thread.unread" class="quick-switcher-unread">{{ tr("quickSwitch.unread") }}</span>
-              <time :datetime="thread.modifiedAt || thread.createdAt">{{ relativeTimeText(thread.modifiedAt || thread.createdAt, now) }}</time>
+              <span v-if="row.kind === 'content'" class="quick-switcher-badge">{{ tr("quickSwitch.inContent") }}</span>
+              <span class="quick-switcher-workspace">{{ row.thread.workspace }}</span>
+              <span v-if="row.thread.status === 'running'" class="quick-switcher-running">{{ tr("quickSwitch.running") }}</span>
+              <span v-else-if="row.thread.unread" class="quick-switcher-unread">{{ tr("quickSwitch.unread") }}</span>
+              <time :datetime="row.thread.modifiedAt || row.thread.createdAt">{{ relativeTimeText(row.thread.modifiedAt || row.thread.createdAt, now) }}</time>
             </span>
           </li>
         </ul>
-        <p v-else class="quick-switcher-empty">{{ tr("quickSwitch.empty") }}</p>
+        <p v-else-if="contentLoading" class="quick-switcher-empty" role="status">{{ tr("quickSwitch.searching") }}</p>
+        <p v-else class="quick-switcher-empty">{{ contentTruncated ? tr("quickSwitch.truncated") : tr("quickSwitch.empty") }}</p>
         <footer class="quick-switcher-hint">
           <span><kbd>↑</kbd><kbd>↓</kbd>{{ tr("quickSwitch.move") }}</span>
           <span><kbd>↵</kbd>{{ tr("quickSwitch.open") }}</span>

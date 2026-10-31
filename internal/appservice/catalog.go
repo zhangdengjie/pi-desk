@@ -39,6 +39,8 @@ type sessionLister interface {
 	// SearchText answers the history search with searchable text only - never image bytes or tool
 	// arguments (`sessionindex`). It is context-bound because a large session must be cancellable.
 	SearchText(context.Context, string) (string, int, error)
+	// SearchSessions answers the cross-session search (`sessionindex/search.go`).
+	SearchSessions(context.Context, string, sessionindex.SearchOptions) (sessionindex.SearchResult, error)
 }
 
 type folderPicker func(initialPath string) (string, error)
@@ -360,6 +362,22 @@ func (service *CatalogService) SearchSessionText(ctx context.Context, request do
 	}
 	text, count, err := service.index.SearchText(ctx, strings.TrimSpace(request.Path))
 	return domain.SessionSearchText{Text: text, MessageCount: count}, err
+}
+
+// SearchAllSessions greps every local transcript for a phrase. Remote (SSH) sessions live on the
+// other machine and are not covered - the same boundary SearchSessionText already has.
+func (service *CatalogService) SearchAllSessions(ctx context.Context, request domain.SessionSearchRequest) (domain.SessionSearchResult, error) {
+	result, err := service.index.SearchSessions(ctx, request.Query, sessionindex.SearchOptions{Limit: request.Limit})
+	if err != nil {
+		return domain.SessionSearchResult{}, err
+	}
+	hits := make([]domain.SessionSearchHit, 0, len(result.Hits))
+	for _, hit := range result.Hits {
+		hits = append(hits, domain.SessionSearchHit{
+			Path: hit.Path, Role: hit.Role, Snippet: hit.Snippet, Matches: hit.Matches, ModifiedAt: hit.ModifiedAt,
+		})
+	}
+	return domain.SessionSearchResult{Hits: hits, Truncated: result.Truncated}, nil
 }
 
 func (service *CatalogService) GetSessionUsage(request domain.ListSessionsRequest) (domain.SessionUsageSummary, error) {

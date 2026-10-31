@@ -936,6 +936,42 @@
 .quick-switcher-running { color: var(--green); }
 .quick-switcher-unread { color: var(--blue); }
 
+/* A content hit is two lines - where it was, and what it said - so it cannot use the row's flex
+   baseline layout. Grid keeps the meta column aligned with the title, not with the snippet. */
+.quick-switcher-row.is-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "title meta"
+    "snippet meta";
+  align-items: baseline;
+  gap: 1px 10px;
+  padding-block: 6px;
+}
+
+.quick-switcher-row.is-content .quick-switcher-title { grid-area: title; }
+.quick-switcher-row.is-content .quick-switcher-meta { grid-area: meta; align-self: center; }
+
+.quick-switcher-snippet {
+  display: -webkit-box;
+  grid-area: snippet;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: calc(12px + var(--font-size-delta));
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.quick-switcher-badge {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  font-size: calc(10.5px + var(--font-size-delta));
+  letter-spacing: 0.02em;
+}
+
 .quick-switcher-empty {
   margin: 0;
   padding: 22px 16px;

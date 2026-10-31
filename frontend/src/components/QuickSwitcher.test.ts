@@ -2,11 +2,12 @@ import { DOMWrapper, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
+import { catalogService } from "../services/catalog";
 import { useAppStore, type ThreadSummary } from "../stores/app";
 import QuickSwitcher from "./QuickSwitcher.vue";
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
-vi.mock("../services/catalog", () => ({ catalogService: {} }));
+vi.mock("../services/catalog", () => ({ catalogService: { searchAllSessions: vi.fn() } }));
 vi.mock("../services/desktop", () => ({ getBootstrapState: vi.fn() }));
 vi.mock("../services/modelconfig", () => ({ modelConfigService: { selectable: vi.fn().mockResolvedValue([]) } }));
 vi.mock("../services/repository", () => ({ repositoryService: { clipboardFiles: vi.fn().mockResolvedValue([]) } }));
@@ -129,6 +130,43 @@ describe("QuickSwitcher", () => {
     await input.trigger("keydown", { key: "ArrowUp" });
     await settle();
     expect(active()).toBe(1);
+  });
+
+  it("finds a phrase inside old conversations and opens that session", async () => {
+    const store = useAppStore();
+    store.threads = [
+      thread({ id: "a", title: "修滚动抖动", sessionFile: "/sessions/aaa.jsonl" }),
+      thread({ id: "b", title: "升级 1.4.0", sessionFile: "/sessions/bbb.jsonl" }),
+    ];
+    const search = vi.mocked(catalogService.searchAllSessions);
+    search.mockResolvedValue({
+      truncated: false,
+      hits: [{ path: "/sessions/bbb.jsonl", role: "user", snippet: "…drag jitter 又回来了…", matches: 2, modifiedAt: "" }],
+    } as never);
+    const select = vi.spyOn(store, "selectThread").mockImplementation(() => {});
+    wrapper = mount(QuickSwitcher, { attachTo: document.body });
+
+    press({ key: "k", metaKey: true });
+    await settle();
+    const input = new DOMWrapper(document.querySelector(".quick-switcher-search input"));
+    await input.setValue("jitter");
+    await settle();
+
+    // Nothing until the debounce fires - the palette must not hammer the disk per keystroke.
+    expect(search).not.toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await settle();
+    await settle();
+
+    expect(search).toHaveBeenCalledWith("jitter", 20);
+    const snippet = document.querySelector(".quick-switcher-snippet");
+    expect(snippet?.textContent).toContain("drag jitter");
+    expect(document.querySelector(".quick-switcher-badge")).not.toBeNull();
+
+    // The content hit is the only row, so Enter opens it.
+    await input.trigger("keydown", { key: "Enter" });
+    await settle();
+    expect(select).toHaveBeenCalledWith("b");
   });
 
   it("does not stack on top of another dialog", async () => {
