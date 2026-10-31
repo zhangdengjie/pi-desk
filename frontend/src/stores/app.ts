@@ -159,6 +159,9 @@ export interface WorkspaceSummary {
   addedAt?: string;
   lastOpenedAt?: string;
   discovered?: boolean;
+  /** Model a new task in this workspace starts with; absent means "whatever Pi was left on". */
+  defaultModelProvider?: string;
+  defaultModelId?: string;
 }
 
 export interface ThreadSummary {
@@ -652,6 +655,25 @@ function pathKey(path: string): string {
 
 function repositoryKey(thread: ThreadSummary): string {
   return thread.workspaceId || pathKey(thread.workspacePath);
+}
+
+/** The catalog record a thread belongs to, by id when the thread has one and by path otherwise
+ *  (threads written before `workspaceId` existed). */
+function workspaceForThread(workspaces: WorkspaceSummary[], thread: ThreadSummary | undefined): WorkspaceSummary | undefined {
+  if (!thread) return undefined;
+  return workspaces.find((item) => (thread.workspaceId
+    ? item.id === thread.workspaceId
+    : pathKey(item.path) === pathKey(thread.workspacePath)));
+}
+
+/** A workspace's default model as a full `PiModel` when the catalog knows it, so the composer shows
+ *  the same name it shows for a model picked by hand; otherwise the bare provider/id pair, which is
+ *  all `setModel` needs. */
+function workspaceDefaultModel(workspace: WorkspaceSummary | undefined, known: PiModel[]): PiModel | undefined {
+  const provider = workspace?.defaultModelProvider;
+  const id = workspace?.defaultModelId;
+  if (!provider || !id) return undefined;
+  return known.find((model) => model.provider === provider && model.id === id) ?? { provider, id };
 }
 
 /** The file tree's expansion buckets, shrunk to what is worth writing to disk.
@@ -1276,12 +1298,10 @@ export const useAppStore = defineStore("app", {
     // The native picker runs on this machine, so an SSH workspace would produce a local path the
     // remote Pi cannot read; the composer button is disabled for those.
     activeWorkspaceIsRemote(state): boolean {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
-      if (!thread) return false;
-      const workspace = state.workspaces.find((item) => (thread.workspaceId
-        ? item.id === thread.workspaceId
-        : pathKey(item.path) === pathKey(thread.workspacePath)));
-      return workspace?.kind === "ssh";
+      return workspaceForThread(state.workspaces, state.threads.find((item) => item.id === state.activeThreadId))?.kind === "ssh";
+    },
+    activeWorkspace(state): WorkspaceSummary | undefined {
+      return workspaceForThread(state.workspaces, state.threads.find((item) => item.id === state.activeThreadId));
     },
     remoteReconnectThread(state): ThreadSummary | undefined {
       return state.threads.find((thread) => thread.id === state.remoteReconnectThreadId);
@@ -1993,6 +2013,7 @@ export const useAppStore = defineStore("app", {
       this.threads.unshift(thread);
       this.messagesByThread[thread.id] = [];
       this.draftsByThread[thread.id] = "";
+      this.applyWorkspaceDefaultModel(thread);
       this.activateThread(thread.id);
       this.newTaskOpen = false;
       this.scheduleDesktopStateSave();
@@ -2049,9 +2070,40 @@ export const useAppStore = defineStore("app", {
       this.threads.unshift(thread);
       this.messagesByThread[thread.id] = [];
       this.draftsByThread[thread.id] = "";
+      this.applyWorkspaceDefaultModel(thread);
       this.activateThread(thread.id);
       this.newTaskOpen = false;
       this.scheduleDesktopStateSave();
+    },
+    /** Seed a brand-new thread with its workspace's remembered model. Set exactly the way a manual
+     *  pick sets it (`chooseModel` on an unstarted thread), so the first message already runs on the
+     *  right model instead of switching after Pi has answered. */
+    applyWorkspaceDefaultModel(thread: ThreadSummary) {
+      const workspace = workspaceForThread(this.workspaces, thread);
+      const model = workspaceDefaultModel(workspace, [...this.configuredModels, ...this.knownRuntimeModels]);
+      if (!model) return;
+      this.pendingModelByThread[thread.id] = { ...model };
+      this.sessionStateByThread[thread.id] = { ...(this.sessionStateByThread[thread.id] ?? {}), model: { ...model } };
+    },
+    /** Remember (or, with `null`, forget) the model new tasks in the active workspace start with. */
+    async setWorkspaceDefaultModel(model: PiModel | null) {
+      const workspace = this.activeWorkspace;
+      if (!workspace || workspace.discovered) return;
+      const thread = this.activeThread;
+      try {
+        const updated = await catalogService.setWorkspaceDefaultModel(workspace.id, model?.provider ?? "", model?.id ?? "");
+        const index = this.workspaces.findIndex((item) => item.id === workspace.id);
+        if (index >= 0) {
+          this.workspaces[index] = {
+            ...this.workspaces[index],
+            defaultModelProvider: updated.defaultModelProvider,
+            defaultModelId: updated.defaultModelId,
+          };
+        }
+      } catch (error) {
+        const detail = errorMessage(error);
+        if (thread) this.appendSystem(thread.id, `Unable to save the workspace default model: ${detail}`, detail);
+      }
     },
     applySessionSnapshot(thread: ThreadSummary, snapshot: SessionSnapshot) {
       const entries = (snapshot.messages as Array<Record<string, unknown>> | null) ?? [];

@@ -1255,6 +1255,16 @@ export interface WorkspaceApplication {
     "iconDataUrl": string;
 }
 
+/**
+ * WorkspaceDefaultModelRequest sets (or, with an empty Provider and ModelID, clears) the model that
+ * new tasks in the workspace start with.
+ */
+export interface WorkspaceDefaultModelRequest {
+    "id": string;
+    "provider": string;
+    "modelId": string;
+}
+
 export interface WorkspaceRequest {
     "id": string;
     "path"?: string;
@@ -1270,4 +1280,10 @@ export interface WorkspaceSummary {
     "trust": string;
     "addedAt": string;
     "lastOpenedAt": string;
+
+    /**
+     * Model a new task in this workspace starts with; empty means "whatever Pi was left on".
+     */
+    "defaultModelProvider"?: string;
+    "defaultModelId"?: string;
 }

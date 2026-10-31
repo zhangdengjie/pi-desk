@@ -30,13 +30,19 @@ const (
 )
 
 type Record struct {
-	ID           string
-	Name         string
-	Path         string // Local-only compatibility projection; always empty for SSH.
-	Location     Location
-	Trust        string
-	AddedAt      time.Time
-	LastOpenedAt time.Time
+	ID       string
+	Name     string
+	Path     string // Local-only compatibility projection; always empty for SSH.
+	Location Location
+	Trust    string
+	// DefaultModelProvider/DefaultModelID are the model a *new* task in this workspace starts
+	// with. Empty means "inherit whatever Pi was left on". This is a UI preference, so it lives
+	// beside Trust rather than in the desktop record - the desktop record is rewritten on every
+	// draft save, and a preference that can be lost to a racing write is worse than no preference.
+	DefaultModelProvider string
+	DefaultModelID       string
+	AddedAt              time.Time
+	LastOpenedAt         time.Time
 }
 
 type ThreadRecord struct {
@@ -271,6 +277,40 @@ func (catalog *Catalog) Add(path, trust string) (Record, error) {
 	}
 	catalog.records = records
 	return record, nil
+}
+
+// SetDefaultModel stores the model new tasks in this workspace start with. Both fields empty clears
+// the preference. Nothing about access depends on it, so no re-validation of trust is needed.
+func (catalog *Catalog) SetDefaultModel(id, provider, modelID string) (Record, error) {
+	id = strings.TrimSpace(id)
+	provider = strings.TrimSpace(provider)
+	modelID = strings.TrimSpace(modelID)
+	if (provider == "") != (modelID == "") {
+		return Record{}, errors.New("default model needs both a provider and a model id")
+	}
+	if provider != "" && (!validScheduledModelIdentifier(provider) || !validScheduledModelIdentifier(modelID)) {
+		return Record{}, errors.New("default model is invalid")
+	}
+
+	catalog.mu.Lock()
+	defer catalog.mu.Unlock()
+	if err := catalog.loadLocked(); err != nil {
+		return Record{}, err
+	}
+	records := slices.Clone(catalog.records)
+	for index := range records {
+		if records[index].ID != id {
+			continue
+		}
+		records[index].DefaultModelProvider = provider
+		records[index].DefaultModelID = modelID
+		if err := catalog.saveLocked(records, catalog.desktop); err != nil {
+			return Record{}, err
+		}
+		catalog.records = records
+		return records[index], nil
+	}
+	return Record{}, fmt.Errorf("workspace %s not found", id)
 }
 
 func (catalog *Catalog) Remove(id string) error {

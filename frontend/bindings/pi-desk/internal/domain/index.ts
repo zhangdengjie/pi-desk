@@ -152,6 +152,7 @@ export type {
     UserConfigView,
     WindowState,
     WorkspaceApplication,
+    WorkspaceDefaultModelRequest,
     WorkspaceRequest,
     WorkspaceSummary
 } from "./models.js";

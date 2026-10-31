@@ -15,6 +15,9 @@ type WorkspaceSummary struct {
 	Trust        string    `json:"trust"`
 	AddedAt      time.Time `json:"addedAt"`
 	LastOpenedAt time.Time `json:"lastOpenedAt"`
+	// Model a new task in this workspace starts with; empty means "whatever Pi was left on".
+	DefaultModelProvider string `json:"defaultModelProvider,omitempty"`
+	DefaultModelID       string `json:"defaultModelId,omitempty"`
 }
 
 type RemoteAliasSummary struct {
@@ -72,6 +75,14 @@ type AddWorkspaceRequest struct {
 type RenameWorkspaceRequest struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+// WorkspaceDefaultModelRequest sets (or, with an empty Provider and ModelID, clears) the model that
+// new tasks in the workspace start with.
+type WorkspaceDefaultModelRequest struct {
+	ID       string `json:"id"`
+	Provider string `json:"provider"`
+	ModelID  string `json:"modelId"`
 }
 
 type WorkspaceRequest struct {

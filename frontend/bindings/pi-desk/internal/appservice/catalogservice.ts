@@ -90,3 +90,12 @@ export function SearchSessionText(request: domain$0.SessionSnapshotRequest): $Ca
 export function SessionSnapshotRef(request: domain$0.SessionSnapshotRequest): $CancellablePromise<string> {
     return $Call.ByID(2204929740, request);
 }
+
+/**
+ * SetWorkspaceDefaultModel remembers the model new tasks in a workspace start with. Stored on the
+ * workspace record rather than in desktop preferences because preferences are rewritten wholesale on
+ * every draft save, and losing this to a racing write would silently change which model runs.
+ */
+export function SetWorkspaceDefaultModel(request: domain$0.WorkspaceDefaultModelRequest): $CancellablePromise<domain$0.WorkspaceSummary> {
+    return $Call.ByID(3077453046, request);
+}

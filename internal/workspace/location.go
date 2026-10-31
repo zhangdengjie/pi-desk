@@ -79,13 +79,15 @@ type stateLocation struct {
 }
 
 type stateWorkspaceRecord struct {
-	ID           string        `json:"id"`
-	Name         string        `json:"name"`
-	Path         string        `json:"path,omitempty"` // v1-v5 migration input only
-	Location     stateLocation `json:"location,omitempty"`
-	Trust        string        `json:"trust"`
-	AddedAt      time.Time     `json:"addedAt"`
-	LastOpenedAt time.Time     `json:"lastOpenedAt"`
+	ID                   string        `json:"id"`
+	Name                 string        `json:"name"`
+	Path                 string        `json:"path,omitempty"` // v1-v5 migration input only
+	Location             stateLocation `json:"location,omitempty"`
+	Trust                string        `json:"trust"`
+	DefaultModelProvider string        `json:"defaultModelProvider,omitempty"`
+	DefaultModelID       string        `json:"defaultModelId,omitempty"`
+	AddedAt              time.Time     `json:"addedAt"`
+	LastOpenedAt         time.Time     `json:"lastOpenedAt"`
 }
 
 func stateRecordFromRecord(record Record) (stateWorkspaceRecord, error) {
@@ -103,6 +105,7 @@ func stateRecordFromRecord(record Record) (stateWorkspaceRecord, error) {
 	}
 	return stateWorkspaceRecord{
 		ID: record.ID, Name: record.Name, Location: location, Trust: record.Trust,
+		DefaultModelProvider: record.DefaultModelProvider, DefaultModelID: record.DefaultModelID,
 		AddedAt: record.AddedAt, LastOpenedAt: record.LastOpenedAt,
 	}, nil
 }
@@ -110,6 +113,7 @@ func stateRecordFromRecord(record Record) (stateWorkspaceRecord, error) {
 func (record stateWorkspaceRecord) toRecord(version int) (Record, error) {
 	result := Record{
 		ID: record.ID, Name: record.Name, Trust: record.Trust,
+		DefaultModelProvider: record.DefaultModelProvider, DefaultModelID: record.DefaultModelID,
 		AddedAt: record.AddedAt, LastOpenedAt: record.LastOpenedAt,
 	}
 	if version < 6 {
@@ -148,6 +152,12 @@ func validateRecord(record Record) error {
 	}
 	if record.Trust != "approve" && record.Trust != "deny" {
 		return errors.New("workspace trust must be approve or deny")
+	}
+	if (record.DefaultModelProvider == "") != (record.DefaultModelID == "") {
+		return errors.New("workspace default model needs both a provider and a model id")
+	}
+	if record.DefaultModelProvider != "" && (!validScheduledModelIdentifier(record.DefaultModelProvider) || !validScheduledModelIdentifier(record.DefaultModelID)) {
+		return errors.New("workspace default model is invalid")
 	}
 	switch record.Location.Kind {
 	case KindLocal:

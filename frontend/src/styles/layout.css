@@ -3702,6 +3702,33 @@ html.is-resizing-pane .inspector {
   min-height: 30px;
 }
 
+/* The "make this the workspace default" row. Separated by a rule because it is not a choice of the
+   current conversation like everything above it - it writes to the workspace, not the thread. */
+.model-menu-default {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: calc(11.5px + var(--font-size-delta));
+}
+
+.model-menu-default:hover {
+  color: var(--text);
+  background: var(--bg-hover) !important;
+}
+
+.model-menu-default.is-pinned {
+  color: var(--accent);
+}
+
+.model-menu-default.is-pinned svg {
+  fill: currentColor;
+}
+
 .model-menu button[aria-checked="true"],
 .thinking-level-grid button[aria-checked="true"] {
   background: var(--bg-selected) !important;
@@ -9402,6 +9429,33 @@ article.mcp-server-row {
 
 .model-menu .thinking-level-grid button {
   min-height: 30px;
+}
+
+/* The "make this the workspace default" row. Separated by a rule because it is not a choice of the
+   current conversation like everything above it - it writes to the workspace, not the thread. */
+.model-menu-default {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: calc(11.5px + var(--font-size-delta));
+}
+
+.model-menu-default:hover {
+  color: var(--text);
+  background: var(--bg-hover) !important;
+}
+
+.model-menu-default.is-pinned {
+  color: var(--accent);
+}
+
+.model-menu-default.is-pinned svg {
+  fill: currentColor;
 }
 
 .timeline {

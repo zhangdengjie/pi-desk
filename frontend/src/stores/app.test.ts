@@ -1313,6 +1313,45 @@ describe("app store", () => {
     expect(store.remoteReconnectIntent).toBe("prompt");
   });
 
+  it("seeds a new task with the workspace's remembered model", async () => {
+    const store = useAppStore();
+    store.workspaces = [{
+      id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve",
+      defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5",
+    }];
+    // `createThread` refreshes the configured catalog first, so the name has to come from there.
+    mocks.getConfiguredModels.mockResolvedValueOnce([{ provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" }]);
+    mocks.addWorkspace.mockResolvedValueOnce({
+      id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve",
+      defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5",
+    });
+
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread;
+    if (!thread) throw new Error("thread was not created");
+
+    // The name comes from the configured catalog, not the bare id, so the composer reads the same
+    // before and after Pi starts.
+    expect(store.pendingModelByThread[thread.id]).toMatchObject({
+      provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5",
+    });
+    expect(store.sessionStateByThread[thread.id]?.model).toMatchObject({ provider: "anthropic", id: "claude-sonnet-4-5" });
+  });
+
+  it("leaves a workspace without a remembered model on whatever Pi was left on", async () => {
+    const store = useAppStore();
+    mocks.addWorkspace.mockResolvedValueOnce({
+      id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve",
+    });
+
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread;
+    if (!thread) throw new Error("thread was not created");
+
+    expect(store.pendingModelByThread[thread.id]).toBeUndefined();
+    expect(store.sessionStateByThread[thread.id]?.model).toBeUndefined();
+  });
+
   it("creates a trusted thread and starts Pi lazily on first prompt", async () => {
     const store = useAppStore();
     await store.createThread("D:\\work\\repo", "approve");
