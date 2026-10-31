@@ -1217,7 +1217,12 @@ export const useAppStore = defineStore("app", {
     language: "zh-CN" as Language,
     interfaceFont: "default" as InterfaceFont,
     interfaceFontCustom: "",
-    interfaceFontSize: 14,
+    // 15, not 14: at 14 the transcript's CJK body text draws PingFang's regular strokes with partial
+    // pixel coverage (the WKWebView is layer-backed, so the engine always uses grayscale AA), and the
+    // result reads a weight lighter than every native window beside it. 15 is the smallest rung where
+    // the stems land on whole pixels; the setting still spans 12-18 and a reader who wants the denser
+    // old default picks 14 in one click.
+    interfaceFontSize: 15,
     transcriptFontWeight: "normal" as TranscriptFontWeight,
     transcriptLineHeight: "relaxed" as TranscriptLineHeight,
     transcriptTint: "",

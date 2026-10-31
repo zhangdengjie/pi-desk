@@ -144,7 +144,8 @@ describe("TerminalPane", () => {
     const store = useAppStore();
     const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
 
-    expect(terminalHarness.options.fontSize).toBe(12);
+    // Terminal text is two rungs below the interface size, so the new 15px default lands on 13.
+    expect(terminalHarness.options.fontSize).toBe(13);
     store.interfaceFontSize = 17;
     await flushPromises();
 

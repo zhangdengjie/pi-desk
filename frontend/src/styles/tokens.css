@@ -40,13 +40,24 @@
   /* The shipped stack, named once. The `custom` family in the font-family blocks below has to fall
      back to exactly this rather than to `system-ui`: picking 自定义 and typing nothing would otherwise
      silently swap PingFang for SF. */
-  --font-interface-shipped: "PingFang SC", "Segoe UI Variable", "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  /* Latin first, CJK second. PingFang SC's Latin glyphs are a companion design, not a text face:
+     at 14px they sit a hair narrower with a smaller x-height than SF Pro, and every Latin word in
+     the UI was being set in them because the shipped stack led with PingFang. `-apple-system` is
+     SF Pro on macOS (optical sizing included) and still falls back to PingFang for CJK, so the
+     mixed-script lines in a transcript now have one text face doing the Latin and the system's
+     Chinese face doing the rest - the same pairing the 系统字体 option already produced, which is
+     why 默认 and 系统字体 used to look like two different apps. Windows: Segoe UI Variable Text
+     for Latin, Microsoft YaHei UI for CJK. */
+  --font-interface-shipped: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   --font-interface-body: var(--font-interface-shipped);
   --font-interface-display: var(--font-interface-body);
   --font-interface-reading: var(--font-interface-body);
   --font-sans: var(--font-interface-body);
   --font-reading: var(--font-interface-reading);
-  --font-code-stack: "Cascadia Code", "SFMono-Regular", Menlo, Consolas, monospace;
+  /* `ui-monospace` is SF Mono on macOS - the face the system UI itself draws code in, and the one
+     the composer's token counters already get through `--font-mono`. Leading with it keeps inline
+     code, code blocks and the metrics strip on the same monospace instead of three near-misses. */
+  --font-code-stack: ui-monospace, "SF Mono", "Cascadia Code", "SFMono-Regular", Menlo, Consolas, monospace;
   --font-mono: var(--font-code-stack);
   /* The transcript's own body weight, one step above the inherited Regular by default-free intent:
      400 keeps today's rendering byte-for-byte, and the three names below are what the setting in

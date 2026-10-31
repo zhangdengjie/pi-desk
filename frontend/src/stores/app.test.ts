@@ -739,7 +739,7 @@ describe("app store", () => {
     expect(store.appearance).toBe("light");
     expect(store.language).toBe("zh-CN");
     expect(store.interfaceFont).toBe("default");
-    expect(store.interfaceFontSize).toBe(14);
+    expect(store.interfaceFontSize).toBe(15);
     expect(store.lightCodeTheme).toBe("github-light");
     expect(store.darkCodeTheme).toBe("github-dark");
     expect(store.showCodeLineNumbers).toBe(true);

@@ -1098,6 +1098,8 @@
   color: var(--md-heading);
   font-weight: 700;
   line-height: 1.35;
+  /* A heading that wraps should break in the middle, not leave one word on line two. */
+  text-wrap: balance;
 }
 
 .markdown-body h1 {
