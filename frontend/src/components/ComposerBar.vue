@@ -711,14 +711,23 @@ function closeMenus(event: PointerEvent) {
   if (!commandMenu.value?.contains(target) && !commandButton.value?.contains(target)) commandButtonOpen.value = false;
 }
 
+/* The transcript's selection toolbar cannot reach into this component, so it asks for focus with a
+   window event after it has written the quote into the draft. The draft itself travels through the
+   store (`insertQuotedSelection`), which is what the editor renders. */
+function focusComposer() {
+  void nextTick().then(() => markdownEditor.value?.focus());
+}
+
 onMounted(() => {
   document.addEventListener("pointerdown", closeMenus);
   window.addEventListener("resize", positionOpenMenus);
+  window.addEventListener("pidesk:focus-composer", focusComposer);
 });
 onBeforeUnmount(() => {
   pasteEpoch++;
   document.removeEventListener("pointerdown", closeMenus);
   window.removeEventListener("resize", positionOpenMenus);
+  window.removeEventListener("pidesk:focus-composer", focusComposer);
 });
 </script>
 

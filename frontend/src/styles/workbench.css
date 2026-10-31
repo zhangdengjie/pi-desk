@@ -831,6 +831,194 @@
   left: calc(50% - var(--inspector-width) / 2);
 }
 
+/* The selection toolbar (components/SelectionQuoteBar.vue). Teleported to <body>, so it is fixed
+   against the viewport and cannot inherit the shell's grid; the colours still come from the root
+   tokens, which are declared on :root for every theme. */
+/* ⌘K quick switcher (components/QuickSwitcher.vue). Sits above the selection toolbar's z-index so
+   an open palette is never under a quote popover that was already on screen. */
+.quick-switcher-scrim {
+  position: fixed;
+  z-index: 210;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  padding-top: 14vh;
+  background: var(--overlay);
+}
+
+.quick-switcher {
+  display: flex;
+  width: min(620px, calc(100vw - 48px));
+  max-height: min(60vh, 560px);
+  flex-direction: column;
+  align-self: flex-start;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--bg-menu);
+  box-shadow: var(--shadow-dialog);
+}
+
+.quick-switcher-search {
+  display: flex;
+  height: 48px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.quick-switcher-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-size-body);
+  outline: none;
+}
+
+.quick-switcher-list {
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.quick-switcher-row {
+  display: flex;
+  min-height: 34px;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.quick-switcher-row.is-active {
+  background: var(--bg-hover);
+}
+
+.quick-switcher-row.is-current .quick-switcher-title {
+  font-weight: 600;
+}
+
+.quick-switcher-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--font-size-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-switcher-meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-size-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.quick-switcher-workspace {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-switcher-running { color: var(--green); }
+.quick-switcher-unread { color: var(--blue); }
+
+.quick-switcher-empty {
+  margin: 0;
+  padding: 22px 16px;
+  color: var(--text-muted);
+  font-size: var(--font-size-control);
+  text-align: center;
+}
+
+.quick-switcher-hint {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 14px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--font-size-meta);
+}
+
+.quick-switcher-hint span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.quick-switcher-hint kbd {
+  min-width: 18px;
+  padding: 1px 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-app);
+  font-family: var(--font-mono);
+  font-size: calc(10px + var(--font-size-delta));
+  text-align: center;
+}
+
+.selection-actions {
+  position: fixed;
+  z-index: 200;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--bg-menu);
+  box-shadow: var(--shadow-menu);
+  font-size: var(--font-size-label);
+  transform: translate(-50%, -100%);
+  user-select: none;
+}
+
+.selection-actions[data-placement="below"] {
+  transform: translate(-50%, 0);
+}
+
+.selection-action {
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-size-label);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.selection-action:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.selection-action:active {
+  background: var(--bg-active);
+}
+
+.selection-action svg {
+  flex: 0 0 auto;
+  opacity: .85;
+}
+
 .message-row {
   padding: 10px 0;
 }

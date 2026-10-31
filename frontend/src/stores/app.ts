@@ -12,6 +12,7 @@ import { applyStreamTuning, type RevealMode } from "../utils/streamTuning";
 import { FONT_FAMILY_INPUT_MAX } from "../utils/fontFamily";
 import { BATCH_ASK_PLACEHOLDER, parseBatchAskEnvelope, type BatchAskQuestion } from "../utils/batchAsk";
 import { formatFileMention } from "../utils/fileMentions";
+import { appendQuoteToDraft, formatSelectionQuote } from "../utils/selectionQuote";
 import { MAX_ATTACHED_IMAGES, MAX_SOURCE_IMAGE_BYTES, parseImageDataURL, type PreparedImage } from "../utils/imageAttachments";
 import { sessionImageUrl } from "../utils/sessionImages";
 import { skillInvocationCommandText, skillInvocationTitleText } from "../utils/skillInvocation";
@@ -2118,6 +2119,19 @@ export const useAppStore = defineStore("app", {
       const next = `${current}${separator}${formatFileMention(path, directory)} `;
       lastMentionDraft = next;
       this.updateDraft(next);
+    },
+    /**
+     * Append a quoted passage (the reader's selection in the transcript) to the draft.
+     *
+     * The draft is the only channel: `MarkdownEditorCore` re-serialises whatever the store holds, so
+     * writing here is enough to make the quote appear in the composer with its markdown intact - the
+     * same path `insertFileMention` has always used. The caller focuses the composer afterwards.
+     */
+    insertQuotedSelection(selection: string) {
+      if (!this.activeThreadId) return;
+      const quote = formatSelectionQuote(selection);
+      if (!quote) return;
+      this.updateDraft(appendQuoteToDraft(this.activeDraft, quote));
     },
     async pickFileMention(): Promise<{ path: string; external: boolean } | undefined> {
       const thread = this.threads.find((item) => item.id === this.activeThreadId);
