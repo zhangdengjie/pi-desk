@@ -118,11 +118,12 @@ func (service *CatalogService) RenameWorkspace(request domain.RenameWorkspaceReq
 	return workspaceSummary(record), nil
 }
 
-// SetWorkspaceDefaultModel remembers the model new tasks in a workspace start with. Stored on the
-// workspace record rather than in desktop preferences because preferences are rewritten wholesale on
-// every draft save, and losing this to a racing write would silently change which model runs.
-func (service *CatalogService) SetWorkspaceDefaultModel(request domain.WorkspaceDefaultModelRequest) (domain.WorkspaceSummary, error) {
-	record, err := service.catalog.SetDefaultModel(strings.TrimSpace(request.ID), request.Provider, request.ModelID)
+// SetWorkspaceDefaults remembers the model and reasoning level new tasks in a workspace start with.
+// Stored on the workspace record rather than in desktop preferences because preferences are rewritten
+// wholesale on every draft save, and losing this to a racing write would silently change which model
+// runs - and at which price.
+func (service *CatalogService) SetWorkspaceDefaults(request domain.WorkspaceDefaultsRequest) (domain.WorkspaceSummary, error) {
+	record, err := service.catalog.SetDefaults(strings.TrimSpace(request.ID), request.Provider, request.ModelID, request.ThinkingLevel)
 	if err != nil {
 		return domain.WorkspaceSummary{}, err
 	}
@@ -620,6 +621,7 @@ func workspaceSummary(record workspace.Record) domain.WorkspaceSummary {
 		ID: record.ID, Name: record.Name, Path: record.Path, Kind: string(record.Location.Kind),
 		Trust: record.Trust, AddedAt: record.AddedAt, LastOpenedAt: record.LastOpenedAt,
 		DefaultModelProvider: record.DefaultModelProvider, DefaultModelID: record.DefaultModelID,
+		DefaultThinking: record.DefaultThinking,
 	}
 	if record.Location.Kind == workspace.KindSSH {
 		summary.TargetID = record.Location.SSH.TargetID

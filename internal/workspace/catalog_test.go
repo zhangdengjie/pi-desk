@@ -504,11 +504,11 @@ func TestCatalogPersistsWorkspaceDefaultModel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	updated, err := catalog.SetDefaultModel(record.ID, "anthropic", "claude-sonnet-4-5")
+	updated, err := catalog.SetDefaults(record.ID, "anthropic", "claude-sonnet-4-5", "high")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.DefaultModelProvider != "anthropic" || updated.DefaultModelID != "claude-sonnet-4-5" {
+	if updated.DefaultModelProvider != "anthropic" || updated.DefaultModelID != "claude-sonnet-4-5" || updated.DefaultThinking != "high" {
 		t.Fatalf("unexpected record: %#v", updated)
 	}
 
@@ -522,30 +522,36 @@ func TestCatalogPersistsWorkspaceDefaultModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 1 || records[0].DefaultModelProvider != "anthropic" || records[0].DefaultModelID != "claude-sonnet-4-5" {
+	if len(records) != 1 || records[0].DefaultModelProvider != "anthropic" || records[0].DefaultModelID != "claude-sonnet-4-5" || records[0].DefaultThinking != "high" {
 		t.Fatalf("default model did not survive a reload: %#v", records)
 	}
 
 	// Clearing it is spelled as two empty fields, and must also survive a reload.
-	cleared, err := reloaded.SetDefaultModel(records[0].ID, "", "")
+	cleared, err := reloaded.SetDefaults(records[0].ID, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cleared.DefaultModelProvider != "" || cleared.DefaultModelID != "" {
+	if cleared.DefaultModelProvider != "" || cleared.DefaultModelID != "" || cleared.DefaultThinking != "" {
 		t.Fatalf("default model was not cleared: %#v", cleared)
 	}
 	again, err := NewCatalog(path).List()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again[0].DefaultModelProvider != "" || again[0].DefaultModelID != "" {
+	if again[0].DefaultModelProvider != "" || again[0].DefaultModelID != "" || again[0].DefaultThinking != "" {
 		t.Fatalf("cleared default model came back: %#v", again[0])
 	}
 
-	if _, err := reloaded.SetDefaultModel(records[0].ID, "anthropic", ""); err == nil {
+	if _, err := reloaded.SetDefaults(records[0].ID, "anthropic", "", ""); err == nil {
 		t.Fatal("expected a half-specified default model to be rejected")
 	}
-	if _, err := reloaded.SetDefaultModel("workspace-missing", "anthropic", "x"); err == nil {
+	if _, err := reloaded.SetDefaults(records[0].ID, "anthropic", "x", "turbo"); err == nil {
+		t.Fatal("expected an unknown thinking level to be rejected")
+	}
+	if _, err := reloaded.SetDefaults(records[0].ID, "", "", "high"); err == nil {
+		t.Fatal("expected a thinking level without a model to be rejected")
+	}
+	if _, err := reloaded.SetDefaults("workspace-missing", "anthropic", "x", ""); err == nil {
 		t.Fatal("expected an unknown workspace to be rejected")
 	}
 }

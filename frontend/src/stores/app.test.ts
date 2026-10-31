@@ -1317,13 +1317,13 @@ describe("app store", () => {
     const store = useAppStore();
     store.workspaces = [{
       id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve",
-      defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5",
+      defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5", defaultThinking: "high",
     }];
     // `createThread` refreshes the configured catalog first, so the name has to come from there.
     mocks.getConfiguredModels.mockResolvedValueOnce([{ provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" }]);
     mocks.addWorkspace.mockResolvedValueOnce({
       id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve",
-      defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5",
+      defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5", defaultThinking: "high",
     });
 
     await store.createThread("D:\\work\\repo", "approve");
@@ -1336,6 +1336,72 @@ describe("app store", () => {
       provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5",
     });
     expect(store.sessionStateByThread[thread.id]?.model).toMatchObject({ provider: "anthropic", id: "claude-sonnet-4-5" });
+    // The level is queued for after Pi starts, and shown now so the composer does not change label.
+    expect(store.pendingThinkingByThread[thread.id]).toBe("high");
+    expect(store.sessionStateByThread[thread.id]?.thinkingLevel).toBe("high");
+  });
+
+  it("applies the workspace reasoning level before the first prompt is sent", async () => {
+    const store = useAppStore();
+    store.workspaces = [{
+      id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve",
+      defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5", defaultThinking: "high",
+    }];
+    mocks.addWorkspace.mockResolvedValueOnce({
+      id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve",
+      defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5", defaultThinking: "high",
+    });
+    // Not `Once`: startup refreshes the levels before `applyPendingThinking` asks again.
+    mocks.getAvailableThinkingLevels.mockResolvedValue({ levels: ["low", "high"] });
+    // Pi confirms the model it is on; `applyPendingModel` treats a mismatch as a failed send.
+    mocks.getState.mockResolvedValue({ sessionId: "session-1", model: { provider: "anthropic", id: "claude-sonnet-4-5" } });
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread;
+    if (!thread) throw new Error("thread was not created");
+    mocks.startSession.mockResolvedValueOnce({
+      threadId: thread.id,
+      generation: 4,
+      // Pi reports the model it actually started on; a mismatch is treated as a failed send.
+      stateJson: JSON.stringify({ sessionId: "session-1", thinkingLevel: "low", model: { provider: "anthropic", id: "claude-sonnet-4-5" } }),
+    });
+    store.updateDraft("Inspect the repository");
+
+    await store.sendActivePrompt();
+
+    expect(mocks.setThinkingLevel).toHaveBeenCalledWith({ threadId: thread.id, level: "high" });
+    // Order is the whole point: a level applied after the prompt has already paid for the first turn.
+    const thinkingOrder = mocks.setThinkingLevel.mock.invocationCallOrder[0];
+    const promptOrder = mocks.sendPrompt.mock.invocationCallOrder[0];
+    expect(thinkingOrder).toBeLessThan(promptOrder);
+    expect(store.pendingThinkingByThread[thread.id]).toBeUndefined();
+  });
+
+  it("drops a remembered level the model no longer offers instead of failing the send", async () => {
+    const store = useAppStore();
+    store.workspaces = [{
+      id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve",
+      defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5", defaultThinking: "xhigh",
+    }];
+    mocks.addWorkspace.mockResolvedValueOnce({
+      id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve",
+      defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5", defaultThinking: "xhigh",
+    });
+    mocks.getAvailableThinkingLevels.mockResolvedValue({ levels: ["off", "medium"] });
+    mocks.getState.mockResolvedValue({ sessionId: "session-1", model: { provider: "anthropic", id: "claude-sonnet-4-5" } });
+    await store.createThread("D:\\work\\repo", "approve");
+    const thread = store.activeThread;
+    if (!thread) throw new Error("thread was not created");
+    mocks.startSession.mockResolvedValueOnce({
+      threadId: thread.id,
+      generation: 4,
+      stateJson: JSON.stringify({ sessionId: "session-1", model: { provider: "anthropic", id: "claude-sonnet-4-5" } }),
+    });
+    store.updateDraft("Inspect the repository");
+
+    await store.sendActivePrompt();
+
+    expect(mocks.setThinkingLevel).not.toHaveBeenCalled();
+    expect(mocks.sendPrompt).toHaveBeenCalled();
   });
 
   it("leaves a workspace without a remembered model on whatever Pi was left on", async () => {
@@ -4757,7 +4823,7 @@ describe("app store", () => {
         enabled: true, nextRunAt: "2026-09-04T01:00:00.000Z", createdAt: "2026-09-03T01:00:00.000Z", updatedAt: "2026-09-03T01:00:00.000Z",
       }],
     });
-    mocks.getAvailableThinkingLevels.mockResolvedValueOnce({ levels: ["off", "medium"] });
+    mocks.getAvailableThinkingLevels.mockResolvedValue({ levels: ["off", "medium"] });
     mocks.getState.mockResolvedValueOnce({ model: { provider: "openai", id: "gpt-5.6" }, isStreaming: false });
 
     await store.runScheduledTask("schedule-unsupported");

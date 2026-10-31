@@ -15,9 +15,11 @@ type WorkspaceSummary struct {
 	Trust        string    `json:"trust"`
 	AddedAt      time.Time `json:"addedAt"`
 	LastOpenedAt time.Time `json:"lastOpenedAt"`
-	// Model a new task in this workspace starts with; empty means "whatever Pi was left on".
+	// Model (and its reasoning level) a new task in this workspace starts with; empty means
+	// "whatever Pi was left on".
 	DefaultModelProvider string `json:"defaultModelProvider,omitempty"`
 	DefaultModelID       string `json:"defaultModelId,omitempty"`
+	DefaultThinking      string `json:"defaultThinking,omitempty"`
 }
 
 type RemoteAliasSummary struct {
@@ -77,12 +79,14 @@ type RenameWorkspaceRequest struct {
 	Name string `json:"name"`
 }
 
-// WorkspaceDefaultModelRequest sets (or, with an empty Provider and ModelID, clears) the model that
-// new tasks in the workspace start with.
-type WorkspaceDefaultModelRequest struct {
-	ID       string `json:"id"`
-	Provider string `json:"provider"`
-	ModelID  string `json:"modelId"`
+// WorkspaceDefaultsRequest sets (or, with every field empty, clears) the model and reasoning level
+// that new tasks in the workspace start with. ThinkingLevel is only meaningful next to a model:
+// levels are per-model, so a level without one would be applied to whatever runs next.
+type WorkspaceDefaultsRequest struct {
+	ID            string `json:"id"`
+	Provider      string `json:"provider"`
+	ModelID       string `json:"modelId"`
+	ThinkingLevel string `json:"thinkingLevel"`
 }
 
 type WorkspaceRequest struct {

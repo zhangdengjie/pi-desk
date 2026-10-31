@@ -159,9 +159,11 @@ export interface WorkspaceSummary {
   addedAt?: string;
   lastOpenedAt?: string;
   discovered?: boolean;
-  /** Model a new task in this workspace starts with; absent means "whatever Pi was left on". */
+  /** Model (and reasoning level) a new task in this workspace starts with; absent means "whatever
+   *  Pi was left on". */
   defaultModelProvider?: string;
   defaultModelId?: string;
+  defaultThinking?: string;
 }
 
 export interface ThreadSummary {
@@ -1192,6 +1194,9 @@ export const useAppStore = defineStore("app", {
     accountModelProviders: [] as string[],
     knownRuntimeModels: [] as PiModel[],
     pendingModelByThread: {} as Record<string, PiModel | undefined>,
+    // Reasoning level a *not yet started* thread should adopt. Levels can only be set on a live Pi
+    // process, so this waits for `applyPendingThinking` right after the model is applied.
+    pendingThinkingByThread: {} as Record<string, string | undefined>,
     modelSelectionGenerationByThread: {} as Record<string, number>,
     sessionStateRefreshGenerationByThread: {} as Record<string, number>,
     modelCatalogError: "",
@@ -2084,20 +2089,32 @@ export const useAppStore = defineStore("app", {
       if (!model) return;
       this.pendingModelByThread[thread.id] = { ...model };
       this.sessionStateByThread[thread.id] = { ...(this.sessionStateByThread[thread.id] ?? {}), model: { ...model } };
+      // Queued, not applied: `setThinkingLevel` needs a live Pi, and this thread has not started yet.
+      // A level is only meaningful next to the model it was remembered with, which is exactly here.
+      // Mirrored into session state so the composer reads "model · high" before the first message
+      // instead of switching its own label when Pi starts.
+      if (workspace?.defaultThinking) {
+        this.pendingThinkingByThread[thread.id] = workspace.defaultThinking;
+        this.sessionStateByThread[thread.id] = { ...this.sessionStateByThread[thread.id], thinkingLevel: workspace.defaultThinking };
+      }
     },
     /** Remember (or, with `null`, forget) the model new tasks in the active workspace start with. */
     async setWorkspaceDefaultModel(model: PiModel | null) {
       const workspace = this.activeWorkspace;
       if (!workspace || workspace.discovered) return;
       const thread = this.activeThread;
+      // The level belongs to the model being pinned. Capturing the *current* session's level here is
+      // what makes the pin useful: "opus + high" is the setting people actually want to keep.
+      const thinking = model ? this.activeSessionState?.thinkingLevel ?? "" : "";
       try {
-        const updated = await catalogService.setWorkspaceDefaultModel(workspace.id, model?.provider ?? "", model?.id ?? "");
+        const updated = await catalogService.setWorkspaceDefaults(workspace.id, model?.provider ?? "", model?.id ?? "", thinking);
         const index = this.workspaces.findIndex((item) => item.id === workspace.id);
         if (index >= 0) {
           this.workspaces[index] = {
             ...this.workspaces[index],
             defaultModelProvider: updated.defaultModelProvider,
             defaultModelId: updated.defaultModelId,
+            defaultThinking: updated.defaultThinking,
           };
         }
       } catch (error) {
@@ -2650,6 +2667,7 @@ export const useAppStore = defineStore("app", {
       try {
         await this.ensureSession(thread);
         await this.applyPendingModel(thread);
+        await this.applyPendingThinking(thread);
         if (this.sessionOperationByThread[thread.id]) throw new Error("Session history operation is in progress");
         let commandEchoIsOrphan = false;
         if (!wasRunning) {
@@ -3629,9 +3647,38 @@ export const useAppStore = defineStore("app", {
     },
     async chooseThinkingLevel(level: string) {
       const thread = this.activeThread;
-      if (!thread?.started) return;
+      if (!thread) return;
+      if (!thread.started) {
+        // Same shape as `chooseModel` on an unstarted thread: remember it, show it, apply on start.
+        // Levels come from Pi, so the grid is only populated once a session is live - this path is
+        // reached by pinning a level on a thread that was started earlier and then reused.
+        this.pendingThinkingByThread[thread.id] = level;
+        this.sessionStateByThread[thread.id] = { ...(this.sessionStateByThread[thread.id] ?? {}), thinkingLevel: level };
+        return;
+      }
       await agentService.setThinkingLevel({ threadId: thread.id, level });
       await this.refreshState(thread.id);
+    },
+    /**
+     * Apply the level a thread was created with. Runs right after the model is applied and before the
+     * first prompt, because a level that arrives with the second message has already spent the first
+     * one at the wrong price. A level Pi no longer offers for this model is dropped, not retried: the
+     * workspace default is a preference, and a model without reasoning must still start.
+     */
+    async applyPendingThinking(thread: ThreadSummary) {
+      const pending = this.pendingThinkingByThread[thread.id];
+      if (!pending) return;
+      delete this.pendingThinkingByThread[thread.id];
+      if (!thread.started) return;
+      try {
+        await this.refreshThinkingLevels(thread.id);
+        const available = this.thinkingLevelsByThread[thread.id] ?? [];
+        if (available.length && !available.includes(pending)) return;
+        await agentService.setThinkingLevel({ threadId: thread.id, level: pending });
+        await this.refreshState(thread.id);
+      } catch {
+        // Keep the model; losing the level only costs the default, and the composer shows the truth.
+      }
     },
     async setSteeringMode(mode: QueueMode) {
       const thread = this.activeThread;

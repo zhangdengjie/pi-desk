@@ -100,10 +100,11 @@ export function SessionSnapshotRef(request: domain$0.SessionSnapshotRequest): $C
 }
 
 /**
- * SetWorkspaceDefaultModel remembers the model new tasks in a workspace start with. Stored on the
- * workspace record rather than in desktop preferences because preferences are rewritten wholesale on
- * every draft save, and losing this to a racing write would silently change which model runs.
+ * SetWorkspaceDefaults remembers the model and reasoning level new tasks in a workspace start with.
+ * Stored on the workspace record rather than in desktop preferences because preferences are rewritten
+ * wholesale on every draft save, and losing this to a racing write would silently change which model
+ * runs - and at which price.
  */
-export function SetWorkspaceDefaultModel(request: domain$0.WorkspaceDefaultModelRequest): $CancellablePromise<domain$0.WorkspaceSummary> {
-    return $Call.ByID(3077453046, request);
+export function SetWorkspaceDefaults(request: domain$0.WorkspaceDefaultsRequest): $CancellablePromise<domain$0.WorkspaceSummary> {
+    return $Call.ByID(3211735766, request);
 }

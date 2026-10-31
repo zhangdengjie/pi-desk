@@ -117,7 +117,13 @@ const workspaceDefaultKey = computed(() => {
   return `${workspace.defaultModelProvider}\u0000${workspace.defaultModelId}`;
 });
 const currentModelKey = computed(() => (currentModel.value ? `${currentModel.value.provider}\u0000${currentModel.value.id}` : ""));
-const workspaceDefaultIsCurrent = computed(() => workspaceDefaultKey.value !== "" && workspaceDefaultKey.value === currentModelKey.value);
+const workspaceDefaultIsCurrent = computed(() => {
+  const workspace = appStore.activeWorkspace;
+  if (workspaceDefaultKey.value === "" || workspaceDefaultKey.value !== currentModelKey.value) return false;
+  // The level is half the preference: pinning "opus + high" and then dropping to "low" must not
+  // keep reading as "this workspace already defaults to what I have".
+  return (workspace?.defaultThinking ?? "") === (appStore.activeSessionState?.thinkingLevel ?? "");
+});
 const canPinWorkspaceDefault = computed(() => Boolean(appStore.activeWorkspace && !appStore.activeWorkspace.discovered && currentModel.value));
 const sessionStats = computed(() => appStore.activeSessionStats);
 const tokenUsage = computed(() => sessionStats.value?.tokens);

@@ -86,6 +86,7 @@ type stateWorkspaceRecord struct {
 	Trust                string        `json:"trust"`
 	DefaultModelProvider string        `json:"defaultModelProvider,omitempty"`
 	DefaultModelID       string        `json:"defaultModelId,omitempty"`
+	DefaultThinking      string        `json:"defaultThinking,omitempty"`
 	AddedAt              time.Time     `json:"addedAt"`
 	LastOpenedAt         time.Time     `json:"lastOpenedAt"`
 }
@@ -106,7 +107,8 @@ func stateRecordFromRecord(record Record) (stateWorkspaceRecord, error) {
 	return stateWorkspaceRecord{
 		ID: record.ID, Name: record.Name, Location: location, Trust: record.Trust,
 		DefaultModelProvider: record.DefaultModelProvider, DefaultModelID: record.DefaultModelID,
-		AddedAt: record.AddedAt, LastOpenedAt: record.LastOpenedAt,
+		DefaultThinking: record.DefaultThinking,
+		AddedAt:         record.AddedAt, LastOpenedAt: record.LastOpenedAt,
 	}, nil
 }
 
@@ -114,7 +116,8 @@ func (record stateWorkspaceRecord) toRecord(version int) (Record, error) {
 	result := Record{
 		ID: record.ID, Name: record.Name, Trust: record.Trust,
 		DefaultModelProvider: record.DefaultModelProvider, DefaultModelID: record.DefaultModelID,
-		AddedAt: record.AddedAt, LastOpenedAt: record.LastOpenedAt,
+		DefaultThinking: record.DefaultThinking,
+		AddedAt:         record.AddedAt, LastOpenedAt: record.LastOpenedAt,
 	}
 	if version < 6 {
 		if strings.TrimSpace(record.Path) == "" {
@@ -158,6 +161,9 @@ func validateRecord(record Record) error {
 	}
 	if record.DefaultModelProvider != "" && (!validScheduledModelIdentifier(record.DefaultModelProvider) || !validScheduledModelIdentifier(record.DefaultModelID)) {
 		return errors.New("workspace default model is invalid")
+	}
+	if record.DefaultThinking != "" && (record.DefaultModelProvider == "" || !validScheduledThinkingLevel(record.DefaultThinking)) {
+		return errors.New("workspace default thinking level is invalid")
 	}
 	switch record.Location.Kind {
 	case KindLocal:

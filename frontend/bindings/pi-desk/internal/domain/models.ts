@@ -1282,13 +1282,15 @@ export interface WorkspaceApplication {
 }
 
 /**
- * WorkspaceDefaultModelRequest sets (or, with an empty Provider and ModelID, clears) the model that
- * new tasks in the workspace start with.
+ * WorkspaceDefaultsRequest sets (or, with every field empty, clears) the model and reasoning level
+ * that new tasks in the workspace start with. ThinkingLevel is only meaningful next to a model:
+ * levels are per-model, so a level without one would be applied to whatever runs next.
  */
-export interface WorkspaceDefaultModelRequest {
+export interface WorkspaceDefaultsRequest {
     "id": string;
     "provider": string;
     "modelId": string;
+    "thinkingLevel": string;
 }
 
 export interface WorkspaceRequest {
@@ -1308,8 +1310,10 @@ export interface WorkspaceSummary {
     "lastOpenedAt": string;
 
     /**
-     * Model a new task in this workspace starts with; empty means "whatever Pi was left on".
+     * Model (and its reasoning level) a new task in this workspace starts with; empty means
+     * "whatever Pi was left on".
      */
     "defaultModelProvider"?: string;
     "defaultModelId"?: string;
+    "defaultThinking"?: string;
 }

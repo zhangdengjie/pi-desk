@@ -41,8 +41,12 @@ type Record struct {
 	// draft save, and a preference that can be lost to a racing write is worse than no preference.
 	DefaultModelProvider string
 	DefaultModelID       string
-	AddedAt              time.Time
-	LastOpenedAt         time.Time
+	// DefaultThinking is the reasoning level that goes with DefaultModelProvider/ID. Levels are
+	// per-model (a model without reasoning offers none), so it is stored as a pair and cleared
+	// together - a level remembered against the wrong model is a silent downgrade.
+	DefaultThinking string
+	AddedAt         time.Time
+	LastOpenedAt    time.Time
 }
 
 type ThreadRecord struct {
@@ -279,17 +283,22 @@ func (catalog *Catalog) Add(path, trust string) (Record, error) {
 	return record, nil
 }
 
-// SetDefaultModel stores the model new tasks in this workspace start with. Both fields empty clears
-// the preference. Nothing about access depends on it, so no re-validation of trust is needed.
-func (catalog *Catalog) SetDefaultModel(id, provider, modelID string) (Record, error) {
+// SetDefaults stores the model (and its reasoning level) that new tasks in this workspace start
+// with. All fields empty clears the preference. Nothing about access depends on it, so no
+// re-validation of trust is needed.
+func (catalog *Catalog) SetDefaults(id, provider, modelID, thinking string) (Record, error) {
 	id = strings.TrimSpace(id)
 	provider = strings.TrimSpace(provider)
 	modelID = strings.TrimSpace(modelID)
+	thinking = strings.TrimSpace(thinking)
 	if (provider == "") != (modelID == "") {
 		return Record{}, errors.New("default model needs both a provider and a model id")
 	}
 	if provider != "" && (!validScheduledModelIdentifier(provider) || !validScheduledModelIdentifier(modelID)) {
 		return Record{}, errors.New("default model is invalid")
+	}
+	if thinking != "" && (!validScheduledThinkingLevel(thinking) || provider == "") {
+		return Record{}, errors.New("default thinking level is invalid")
 	}
 
 	catalog.mu.Lock()
@@ -304,6 +313,7 @@ func (catalog *Catalog) SetDefaultModel(id, provider, modelID string) (Record, e
 		}
 		records[index].DefaultModelProvider = provider
 		records[index].DefaultModelID = modelID
+		records[index].DefaultThinking = thinking
 		if err := catalog.saveLocked(records, catalog.desktop); err != nil {
 			return Record{}, err
 		}

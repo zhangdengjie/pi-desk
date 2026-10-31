@@ -28,8 +28,8 @@ export const catalogService = {
   async renameWorkspace(id: string, name: string): Promise<WorkspaceSummary> {
     return await CatalogService.RenameWorkspace({ id, name });
   },
-  async setWorkspaceDefaultModel(id: string, provider: string, modelId: string): Promise<WorkspaceSummary> {
-    return await CatalogService.SetWorkspaceDefaultModel({ id, provider, modelId });
+  async setWorkspaceDefaults(id: string, provider: string, modelId: string, thinkingLevel: string): Promise<WorkspaceSummary> {
+    return await CatalogService.SetWorkspaceDefaults({ id, provider, modelId, thinkingLevel });
   },
   async removeWorkspace(id: string): Promise<void> {
     await CatalogService.RemoveWorkspace({ id });
