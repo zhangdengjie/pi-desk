@@ -126,6 +126,9 @@ export type {
     SessionModel,
     SessionModelUsage,
     SessionNameRequest,
+    SessionSearchHit,
+    SessionSearchRequest,
+    SessionSearchResult,
     SessionSearchText,
     SessionSnapshot,
     SessionSnapshotRequest,
@@ -152,6 +155,7 @@ export type {
     UserConfigView,
     WindowState,
     WorkspaceApplication,
+    WorkspaceDefaultsRequest,
     WorkspaceRequest,
     WorkspaceSummary
 } from "./models.js";

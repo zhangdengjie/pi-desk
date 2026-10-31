@@ -39,6 +39,8 @@ type sessionLister interface {
 	// SearchText answers the history search with searchable text only - never image bytes or tool
 	// arguments (`sessionindex`). It is context-bound because a large session must be cancellable.
 	SearchText(context.Context, string) (string, int, error)
+	// SearchSessions answers the cross-session search (`sessionindex/search.go`).
+	SearchSessions(context.Context, string, sessionindex.SearchOptions) (sessionindex.SearchResult, error)
 }
 
 type folderPicker func(initialPath string) (string, error)
@@ -110,6 +112,18 @@ func (service *CatalogService) AddWorkspace(request domain.AddWorkspaceRequest) 
 
 func (service *CatalogService) RenameWorkspace(request domain.RenameWorkspaceRequest) (domain.WorkspaceSummary, error) {
 	record, err := service.catalog.Rename(request.ID, request.Name)
+	if err != nil {
+		return domain.WorkspaceSummary{}, err
+	}
+	return workspaceSummary(record), nil
+}
+
+// SetWorkspaceDefaults remembers the model and reasoning level new tasks in a workspace start with.
+// Stored on the workspace record rather than in desktop preferences because preferences are rewritten
+// wholesale on every draft save, and losing this to a racing write would silently change which model
+// runs - and at which price.
+func (service *CatalogService) SetWorkspaceDefaults(request domain.WorkspaceDefaultsRequest) (domain.WorkspaceSummary, error) {
+	record, err := service.catalog.SetDefaults(strings.TrimSpace(request.ID), request.Provider, request.ModelID, request.ThinkingLevel)
 	if err != nil {
 		return domain.WorkspaceSummary{}, err
 	}
@@ -351,6 +365,22 @@ func (service *CatalogService) SearchSessionText(ctx context.Context, request do
 	return domain.SessionSearchText{Text: text, MessageCount: count}, err
 }
 
+// SearchAllSessions greps every local transcript for a phrase. Remote (SSH) sessions live on the
+// other machine and are not covered - the same boundary SearchSessionText already has.
+func (service *CatalogService) SearchAllSessions(ctx context.Context, request domain.SessionSearchRequest) (domain.SessionSearchResult, error) {
+	result, err := service.index.SearchSessions(ctx, request.Query, sessionindex.SearchOptions{Limit: request.Limit})
+	if err != nil {
+		return domain.SessionSearchResult{}, err
+	}
+	hits := make([]domain.SessionSearchHit, 0, len(result.Hits))
+	for _, hit := range result.Hits {
+		hits = append(hits, domain.SessionSearchHit{
+			Path: hit.Path, Role: hit.Role, Snippet: hit.Snippet, Matches: hit.Matches, ModifiedAt: hit.ModifiedAt,
+		})
+	}
+	return domain.SessionSearchResult{Hits: hits, Truncated: result.Truncated}, nil
+}
+
 func (service *CatalogService) GetSessionUsage(request domain.ListSessionsRequest) (domain.SessionUsageSummary, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), sessionListTimeout)
 	defer cancel()
@@ -590,6 +620,8 @@ func workspaceSummary(record workspace.Record) domain.WorkspaceSummary {
 	summary := domain.WorkspaceSummary{
 		ID: record.ID, Name: record.Name, Path: record.Path, Kind: string(record.Location.Kind),
 		Trust: record.Trust, AddedAt: record.AddedAt, LastOpenedAt: record.LastOpenedAt,
+		DefaultModelProvider: record.DefaultModelProvider, DefaultModelID: record.DefaultModelID,
+		DefaultThinking: record.DefaultThinking,
 	}
 	if record.Location.Kind == workspace.KindSSH {
 		summary.TargetID = record.Location.SSH.TargetID

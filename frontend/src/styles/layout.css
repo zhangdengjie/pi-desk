@@ -2043,7 +2043,10 @@ html.is-resizing-pane .inspector {
 }
 
 .markdown-body code {
-  padding: 1px 4px;
+  /* 3px, not 4: a full-width `（` next to a pill already carries its own side bearing, and the two
+     together opened a visible hole in mixed CJK/code lines. The vertical 1px stays because it is
+     what keeps the pill's box from clipping the ascenders of 13px mono. */
+  padding: 1px 3px;
   /* The three `--code-inline-*` properties are written together by App.vue when the reader picks their
      own colour (Settings > 外观 > 行内代码): text in that colour, no grey ground, no pill outline. With
      nothing picked they fall back to the theme's own pill, so the default look does not move. */
@@ -2051,7 +2054,10 @@ html.is-resizing-pane .inspector {
   border-radius: 4px;
   background: var(--code-inline-bg, var(--bg-code));
   color: var(--code-inline-color, var(--text-code));
-  font-family: "Cascadia Code", Consolas, monospace;
+  /* Was a hardcoded "Cascadia Code", Consolas, monospace: on macOS both names are usually absent,
+     so inline code silently fell through to the generic monospace (Courier) while fenced blocks
+     used --font-mono. Same token as the blocks now. */
+  font-family: var(--font-code-stack);
   font-size: calc(11.5px + var(--font-size-delta));
 }
 
@@ -3694,6 +3700,33 @@ html.is-resizing-pane .inspector {
 
 .thinking-level-grid button {
   min-height: 30px;
+}
+
+/* The "make this the workspace default" row. Separated by a rule because it is not a choice of the
+   current conversation like everything above it - it writes to the workspace, not the thread. */
+.model-menu-default {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: calc(11.5px + var(--font-size-delta));
+}
+
+.model-menu-default:hover {
+  color: var(--text);
+  background: var(--bg-hover) !important;
+}
+
+.model-menu-default.is-pinned {
+  color: var(--accent);
+}
+
+.model-menu-default.is-pinned svg {
+  fill: currentColor;
 }
 
 .model-menu button[aria-checked="true"],
@@ -9398,6 +9431,33 @@ article.mcp-server-row {
   min-height: 30px;
 }
 
+/* The "make this the workspace default" row. Separated by a rule because it is not a choice of the
+   current conversation like everything above it - it writes to the workspace, not the thread. */
+.model-menu-default {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: calc(11.5px + var(--font-size-delta));
+}
+
+.model-menu-default:hover {
+  color: var(--text);
+  background: var(--bg-hover) !important;
+}
+
+.model-menu-default.is-pinned {
+  color: var(--accent);
+}
+
+.model-menu-default.is-pinned svg {
+  fill: currentColor;
+}
+
 .timeline {
   max-width: none;
 }
@@ -9693,13 +9753,15 @@ article.mcp-server-row {
 
 .composer-token-metric small {
   color: var(--text-muted);
-  font-size: calc(9.5px + var(--font-size-delta));
+  /* 9.5px was below the size where a CJK glyph keeps its counters: at that size the label reads as a
+     grey smear next to the mono number it names. 10.5px still fits the 26px strip. */
+  font-size: calc(10.5px + var(--font-size-delta));
 }
 
 .composer-token-metric strong {
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  font-size: calc(10px + var(--font-size-delta));
+  font-size: calc(11px + var(--font-size-delta));
   font-weight: 600;
 }
 

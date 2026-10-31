@@ -490,3 +490,68 @@ func TestCatalogRejectsInvalidScheduledTasks(t *testing.T) {
 		t.Fatal("SaveDesktop accepted an invalid scheduled task thinking level")
 	}
 }
+
+func TestCatalogPersistsWorkspaceDefaultModel(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "state.json")
+	catalog := NewCatalog(path)
+	workspacePath := filepath.Join(root, "repo")
+	if err := os.MkdirAll(workspacePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record, err := catalog.Add(workspacePath, "approve")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := catalog.SetDefaults(record.ID, "anthropic", "claude-sonnet-4-5", "high")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.DefaultModelProvider != "anthropic" || updated.DefaultModelID != "claude-sonnet-4-5" || updated.DefaultThinking != "high" {
+		t.Fatalf("unexpected record: %#v", updated)
+	}
+
+	// Re-registering the same folder (the "new task in an existing workspace" path) must not drop it.
+	if _, err := catalog.Add(workspacePath, "approve"); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded := NewCatalog(path)
+	records, err := reloaded.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || records[0].DefaultModelProvider != "anthropic" || records[0].DefaultModelID != "claude-sonnet-4-5" || records[0].DefaultThinking != "high" {
+		t.Fatalf("default model did not survive a reload: %#v", records)
+	}
+
+	// Clearing it is spelled as two empty fields, and must also survive a reload.
+	cleared, err := reloaded.SetDefaults(records[0].ID, "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.DefaultModelProvider != "" || cleared.DefaultModelID != "" || cleared.DefaultThinking != "" {
+		t.Fatalf("default model was not cleared: %#v", cleared)
+	}
+	again, err := NewCatalog(path).List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again[0].DefaultModelProvider != "" || again[0].DefaultModelID != "" || again[0].DefaultThinking != "" {
+		t.Fatalf("cleared default model came back: %#v", again[0])
+	}
+
+	if _, err := reloaded.SetDefaults(records[0].ID, "anthropic", "", ""); err == nil {
+		t.Fatal("expected a half-specified default model to be rejected")
+	}
+	if _, err := reloaded.SetDefaults(records[0].ID, "anthropic", "x", "turbo"); err == nil {
+		t.Fatal("expected an unknown thinking level to be rejected")
+	}
+	if _, err := reloaded.SetDefaults(records[0].ID, "", "", "high"); err == nil {
+		t.Fatal("expected a thinking level without a model to be rejected")
+	}
+	if _, err := reloaded.SetDefaults("workspace-missing", "anthropic", "x", ""); err == nil {
+		t.Fatal("expected an unknown workspace to be rejected")
+	}
+}

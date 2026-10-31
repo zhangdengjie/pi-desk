@@ -96,6 +96,10 @@ func (index *fakeSessionLister) SearchText(context.Context, string) (string, int
 	return "search text", len(index.messages), index.err
 }
 
+func (index *fakeSessionLister) SearchSessions(context.Context, string, sessionindex.SearchOptions) (sessionindex.SearchResult, error) {
+	return sessionindex.SearchResult{Hits: []sessionindex.SearchHit{{Path: "one.jsonl", Role: "user", Snippet: "search text", Matches: 1}}}, index.err
+}
+
 func TestCatalogServiceWorkspaceLifecycle(t *testing.T) {
 	root := t.TempDir()
 	project := filepath.Join(root, "project")

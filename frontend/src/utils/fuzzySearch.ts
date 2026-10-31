@@ -24,7 +24,13 @@ export function rankFuzzy<T>(items: T[], query: string, targets: (item: T) => st
     .map((item, index) => ({
       item,
       index,
-      score: Math.max(...targets(item).map((target, targetIndex) => fuzzyScore(target, needle) + (targetIndex === 0 ? 24 : 0))),
+      // The +24 is a tie-breaker for a hit on the primary target, never a floor. Added to a miss it
+      // made every item "match" (-1 + 24 = 23), so the filter below never rejected anything: a `@zzz`
+      // mention listed eight arbitrary files, and a quick-switch query kept every session.
+      score: Math.max(...targets(item).map((target, targetIndex) => {
+        const base = fuzzyScore(target, needle);
+        return base < 0 ? -1 : base + (targetIndex === 0 ? 24 : 0);
+      })),
     }))
     .filter((result) => result.score >= 0)
     .sort((left, right) => right.score - left.score || left.index - right.index)

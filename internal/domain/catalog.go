@@ -15,6 +15,11 @@ type WorkspaceSummary struct {
 	Trust        string    `json:"trust"`
 	AddedAt      time.Time `json:"addedAt"`
 	LastOpenedAt time.Time `json:"lastOpenedAt"`
+	// Model (and its reasoning level) a new task in this workspace starts with; empty means
+	// "whatever Pi was left on".
+	DefaultModelProvider string `json:"defaultModelProvider,omitempty"`
+	DefaultModelID       string `json:"defaultModelId,omitempty"`
+	DefaultThinking      string `json:"defaultThinking,omitempty"`
 }
 
 type RemoteAliasSummary struct {
@@ -74,6 +79,16 @@ type RenameWorkspaceRequest struct {
 	Name string `json:"name"`
 }
 
+// WorkspaceDefaultsRequest sets (or, with every field empty, clears) the model and reasoning level
+// that new tasks in the workspace start with. ThinkingLevel is only meaningful next to a model:
+// levels are per-model, so a level without one would be applied to whatever runs next.
+type WorkspaceDefaultsRequest struct {
+	ID            string `json:"id"`
+	Provider      string `json:"provider"`
+	ModelID       string `json:"modelId"`
+	ThinkingLevel string `json:"thinkingLevel"`
+}
+
 type WorkspaceRequest struct {
 	ID   string `json:"id"`
 	Path string `json:"path,omitempty"`
@@ -126,6 +141,28 @@ type SessionSnapshot struct {
 type SessionSearchText struct {
 	Text         string `json:"text"`
 	MessageCount int    `json:"messageCount"`
+}
+
+// SessionSearchRequest is a cross-session prose search. Limit caps the sessions returned, not the
+// matches inside them.
+type SessionSearchRequest struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+type SessionSearchHit struct {
+	Path       string    `json:"path"`
+	Role       string    `json:"role"`
+	Snippet    string    `json:"snippet"`
+	Matches    int       `json:"matches"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+}
+
+// SessionSearchResult carries Truncated because "no more hits" and "stopped looking" are different
+// answers, and only one of them is worth telling the reader there is nothing to find.
+type SessionSearchResult struct {
+	Hits      []SessionSearchHit `json:"hits"`
+	Truncated bool               `json:"truncated"`
 }
 
 type SessionTokenUsage struct {

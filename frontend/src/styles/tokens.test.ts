@@ -56,7 +56,12 @@ describe("teleported dialog theme inheritance", () => {
 
   it("publishes global font-family and root-size preference tokens", async () => {
     const tokens = await tokensText();
-    expect(tokens).toContain('--font-interface-shipped: "PingFang SC",');
+    // Latin first, CJK second: `-apple-system` is SF Pro on macOS and falls back to PingFang for CJK,
+    // which is the pairing that makes the shipped stack agree with the 系统字体 option. Pinning the
+    // order (not just the presence of PingFang) is the point: a stack that leads with PingFang sets
+    // every Latin word in PingFang's companion face, which is what this change moved away from.
+    expect(tokens).toMatch(/--font-interface-shipped:\s*-apple-system,/);
+    expect(tokens).toMatch(/--font-interface-shipped:[^;]*"PingFang SC"/);
     expect(tokens).toContain(':root[data-font-family="system"]');
     expect(tokens).toContain(':root[data-font-family="serif"]');
     expect(tokens).toContain(':root[data-font-family="mono"]');

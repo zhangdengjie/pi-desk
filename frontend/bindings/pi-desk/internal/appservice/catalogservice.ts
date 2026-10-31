@@ -77,6 +77,14 @@ export function SaveDesktopState(state: domain$0.DesktopState): $CancellableProm
     return $Call.ByID(2642902473, state);
 }
 
+/**
+ * SearchAllSessions greps every local transcript for a phrase. Remote (SSH) sessions live on the
+ * other machine and are not covered - the same boundary SearchSessionText already has.
+ */
+export function SearchAllSessions(request: domain$0.SessionSearchRequest): $CancellablePromise<domain$0.SessionSearchResult> {
+    return $Call.ByID(1495670897, request);
+}
+
 export function SearchSessionText(request: domain$0.SessionSnapshotRequest): $CancellablePromise<domain$0.SessionSearchText> {
     return $Call.ByID(3078201352, request);
 }
@@ -89,4 +97,14 @@ export function SearchSessionText(request: domain$0.SessionSnapshotRequest): $Ca
  */
 export function SessionSnapshotRef(request: domain$0.SessionSnapshotRequest): $CancellablePromise<string> {
     return $Call.ByID(2204929740, request);
+}
+
+/**
+ * SetWorkspaceDefaults remembers the model and reasoning level new tasks in a workspace start with.
+ * Stored on the workspace record rather than in desktop preferences because preferences are rewritten
+ * wholesale on every draft save, and losing this to a racing write would silently change which model
+ * runs - and at which price.
+ */
+export function SetWorkspaceDefaults(request: domain$0.WorkspaceDefaultsRequest): $CancellablePromise<domain$0.WorkspaceSummary> {
+    return $Call.ByID(3211735766, request);
 }

@@ -2,7 +2,7 @@ import { CatalogService } from "../../bindings/pi-desk/internal/appservice";
 import type { CancellablePromise } from "@wailsio/runtime";
 import type { SessionSearchText } from "../../bindings/pi-desk/internal/domain";
 import { fetchSessionSnapshot } from "../utils/sessionTranscript";
-import type { DeletedSession, DesktopState, SessionSnapshot, SessionSummary, SessionUsageSummary, WorkspaceApplication, WorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
+import type { DeletedSession, DesktopState, SessionSearchResult, SessionSnapshot, SessionSummary, SessionUsageSummary, WorkspaceApplication, WorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
 
 const MAX_WORKSPACE_ICON_DATA_URL = 256 * 1024;
 const PNG_DATA_URL_PATTERN = /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/;
@@ -28,6 +28,9 @@ export const catalogService = {
   async renameWorkspace(id: string, name: string): Promise<WorkspaceSummary> {
     return await CatalogService.RenameWorkspace({ id, name });
   },
+  async setWorkspaceDefaults(id: string, provider: string, modelId: string, thinkingLevel: string): Promise<WorkspaceSummary> {
+    return await CatalogService.SetWorkspaceDefaults({ id, provider, modelId, thinkingLevel });
+  },
   async removeWorkspace(id: string): Promise<void> {
     await CatalogService.RemoveWorkspace({ id });
   },
@@ -45,6 +48,9 @@ export const catalogService = {
   },
   async pickWorkspace(initialPath?: string): Promise<string> {
     return await CatalogService.PickWorkspace({ initialPath });
+  },
+  async searchAllSessions(query: string, limit = 20): Promise<SessionSearchResult> {
+    return await CatalogService.SearchAllSessions({ query, limit });
   },
   async listSessions(workspacePath?: string): Promise<SessionSummary[]> {
     return (await CatalogService.ListSessions({ workspacePath })) ?? [];

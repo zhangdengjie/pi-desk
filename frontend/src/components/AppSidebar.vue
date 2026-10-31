@@ -38,6 +38,7 @@ import ThreadRowMarks from "./ThreadRowMarks.vue";
 import { useAppStore, type ThreadSummary } from "../stores/app";
 import { tr } from "../i18n";
 import { threadTooltip } from "../utils/threadLabel";
+import { relativeTimeText } from "../utils/relativeTime";
 import { PANEL_SETTLE_MS } from "../utils/paneMotion";
 
 const appStore = useAppStore();
@@ -104,18 +105,7 @@ const workspaceMenuItem = computed(() => appStore.workspaces.find((workspace) =>
 const workspaceRemovalItem = computed(() => appStore.workspaces.find((workspace) => workspace.id === workspaceRemovalID.value));
 
 function relativeTime(value?: string): string {
-  const timestamp = Date.parse(value || "");
-  if (!Number.isFinite(timestamp)) return "";
-  const minutes = Math.max(0, Math.floor((relativeTimeNow.value - timestamp) / 60_000));
-  if (minutes < 1) return tr("sidebar.justNow");
-  if (minutes < 60) return tr("sidebar.relativeMinutes", { count: minutes });
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return tr("sidebar.relativeHours", { count: hours });
-  const days = Math.floor(hours / 24);
-  if (days < 30) return tr("sidebar.relativeDays", { count: days });
-  const months = Math.floor(days / 30);
-  if (months < 12) return tr("sidebar.relativeMonths", { count: months });
-  return tr("sidebar.relativeYears", { count: Math.floor(months / 12) });
+  return relativeTimeText(value, relativeTimeNow.value);
 }
 
 function comparablePath(path: string): string {

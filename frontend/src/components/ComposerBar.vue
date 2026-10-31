@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { ArrowDownToLine, ArrowUp, ArrowUpFromLine, BrainCircuit, Check, ChevronDown, CornerDownRight, Database, File, FilePlus2, Forward, Gauge, ImagePlus, LoaderCircle, Pencil, ShieldAlert, ShieldCheck, Slash, SlidersHorizontal, Square, Trash2, X } from "lucide-vue-next";
+import { ArrowDownToLine, ArrowUp, ArrowUpFromLine, BrainCircuit, Check, ChevronDown, CornerDownRight, Database, File, FilePlus2, Forward, Gauge, ImagePlus, LoaderCircle, Pencil, Pin, ShieldAlert, ShieldCheck, Slash, SlidersHorizontal, Square, Trash2, X } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { consumeMentionInsert, useAppStore, type PiModel, type SettingsSection, type SlashCommand } from "../stores/app";
 import { MAX_ATTACHED_IMAGES, MAX_IMAGE_BASE64_CHARS, prepareImage, type PreparedImage } from "../utils/imageAttachments";
@@ -109,6 +109,22 @@ const modelButtonLabel = computed(() => {
   const level = appStore.activeModelPending ? undefined : appStore.activeSessionState?.thinkingLevel;
   return level ? `${label} · ${level}` : label;
 });
+// The workspace's remembered model, if it has one. `activeWorkspace` is undefined for a thread whose
+// catalog record is gone (a discovered path), and such a workspace cannot be given a default.
+const workspaceDefaultKey = computed(() => {
+  const workspace = appStore.activeWorkspace;
+  if (!workspace?.defaultModelProvider || !workspace.defaultModelId) return "";
+  return `${workspace.defaultModelProvider}\u0000${workspace.defaultModelId}`;
+});
+const currentModelKey = computed(() => (currentModel.value ? `${currentModel.value.provider}\u0000${currentModel.value.id}` : ""));
+const workspaceDefaultIsCurrent = computed(() => {
+  const workspace = appStore.activeWorkspace;
+  if (workspaceDefaultKey.value === "" || workspaceDefaultKey.value !== currentModelKey.value) return false;
+  // The level is half the preference: pinning "opus + high" and then dropping to "low" must not
+  // keep reading as "this workspace already defaults to what I have".
+  return (workspace?.defaultThinking ?? "") === (appStore.activeSessionState?.thinkingLevel ?? "");
+});
+const canPinWorkspaceDefault = computed(() => Boolean(appStore.activeWorkspace && !appStore.activeWorkspace.discovered && currentModel.value));
 const sessionStats = computed(() => appStore.activeSessionStats);
 const tokenUsage = computed(() => sessionStats.value?.tokens);
 const contextTokens = computed(() => sessionStats.value?.contextUsage?.tokens);
@@ -689,6 +705,11 @@ async function chooseModel(model: PiModel) {
   }
 }
 
+async function toggleWorkspaceDefaultModel() {
+  if (!currentModel.value) return;
+  await appStore.setWorkspaceDefaultModel(workspaceDefaultIsCurrent.value ? null : currentModel.value);
+}
+
 function toggleAccessMenu() {
   accessMenuOpen.value = !accessMenuOpen.value;
   if (accessMenuOpen.value) void nextTick(positionOpenMenus);
@@ -711,14 +732,23 @@ function closeMenus(event: PointerEvent) {
   if (!commandMenu.value?.contains(target) && !commandButton.value?.contains(target)) commandButtonOpen.value = false;
 }
 
+/* The transcript's selection toolbar cannot reach into this component, so it asks for focus with a
+   window event after it has written the quote into the draft. The draft itself travels through the
+   store (`insertQuotedSelection`), which is what the editor renders. */
+function focusComposer() {
+  void nextTick().then(() => markdownEditor.value?.focus());
+}
+
 onMounted(() => {
   document.addEventListener("pointerdown", closeMenus);
   window.addEventListener("resize", positionOpenMenus);
+  window.addEventListener("pidesk:focus-composer", focusComposer);
 });
 onBeforeUnmount(() => {
   pasteEpoch++;
   document.removeEventListener("pointerdown", closeMenus);
   window.removeEventListener("resize", positionOpenMenus);
+  window.removeEventListener("pidesk:focus-composer", focusComposer);
 });
 </script>
 
@@ -926,6 +956,17 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
               </template>
+              <button
+                v-if="canPinWorkspaceDefault"
+                type="button"
+                class="model-menu-default"
+                :class="{ 'is-pinned': workspaceDefaultIsCurrent }"
+                :title="tr('composer.workspaceDefaultHint')"
+                @click="void toggleWorkspaceDefaultModel()"
+              >
+                <Pin :size="13" :class="{ 'is-filled': workspaceDefaultIsCurrent }" />
+                <span>{{ workspaceDefaultIsCurrent ? tr("composer.workspaceDefaultClear") : tr("composer.workspaceDefaultSet") }}</span>
+              </button>
             </div>
           </div>
           <div ref="accessMenu" class="menu-anchor access-menu-anchor">

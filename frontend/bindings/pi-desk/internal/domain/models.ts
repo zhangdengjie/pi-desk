@@ -990,6 +990,32 @@ export interface SessionNameRequest {
     "name": string;
 }
 
+export interface SessionSearchHit {
+    "path": string;
+    "role": string;
+    "snippet": string;
+    "matches": number;
+    "modifiedAt": string;
+}
+
+/**
+ * SessionSearchRequest is a cross-session prose search. Limit caps the sessions returned, not the
+ * matches inside them.
+ */
+export interface SessionSearchRequest {
+    "query": string;
+    "limit"?: number;
+}
+
+/**
+ * SessionSearchResult carries Truncated because "no more hits" and "stopped looking" are different
+ * answers, and only one of them is worth telling the reader there is nothing to find.
+ */
+export interface SessionSearchResult {
+    "hits": SessionSearchHit[] | null;
+    "truncated": boolean;
+}
+
 export interface SessionSearchText {
     "text": string;
     "messageCount": number;
@@ -1255,6 +1281,18 @@ export interface WorkspaceApplication {
     "iconDataUrl": string;
 }
 
+/**
+ * WorkspaceDefaultsRequest sets (or, with every field empty, clears) the model and reasoning level
+ * that new tasks in the workspace start with. ThinkingLevel is only meaningful next to a model:
+ * levels are per-model, so a level without one would be applied to whatever runs next.
+ */
+export interface WorkspaceDefaultsRequest {
+    "id": string;
+    "provider": string;
+    "modelId": string;
+    "thinkingLevel": string;
+}
+
 export interface WorkspaceRequest {
     "id": string;
     "path"?: string;
@@ -1270,4 +1308,12 @@ export interface WorkspaceSummary {
     "trust": string;
     "addedAt": string;
     "lastOpenedAt": string;
+
+    /**
+     * Model (and its reasoning level) a new task in this workspace starts with; empty means
+     * "whatever Pi was left on".
+     */
+    "defaultModelProvider"?: string;
+    "defaultModelId"?: string;
+    "defaultThinking"?: string;
 }

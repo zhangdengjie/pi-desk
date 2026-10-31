@@ -30,13 +30,23 @@ const (
 )
 
 type Record struct {
-	ID           string
-	Name         string
-	Path         string // Local-only compatibility projection; always empty for SSH.
-	Location     Location
-	Trust        string
-	AddedAt      time.Time
-	LastOpenedAt time.Time
+	ID       string
+	Name     string
+	Path     string // Local-only compatibility projection; always empty for SSH.
+	Location Location
+	Trust    string
+	// DefaultModelProvider/DefaultModelID are the model a *new* task in this workspace starts
+	// with. Empty means "inherit whatever Pi was left on". This is a UI preference, so it lives
+	// beside Trust rather than in the desktop record - the desktop record is rewritten on every
+	// draft save, and a preference that can be lost to a racing write is worse than no preference.
+	DefaultModelProvider string
+	DefaultModelID       string
+	// DefaultThinking is the reasoning level that goes with DefaultModelProvider/ID. Levels are
+	// per-model (a model without reasoning offers none), so it is stored as a pair and cleared
+	// together - a level remembered against the wrong model is a silent downgrade.
+	DefaultThinking string
+	AddedAt         time.Time
+	LastOpenedAt    time.Time
 }
 
 type ThreadRecord struct {
@@ -271,6 +281,46 @@ func (catalog *Catalog) Add(path, trust string) (Record, error) {
 	}
 	catalog.records = records
 	return record, nil
+}
+
+// SetDefaults stores the model (and its reasoning level) that new tasks in this workspace start
+// with. All fields empty clears the preference. Nothing about access depends on it, so no
+// re-validation of trust is needed.
+func (catalog *Catalog) SetDefaults(id, provider, modelID, thinking string) (Record, error) {
+	id = strings.TrimSpace(id)
+	provider = strings.TrimSpace(provider)
+	modelID = strings.TrimSpace(modelID)
+	thinking = strings.TrimSpace(thinking)
+	if (provider == "") != (modelID == "") {
+		return Record{}, errors.New("default model needs both a provider and a model id")
+	}
+	if provider != "" && (!validScheduledModelIdentifier(provider) || !validScheduledModelIdentifier(modelID)) {
+		return Record{}, errors.New("default model is invalid")
+	}
+	if thinking != "" && (!validScheduledThinkingLevel(thinking) || provider == "") {
+		return Record{}, errors.New("default thinking level is invalid")
+	}
+
+	catalog.mu.Lock()
+	defer catalog.mu.Unlock()
+	if err := catalog.loadLocked(); err != nil {
+		return Record{}, err
+	}
+	records := slices.Clone(catalog.records)
+	for index := range records {
+		if records[index].ID != id {
+			continue
+		}
+		records[index].DefaultModelProvider = provider
+		records[index].DefaultModelID = modelID
+		records[index].DefaultThinking = thinking
+		if err := catalog.saveLocked(records, catalog.desktop); err != nil {
+			return Record{}, err
+		}
+		catalog.records = records
+		return records[index], nil
+	}
+	return Record{}, fmt.Errorf("workspace %s not found", id)
 }
 
 func (catalog *Catalog) Remove(id string) error {

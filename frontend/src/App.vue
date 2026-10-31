@@ -13,7 +13,9 @@ import InspectorPanel from "./components/InspectorPanel.vue";
 import NewTaskDialog from "./components/NewTaskDialog.vue";
 import OrphanSessionsDialog from "./components/OrphanSessionsDialog.vue";
 import RemoteReconnectDialog from "./components/RemoteReconnectDialog.vue";
+import QuickSwitcher from "./components/QuickSwitcher.vue";
 import ScheduledTasksPage from "./components/ScheduledTasksPage.vue";
+import SelectionQuoteBar from "./components/SelectionQuoteBar.vue";
 import PaneResizer from "./components/PaneResizer.vue";
 import WindowControls from "./components/WindowControls.vue";
 import { tr } from "./i18n";
@@ -291,6 +293,11 @@ watch(() => [appStore.codeAccent, darkSurface.value] as const, ([accent, dark]) 
       @commit="appStore.setInspectorWidth($event, true)"
     />
     <WindowControls :is-windows="isWindows" />
+    <!-- Teleports to <body>, so it is outside the shell's transforms and can be fixed to the
+         selection's viewport rect. Mounted once, not per pane: the transcript is the only surface
+         that shows it (the component checks for `.timeline` itself). -->
+    <SelectionQuoteBar />
+    <QuickSwitcher />
     <NewTaskDialog v-if="appStore.newTaskOpen" />
     <SettingsDialog v-if="appStore.settingsOpen" />
     <AboutDialog v-if="appStore.aboutOpen" />
