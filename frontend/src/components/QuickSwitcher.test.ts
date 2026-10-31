@@ -106,6 +106,31 @@ describe("QuickSwitcher", () => {
     expect(document.querySelector(".quick-switcher")).toBeNull();
   });
 
+  it("moves exactly one row per arrow press, even from the focused search box", async () => {
+    useAppStore().threads = [
+      thread({ id: "a", title: "one", modifiedAt: "2026-10-31T08:00:00Z" }),
+      thread({ id: "b", title: "two", modifiedAt: "2026-10-30T08:00:00Z" }),
+      thread({ id: "c", title: "three", modifiedAt: "2026-10-29T08:00:00Z" }),
+    ];
+    wrapper = mount(QuickSwitcher, { attachTo: document.body });
+    press({ key: "k", metaKey: true });
+    await settle();
+
+    // Real path: the caret is in the input, so the event starts there and bubbles to document.
+    const input = new DOMWrapper(document.querySelector(".quick-switcher-search input"));
+    const active = () => document.querySelectorAll(".quick-switcher-row")[0] && Array.from(document.querySelectorAll(".quick-switcher-row")).findIndex((row) => row.getAttribute("aria-selected") === "true");
+    expect(active()).toBe(0);
+    await input.trigger("keydown", { key: "ArrowDown" });
+    await settle();
+    expect(active()).toBe(1);
+    await input.trigger("keydown", { key: "ArrowDown" });
+    await settle();
+    expect(active()).toBe(2);
+    await input.trigger("keydown", { key: "ArrowUp" });
+    await settle();
+    expect(active()).toBe(1);
+  });
+
   it("does not stack on top of another dialog", async () => {
     useAppStore().threads = [thread({ id: "a", title: "one" })];
     const other = document.createElement("div");

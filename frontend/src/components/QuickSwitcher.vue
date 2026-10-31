@@ -121,6 +121,9 @@ watch(activeIndex, async () => {
   row?.scrollIntoView({ block: "nearest" });
 });
 
+// One listener, on `document`, and nothing on the input: the palette's keys are handled in the
+// bubble phase after focus lands in the search box, so binding the same handler to the input too
+// ran every arrow key twice (one press = two rows).
 onMounted(() => document.addEventListener("keydown", onKeydown));
 onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
 </script>
@@ -139,7 +142,6 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
             autocomplete="off"
             :placeholder="tr('quickSwitch.placeholder')"
             :aria-label="tr('quickSwitch.placeholder')"
-            @keydown="onKeydown"
           />
         </div>
         <ul v-if="results.length" ref="list" class="quick-switcher-list" role="listbox" :aria-label="tr('quickSwitch.title')">
