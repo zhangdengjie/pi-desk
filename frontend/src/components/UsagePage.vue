@@ -75,6 +75,32 @@ const chartDays = computed<UsageDayUsage[]>(() => {
 
 const chartMax = computed(() => chartDays.value.reduce((max, day) => Math.max(max, day.tokens.total), 0));
 
+/**
+ * The chart lives inside a horizontally scrollable box, so an absolutely positioned card would be
+ * clipped by it. The card is teleported to <body> and positioned from the column's viewport rect.
+ */
+const TOOLTIP_WIDTH = 208;
+const hovered = ref<{ day: UsageDayUsage; left: number; top: number; below: boolean } | null>(null);
+
+function showDayTooltip(day: UsageDayUsage, event: Event) {
+  const element = event.currentTarget as HTMLElement | null;
+  if (!element) return;
+  const rect = element.getBoundingClientRect();
+  const half = TOOLTIP_WIDTH / 2;
+  const left = Math.min(Math.max(rect.left + rect.width / 2, half + 8), window.innerWidth - half - 8);
+  // Flip under the column when there is no room above it (the chart is tall, the topbar is not).
+  const below = rect.top < 170;
+  hovered.value = { day, left, top: below ? rect.bottom + 8 : rect.top - 8, below };
+}
+
+function hideDayTooltip() {
+  hovered.value = null;
+}
+
+function daySummary(day: UsageDayUsage): string {
+  return `${day.date} · ${formatTokens(day.tokens.total)}`;
+}
+
 const sortedWorkspaces = computed(() => {
   const rows = [...workspaces.value];
   rows.sort((a, b) => {
@@ -222,12 +248,15 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
-watch([range, workspaceFilter], () => { void refresh(); });
+watch([range, workspaceFilter], () => {
+  hideDayTooltip();
+  void refresh();
+});
 onMounted(() => { void refresh(); });
 </script>
 
 <template>
-  <section class="usage-page" :class="ui.root" :aria-label="tr('usage.title')">
+  <section class="usage-page" :class="ui.root" :aria-label="tr('usage.title')" @scroll="hideDayTooltip">
     <header class="usage-header">
       <h1>{{ tr("usage.title") }}</h1>
       <p v-if="totals" class="usage-header-meta">{{ tr("usage.messagesCount", { count: formatTokens(totals.messages) }) }}</p>
@@ -304,18 +333,47 @@ onMounted(() => { void refresh(); });
           <span class="usage-legend-item"><i class="usage-swatch is-other"></i>{{ tr("usage.legendOther") }}</span>
         </div>
         <div class="usage-chart" :class="{ 'is-dense': chartDays.length > 14 }">
-          <div v-for="day in chartDays" :key="day.date" class="usage-chart-column" :title="`${day.date} · ${formatTokens(day.tokens.total)}`">
-            <div class="usage-chart-track">
-              <div class="usage-chart-bar" :style="{ height: barHeight(day) }">
+          <button
+            v-for="day in chartDays"
+            :key="day.date"
+            type="button"
+            class="usage-chart-column"
+            :aria-label="daySummary(day)"
+            @mouseenter="showDayTooltip(day, $event)"
+            @focus="showDayTooltip(day, $event)"
+            @mouseleave="hideDayTooltip"
+            @blur="hideDayTooltip"
+          >
+            <span class="usage-chart-track">
+              <span class="usage-chart-bar" :style="{ height: barHeight(day) }">
                 <span class="usage-chart-segment is-other" :style="{ flexGrow: segmentGrow(day).other }"></span>
                 <span class="usage-chart-segment is-output" :style="{ flexGrow: segmentGrow(day).output }"></span>
                 <span class="usage-chart-segment is-input" :style="{ flexGrow: segmentGrow(day).input }"></span>
                 <span class="usage-chart-segment is-cache" :style="{ flexGrow: segmentGrow(day).cache }"></span>
-              </div>
-            </div>
+              </span>
+            </span>
             <span class="usage-chart-label">{{ shortDate(day.date) }}</span>
-          </div>
+          </button>
         </div>
+        <Teleport to="body">
+          <div
+            v-if="hovered"
+            class="usage-chart-tooltip"
+            :class="{ 'is-below': hovered.below }"
+            role="tooltip"
+            :style="{ left: `${hovered.left}px`, top: `${hovered.top}px`, width: `${TOOLTIP_WIDTH}px` }"
+          >
+            <strong>{{ hovered.day.date }}</strong>
+            <dl>
+              <div><dt>{{ tr("usage.kpiTokens") }}</dt><dd>{{ formatTokens(hovered.day.tokens.total) }}</dd></div>
+              <div><dt>{{ tr("usage.legendCacheRead") }}</dt><dd>{{ formatTokens(hovered.day.tokens.cacheRead) }}</dd></div>
+              <div><dt>{{ tr("usage.legendInput") }}</dt><dd>{{ formatTokens(hovered.day.tokens.input) }}</dd></div>
+              <div><dt>{{ tr("usage.legendOutput") }}</dt><dd>{{ formatTokens(hovered.day.tokens.output) }}</dd></div>
+              <div><dt>{{ tr("usage.kpiMessages") }}</dt><dd>{{ formatTokens(hovered.day.messages) }}</dd></div>
+              <div><dt>{{ tr("usage.kpiSessions") }}</dt><dd>{{ formatTokens(hovered.day.sessions) }}</dd></div>
+            </dl>
+          </div>
+        </Teleport>
       </section>
 
       <section class="usage-panel">
@@ -677,6 +735,69 @@ onMounted(() => { void refresh(); });
   flex-direction: column;
   align-items: center;
   gap: var(--space-1);
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.usage-chart-column:hover .usage-chart-bar,
+.usage-chart-column:focus-visible .usage-chart-bar {
+  filter: saturate(1.2) brightness(1.03);
+}
+
+.usage-chart-column:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.usage-chart-tooltip {
+  position: fixed;
+  z-index: 200;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
+  color: var(--text);
+  font-size: var(--font-size-label);
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+}
+
+.usage-chart-tooltip.is-below {
+  transform: translate(-50%, 0);
+}
+
+.usage-chart-tooltip strong {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-chart-tooltip dl {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.usage-chart-tooltip dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.usage-chart-tooltip dt {
+  color: var(--text-muted);
+}
+
+.usage-chart-tooltip dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .usage-chart.is-dense .usage-chart-column {
