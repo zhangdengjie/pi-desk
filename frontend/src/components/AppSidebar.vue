@@ -3,6 +3,7 @@ import { ui } from "../ui/classes";
 import {
   Archive,
   ArchiveRestore,
+  BarChart3,
   Copy,
   CalendarClock,
   Download,
@@ -414,6 +415,18 @@ onBeforeUnmount(() => {
       >
         <CalendarClock :size="20" :stroke-width="1.7" />
         <span>{{ tr("sidebar.scheduledTasks") }}</span>
+      </button>
+      <button
+        v-if="!collapsed"
+        class="flex h-8 w-full items-center gap-2 whitespace-nowrap rounded-md border border-transparent bg-transparent px-2.5 text-[var(--font-size-body)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] aria-pressed:bg-[var(--bg-active)] aria-pressed:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
+        type="button"
+        :title="tr('usage.title')"
+        :aria-label="tr('usage.title')"
+        :aria-pressed="appStore.activePage === 'usage'"
+        @click="appStore.openUsage"
+      >
+        <BarChart3 :size="20" :stroke-width="1.7" />
+        <span>{{ tr("usage.title") }}</span>
       </button>
       <div class="primary-nav-row flex min-w-0 items-center">
         <button v-if="!collapsed" class="primary-nav-search flex h-8 w-full min-w-0 items-center gap-2 whitespace-nowrap rounded-md border border-transparent bg-transparent px-2.5 text-[var(--font-size-body)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]" type="button" :title="tr('sidebar.openSearch')" :aria-label="tr('sidebar.openSearch')" :aria-pressed="appStore.searchOpen" @click="toggleSearch">

@@ -160,7 +160,9 @@ describe("responsive workbench layout", () => {
     expect(strong![1]).not.toMatch(/max-width/);
     // The chip keeps its size; the title is the flexible one.
     expect(rules).toMatch(/\.workspace-chip\s*{[^}]*flex-shrink:\s*0/s);
-    const title = topbar.match(/<strong class="([^"]*)" :title="appStore\.activePage === 'scheduledTasks'/);
+    // Locator follows the markup: the title binds `pageTitle` (per-page title) first, then the
+    // thread tooltip, so the assertion below still guards the *class list* of that same element.
+    const title = topbar.match(/<strong class="([^"]*)" :title="pageTitle \|\| threadTooltip/);
     expect(title, "topbar title <strong> not found in AppTopbar.vue").not.toBeNull();
     // AGENTS.md §4.2: layout belongs to the stylesheet - and every utility here ships `!important`,
     // so a leftover `max-w-[…]` would silently beat the CSS again.
