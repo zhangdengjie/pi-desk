@@ -1236,6 +1236,61 @@ export interface UpsertPromptTemplateRequest {
     "content": string;
 }
 
+export interface UsageCoverage {
+    "filesScanned": number;
+    "filesSkipped": number;
+    "bytesRead": number;
+    "truncated": boolean;
+    "cachedAt": string;
+}
+
+export interface UsageDayUsage {
+    "date": string;
+    "tokens": SessionTokenUsage;
+    "cost": number;
+    "messages": number;
+    "sessions": number;
+}
+
+export interface UsageReport {
+    "totals": SessionUsageSummary;
+    "days": UsageDayUsage[] | null;
+    "workspaces": UsageWorkspaceUsage[] | null;
+    "sessions": UsageSessionRow[] | null;
+    "topModels": SessionModelUsage[] | null;
+    "coverage": UsageCoverage;
+}
+
+/**
+ * UsageReportRequest asks for the dashboard view. Days=0 means "all time"; TopN=0 uses the Go-side
+ * default and a negative TopN skips the session rows entirely.
+ */
+export interface UsageReportRequest {
+    "workspacePath": string;
+    "days": number;
+    "topN": number;
+}
+
+export interface UsageSessionRow {
+    "path": string;
+    "title": string;
+    "cwd": string;
+    "model": string;
+    "tokens": SessionTokenUsage;
+    "cost": number;
+    "messages": number;
+    "updatedAt": string;
+}
+
+export interface UsageWorkspaceUsage {
+    "path": string;
+    "name": string;
+    "tokens": SessionTokenUsage;
+    "cost": number;
+    "messages": number;
+    "sessions": number;
+}
+
 /**
  * UserConfigView is the resolved content of the user's hand-editable config file.
  * 

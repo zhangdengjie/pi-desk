@@ -193,6 +193,59 @@ type SessionUsageSummary struct {
 	Models            []SessionModelUsage `json:"models"`
 }
 
+// UsageReportRequest asks for the dashboard view. Days=0 means "all time"; TopN=0 uses the Go-side
+// default and a negative TopN skips the session rows entirely.
+type UsageReportRequest struct {
+	WorkspacePath string `json:"workspacePath"`
+	Days          int    `json:"days"`
+	TopN          int    `json:"topN"`
+}
+
+type UsageDayUsage struct {
+	Date     string            `json:"date"`
+	Tokens   SessionTokenUsage `json:"tokens"`
+	Cost     float64           `json:"cost"`
+	Messages int               `json:"messages"`
+	Sessions int               `json:"sessions"`
+}
+
+type UsageWorkspaceUsage struct {
+	Path     string            `json:"path"`
+	Name     string            `json:"name"`
+	Tokens   SessionTokenUsage `json:"tokens"`
+	Cost     float64           `json:"cost"`
+	Messages int               `json:"messages"`
+	Sessions int               `json:"sessions"`
+}
+
+type UsageSessionRow struct {
+	Path      string            `json:"path"`
+	Title     string            `json:"title"`
+	CWD       string            `json:"cwd"`
+	Model     string            `json:"model"`
+	Tokens    SessionTokenUsage `json:"tokens"`
+	Cost      float64           `json:"cost"`
+	Messages  int               `json:"messages"`
+	UpdatedAt time.Time         `json:"updatedAt"`
+}
+
+type UsageCoverage struct {
+	FilesScanned int       `json:"filesScanned"`
+	FilesSkipped int       `json:"filesSkipped"`
+	BytesRead    int64     `json:"bytesRead"`
+	Truncated    bool      `json:"truncated"`
+	CachedAt     time.Time `json:"cachedAt"`
+}
+
+type UsageReport struct {
+	Totals     SessionUsageSummary   `json:"totals"`
+	Days       []UsageDayUsage       `json:"days"`
+	Workspaces []UsageWorkspaceUsage `json:"workspaces"`
+	Sessions   []UsageSessionRow     `json:"sessions"`
+	TopModels  []SessionModelUsage   `json:"topModels"`
+	Coverage   UsageCoverage         `json:"coverage"`
+}
+
 type DeletedSession struct {
 	RecoveryPath string `json:"recoveryPath"`
 }

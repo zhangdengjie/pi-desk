@@ -31,6 +31,8 @@ const sessionListTimeout = 20 * time.Second
 type sessionLister interface {
 	List(context.Context, string) ([]sessionindex.Summary, error)
 	Usage(context.Context, string) (sessionindex.UsageSummary, error)
+	// UsageReport is the day-bucketed view behind the usage dashboard (`sessionindex/usage.go`).
+	UsageReport(context.Context, sessionindex.UsageReportOptions) (sessionindex.UsageReport, error)
 	Resolve(string) (sessionindex.Summary, error)
 	Header(string) (sessionindex.Summary, error)
 	Snapshot(string) (sessionindex.Snapshot, error)
@@ -388,6 +390,60 @@ func (service *CatalogService) GetSessionUsage(request domain.ListSessionsReques
 	if err != nil {
 		return domain.SessionUsageSummary{}, err
 	}
+	return sessionUsageSummary(usage), nil
+}
+
+// GetUsageReport powers the usage dashboard: same transcripts, same reader, but bucketed by local
+// day and grouped by workspace so the page can answer "where did the tokens go".
+func (service *CatalogService) GetUsageReport(request domain.UsageReportRequest) (domain.UsageReport, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), sessionListTimeout)
+	defer cancel()
+	report, err := service.index.UsageReport(ctx, sessionindex.UsageReportOptions{
+		WorkspacePath: strings.TrimSpace(request.WorkspacePath),
+		Days:          request.Days,
+		TopN:          request.TopN,
+	})
+	if err != nil {
+		return domain.UsageReport{}, err
+	}
+	result := domain.UsageReport{
+		Totals:     sessionUsageSummary(report.Totals),
+		Days:       make([]domain.UsageDayUsage, 0, len(report.Days)),
+		Workspaces: make([]domain.UsageWorkspaceUsage, 0, len(report.Workspaces)),
+		Sessions:   make([]domain.UsageSessionRow, 0, len(report.Sessions)),
+		TopModels:  make([]domain.SessionModelUsage, 0, len(report.TopModels)),
+		Coverage: domain.UsageCoverage{
+			FilesScanned: report.Coverage.FilesScanned, FilesSkipped: report.Coverage.FilesSkipped,
+			BytesRead: report.Coverage.BytesRead, Truncated: report.Coverage.Truncated,
+			CachedAt: report.Coverage.CachedAt,
+		},
+	}
+	for _, day := range report.Days {
+		result.Days = append(result.Days, domain.UsageDayUsage{
+			Date: day.Date, Tokens: sessionTokenUsage(day.Tokens), Cost: day.Cost,
+			Messages: day.Messages, Sessions: day.Sessions,
+		})
+	}
+	for _, workspace := range report.Workspaces {
+		result.Workspaces = append(result.Workspaces, domain.UsageWorkspaceUsage{
+			Path: workspace.Path, Name: workspace.Name, Tokens: sessionTokenUsage(workspace.Tokens),
+			Cost: workspace.Cost, Messages: workspace.Messages, Sessions: workspace.Sessions,
+		})
+	}
+	for _, session := range report.Sessions {
+		result.Sessions = append(result.Sessions, domain.UsageSessionRow{
+			Path: session.Path, Title: session.Title, CWD: session.CWD, Model: session.Model,
+			Tokens: sessionTokenUsage(session.Tokens), Cost: session.Cost,
+			Messages: session.Messages, UpdatedAt: session.UpdatedAt,
+		})
+	}
+	for _, model := range report.TopModels {
+		result.TopModels = append(result.TopModels, sessionModelUsage(model))
+	}
+	return result, nil
+}
+
+func sessionUsageSummary(usage sessionindex.UsageSummary) domain.SessionUsageSummary {
 	result := domain.SessionUsageSummary{
 		Sessions: usage.Sessions, Messages: usage.Messages, UserMessages: usage.UserMessages,
 		AssistantMessages: usage.AssistantMessages, ToolResults: usage.ToolResults,
@@ -395,12 +451,16 @@ func (service *CatalogService) GetSessionUsage(request domain.ListSessionsReques
 		Models: make([]domain.SessionModelUsage, 0, len(usage.Models)),
 	}
 	for _, model := range usage.Models {
-		result.Models = append(result.Models, domain.SessionModelUsage{
-			Provider: model.Provider, Model: model.Model, AssistantMessages: model.AssistantMessages,
-			Tokens: sessionTokenUsage(model.Tokens), Cost: model.Cost,
-		})
+		result.Models = append(result.Models, sessionModelUsage(model))
 	}
-	return result, nil
+	return result
+}
+
+func sessionModelUsage(model sessionindex.ModelUsage) domain.SessionModelUsage {
+	return domain.SessionModelUsage{
+		Provider: model.Provider, Model: model.Model, AssistantMessages: model.AssistantMessages,
+		Tokens: sessionTokenUsage(model.Tokens), Cost: model.Cost,
+	}
 }
 
 func (service *CatalogService) DeleteSession(request domain.DeleteSessionRequest) (domain.DeletedSession, error) {
