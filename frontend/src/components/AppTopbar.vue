@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { CalendarClock, Check, ChevronDown, ChevronRight, FolderGit2, Info, PanelLeftClose, PanelRightOpen } from "lucide-vue-next";
+import { BarChart3, CalendarClock, Check, ChevronDown, ChevronRight, FolderGit2, Info, PanelLeftClose, PanelRightOpen } from "lucide-vue-next";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useAppStore } from "../stores/app";
 import { tr } from "../i18n";
@@ -11,6 +11,11 @@ const contextElement = ref<HTMLElement>();
 const contextButton = ref<HTMLButtonElement>();
 const state = computed(() => appStore.activeSessionState);
 const stats = computed(() => appStore.sessionStatsByThread[appStore.activeThreadId]);
+const pageTitle = computed(() => {
+  if (appStore.activePage === "scheduledTasks") return tr("scheduledTasks.title");
+  if (appStore.activePage === "usage") return tr("usage.title");
+  return "";
+});
 const workspaceLabel = computed(() => appStore.activeThread ? appStore.remoteWorkspaceForThread(appStore.activeThread)?.remoteRoot || appStore.activeThread.workspacePath : "");
 watch(() => appStore.contextOpen, (open) => {
   if (open) contextElement.value?.showPopover();
@@ -99,7 +104,8 @@ onBeforeUnmount(() => {
     <div class="topbar-task flex min-w-0 items-center justify-between gap-3">
       <div class="topbar-title-group flex min-w-0 items-center gap-2.5">
         <CalendarClock v-if="appStore.activePage === 'scheduledTasks'" :size="17" class="text-[var(--text-muted)]" />
-        <strong class="font-display text-[calc(15px+var(--font-size-delta))] font-semibold tracking-[-0.01em] text-[var(--text)]" :title="appStore.activePage === 'scheduledTasks' ? tr('scheduledTasks.title') : threadTooltip(appStore.activeThread) || 'Pi Desk'">{{ appStore.activePage === "scheduledTasks" ? tr("scheduledTasks.title") : appStore.activeThread?.title || "Pi Desk" }}</strong>
+        <BarChart3 v-else-if="appStore.activePage === 'usage'" :size="17" class="text-[var(--text-muted)]" />
+        <strong class="font-display text-[calc(15px+var(--font-size-delta))] font-semibold tracking-[-0.01em] text-[var(--text)]" :title="pageTitle || threadTooltip(appStore.activeThread) || 'Pi Desk'">{{ pageTitle || appStore.activeThread?.title || "Pi Desk" }}</strong>
         <span v-if="appStore.activePage === 'task' && appStore.activeExtensionTitle" class="extension-window-title min-w-0 truncate text-[var(--font-size-label)] text-[var(--text-secondary)]" :title="appStore.activeExtensionTitle">{{ appStore.activeExtensionTitle }}</span>
         <span v-if="appStore.activePage === 'task' && appStore.activeThread" class="workspace-chip min-w-0 max-w-56 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-app)] px-2 py-1 text-[var(--font-size-label)] text-[var(--text-secondary)]" :title="appStore.activeThread.workspacePath">
           <FolderGit2 :size="14" />

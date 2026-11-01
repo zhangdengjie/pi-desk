@@ -51,7 +51,10 @@ type fakeSessionLister struct {
 	messages  []json.RawMessage
 	model     *sessionindex.Model
 	usage     sessionindex.UsageSummary
-	err       error
+	// usageReport / usageReportOptions record what the dashboard asked for.
+	usageReport        sessionindex.UsageReport
+	usageReportOptions sessionindex.UsageReportOptions
+	err                error
 }
 
 func (index *fakeSessionLister) List(_ context.Context, workspace string) ([]sessionindex.Summary, error) {
@@ -74,6 +77,11 @@ func (index *fakeSessionLister) Resolve(path string) (sessionindex.Summary, erro
 func (index *fakeSessionLister) Usage(_ context.Context, workspace string) (sessionindex.UsageSummary, error) {
 	index.workspace = workspace
 	return index.usage, index.err
+}
+
+func (index *fakeSessionLister) UsageReport(_ context.Context, options sessionindex.UsageReportOptions) (sessionindex.UsageReport, error) {
+	index.usageReportOptions = options
+	return index.usageReport, index.err
 }
 
 func (index *fakeSessionLister) Header(path string) (sessionindex.Summary, error) {
@@ -447,6 +455,57 @@ func TestCatalogServiceMapsHistoricalSessionUsageWithoutStartingPi(t *testing.T)
 	}
 	if index.workspace != `D:\repo` || usage.Sessions != 2 || usage.Tokens.Total != 175 || usage.Tokens.Reasoning != 8 || len(usage.Models) != 1 || usage.Models[0].Model != "gpt-5" || usage.Cost != 0.42 {
 		t.Fatalf("unexpected session usage: %#v", usage)
+	}
+}
+
+func TestCatalogServiceMapsUsageReport(t *testing.T) {
+	updated := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	index := &fakeSessionLister{usageReport: sessionindex.UsageReport{
+		Totals: sessionindex.UsageSummary{
+			Sessions: 2, Messages: 9, UserMessages: 3, AssistantMessages: 4, ToolResults: 2,
+			Tokens: sessionindex.TokenUsage{Input: 100, Output: 20, CacheRead: 50, Total: 170},
+			Cost:   0.5,
+			Models: []sessionindex.ModelUsage{{Provider: "openai", Model: "gpt-5", Tokens: sessionindex.TokenUsage{Total: 170}}},
+		},
+		Days: []sessionindex.UsageDay{{
+			Date: "2026-10-31", Tokens: sessionindex.TokenUsage{Total: 170}, Cost: 0.5, Messages: 9, Sessions: 2,
+		}},
+		Workspaces: []sessionindex.UsageWorkspace{{
+			Path: "/repo", Name: "repo", Tokens: sessionindex.TokenUsage{Total: 170}, Cost: 0.5, Messages: 9, Sessions: 2,
+		}},
+		Sessions: []sessionindex.UsageSession{{
+			Path: "/repo/one.jsonl", Title: "One", CWD: "/repo", Model: "gpt-5",
+			Tokens: sessionindex.TokenUsage{Total: 170}, Cost: 0.5, Messages: 9, UpdatedAt: updated,
+		}},
+		TopModels: []sessionindex.ModelUsage{{Provider: "openai", Model: "gpt-5", Tokens: sessionindex.TokenUsage{Total: 170}}},
+		Coverage:  sessionindex.UsageCoverage{FilesScanned: 3, FilesSkipped: 1, BytesRead: 2048, CachedAt: updated},
+	}}
+	service := newCatalogService(workspace.NewCatalog(filepath.Join(t.TempDir(), "state.json")), index, nil)
+
+	report, err := service.GetUsageReport(domain.UsageReportRequest{WorkspacePath: " /repo ", Days: 7, TopN: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if index.usageReportOptions.WorkspacePath != "/repo" || index.usageReportOptions.Days != 7 || index.usageReportOptions.TopN != 5 {
+		t.Fatalf("options not forwarded: %#v", index.usageReportOptions)
+	}
+	if report.Totals.Tokens.Total != 170 || report.Totals.Sessions != 2 || len(report.Totals.Models) != 1 {
+		t.Fatalf("unexpected totals: %#v", report.Totals)
+	}
+	if len(report.Days) != 1 || report.Days[0].Date != "2026-10-31" || report.Days[0].Sessions != 2 {
+		t.Fatalf("unexpected days: %#v", report.Days)
+	}
+	if len(report.Workspaces) != 1 || report.Workspaces[0].Name != "repo" || report.Workspaces[0].Tokens.Total != 170 {
+		t.Fatalf("unexpected workspaces: %#v", report.Workspaces)
+	}
+	if len(report.Sessions) != 1 || report.Sessions[0].Title != "One" || !report.Sessions[0].UpdatedAt.Equal(updated) {
+		t.Fatalf("unexpected sessions: %#v", report.Sessions)
+	}
+	if len(report.TopModels) != 1 || report.TopModels[0].Model != "gpt-5" {
+		t.Fatalf("unexpected models: %#v", report.TopModels)
+	}
+	if report.Coverage.FilesScanned != 3 || report.Coverage.FilesSkipped != 1 || report.Coverage.BytesRead != 2048 {
+		t.Fatalf("unexpected coverage: %#v", report.Coverage)
 	}
 }
 

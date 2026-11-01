@@ -2,7 +2,7 @@ import { CatalogService } from "../../bindings/pi-desk/internal/appservice";
 import type { CancellablePromise } from "@wailsio/runtime";
 import type { SessionSearchText } from "../../bindings/pi-desk/internal/domain";
 import { fetchSessionSnapshot } from "../utils/sessionTranscript";
-import type { DeletedSession, DesktopState, SessionSearchResult, SessionSnapshot, SessionSummary, SessionUsageSummary, WorkspaceApplication, WorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
+import type { DeletedSession, DesktopState, SessionSearchResult, SessionSnapshot, SessionSummary, SessionUsageSummary, UsageReport, WorkspaceApplication, WorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
 
 const MAX_WORKSPACE_ICON_DATA_URL = 256 * 1024;
 const PNG_DATA_URL_PATTERN = /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/;
@@ -69,6 +69,17 @@ export const catalogService = {
   },
   async getSessionUsage(workspacePath?: string): Promise<SessionUsageSummary> {
     return await CatalogService.GetSessionUsage({ workspacePath });
+  },
+  /**
+   * The usage dashboard's data. `days` is a rolling local-calendar window (0 = all time); the Go
+   * side buckets by local date and serves repeat calls from its per-transcript cache.
+   */
+  async getUsageReport(request: { workspacePath?: string; days?: number; topN?: number } = {}): Promise<UsageReport> {
+    return await CatalogService.GetUsageReport({
+      workspacePath: request.workspacePath ?? "",
+      days: request.days ?? 0,
+      topN: request.topN ?? 0,
+    });
   },
   async deleteSession(path: string): Promise<DeletedSession> {
     return await CatalogService.DeleteSession({ path });

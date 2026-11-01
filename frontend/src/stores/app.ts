@@ -111,7 +111,7 @@ export const CODE_THEME_OPTIONS = [
   ["catppuccin-latte", "Catppuccin Latte"], ["catppuccin-mocha", "Catppuccin Mocha"],
 ] as const;
 export type CodeTheme = typeof CODE_THEME_OPTIONS[number][0];
-export type AppPage = "task" | "scheduledTasks";
+export type AppPage = "task" | "scheduledTasks" | "usage";
 type RemoteReconnectIntent = "start" | "prompt" | "bash" | "terminal";
 export type RemoteReconnectProgressStatus = "pending" | "active" | "complete" | "error";
 export interface RemoteReconnectProgressStep {
@@ -3139,6 +3139,11 @@ export const useAppStore = defineStore("app", {
       } finally {
         this.sessionOperationByThread[thread.id] = undefined;
       }
+    },
+    openUsage() {
+      this.activePage = "usage";
+      this.searchOpen = false;
+      this.searchQuery = "";
     },
     openScheduledTasks() {
       this.activePage = "scheduledTasks";

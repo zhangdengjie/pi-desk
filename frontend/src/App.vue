@@ -15,6 +15,7 @@ import OrphanSessionsDialog from "./components/OrphanSessionsDialog.vue";
 import RemoteReconnectDialog from "./components/RemoteReconnectDialog.vue";
 import QuickSwitcher from "./components/QuickSwitcher.vue";
 import ScheduledTasksPage from "./components/ScheduledTasksPage.vue";
+import UsagePage from "./components/UsagePage.vue";
 import SelectionQuoteBar from "./components/SelectionQuoteBar.vue";
 import PaneResizer from "./components/PaneResizer.vue";
 import WindowControls from "./components/WindowControls.vue";
@@ -49,9 +50,11 @@ const darkSurface = computed(() => (
   appStore.appearance === "dark" || (appStore.appearance === "system" && systemDark.value)
 ));
 const codeTheme = computed(() => (darkSurface.value ? appStore.darkCodeTheme : appStore.lightCodeTheme));
-const windowTitle = computed(() => appStore.activePage === "scheduledTasks"
-  ? tr("scheduledTasks.title")
-  : appStore.activeExtensionTitle || appStore.activeThread?.title || "Pi Desk");
+const windowTitle = computed(() => {
+  if (appStore.activePage === "scheduledTasks") return tr("scheduledTasks.title");
+  if (appStore.activePage === "usage") return tr("usage.title");
+  return appStore.activeExtensionTitle || appStore.activeThread?.title || "Pi Desk";
+});
 
 async function detectWindows() {
   try {
@@ -258,7 +261,7 @@ watch(() => [appStore.codeAccent, darkSurface.value] as const, ([accent, dark]) 
       'is-windows': isWindows,
       'is-mac': isMac,
       'is-sidebar-collapsed': appStore.sidebarCollapsed,
-      'is-inspector-closed': !appStore.inspectorOpen || appStore.activePage === 'scheduledTasks',
+      'is-inspector-closed': !appStore.inspectorOpen || appStore.activePage !== 'task',
       'is-inspector-expanded': appStore.inspectorOpen && appStore.activePanel?.expanded && appStore.activePage === 'task',
       'is-inspector-open': inspectorReserve,
       '[grid-template-columns:var(--sidebar-collapsed-width)_minmax(0,1fr)]': appStore.sidebarCollapsed,
@@ -279,6 +282,7 @@ watch(() => [appStore.codeAccent, darkSurface.value] as const, ([accent, dark]) 
     />
     <main v-show="!appStore.settingsOpen" class="workspace-shell relative z-0 col-start-2 row-start-2 grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)] overflow-hidden bg-[var(--bg-workspace)]">
       <ScheduledTasksPage v-if="appStore.activePage === 'scheduledTasks'" />
+      <UsagePage v-else-if="appStore.activePage === 'usage'" />
       <ConversationPane v-else />
     </main>
     <InspectorPanel v-if="inspectorMounted" :key="appStore.activeThreadId" v-show="!appStore.settingsOpen" />

@@ -98,6 +98,10 @@ type Index struct {
 	mutationMu sync.Mutex
 	summaryMu  sync.Mutex
 	summaries  map[string]summaryCacheEntry
+	// usageMu guards usageCache: per-transcript usage details keyed by path, invalidated by
+	// size+mtime. Both Usage and UsageReport read through it.
+	usageMu    sync.Mutex
+	usageCache map[string]usageCacheEntry
 }
 
 type summaryCacheEntry struct {
@@ -345,12 +349,12 @@ func (index *Index) Usage(ctx context.Context, workspacePath string) (UsageSumma
 		go func() {
 			defer workers.Done()
 			for path := range jobs {
-				usage, cwd, ok := readUsage(path)
-				if !ok || (workspaceKey != "" && pathKey(cwd) != workspaceKey) {
+				detail, ok := index.usageDetail(path)
+				if !ok || (workspaceKey != "" && pathKey(detail.CWD) != workspaceKey) {
 					continue
 				}
 				select {
-				case results <- usageResult{usage: usage, ok: true}:
+				case results <- usageResult{usage: detail.Usage, ok: true}:
 				case <-ctx.Done():
 					return
 				}
@@ -1164,63 +1168,11 @@ type rawCost struct {
 }
 
 func readUsage(path string) (UsageSummary, string, bool) {
-	entries, err := readTranscriptEntries(path)
-	if err != nil {
-		return UsageSummary{}, "", false
-	}
-	header, ok := readHeader(path)
+	detail, ok := readUsageDetail(path, time.Time{})
 	if !ok {
 		return UsageSummary{}, "", false
 	}
-	usage := UsageSummary{Sessions: 1, Models: []ModelUsage{}}
-	models := make(map[string]ModelUsage)
-	for _, entry := range entries {
-		var message rawMessage
-		switch entry.Type {
-		case "message":
-			if len(entry.Message) == 0 || json.Unmarshal(entry.Message, &message) != nil {
-				continue
-			}
-			usage.Messages++
-			switch message.Role {
-			case "user":
-				usage.UserMessages++
-			case "assistant":
-				usage.AssistantMessages++
-			case "toolResult":
-				usage.ToolResults++
-			}
-		case "usage", "compaction", "branch_summary":
-			message = rawMessage{Provider: entry.Provider, Model: entry.Model, Usage: entry.Usage}
-		default:
-			continue
-		}
-		if message.Usage == nil {
-			continue
-		}
-		tokens := tokensFromRaw(*message.Usage)
-		mergeTokens(&usage.Tokens, tokens)
-		usage.Cost += message.Usage.Cost.Total
-		provider, modelID := strings.TrimSpace(message.Provider), strings.TrimSpace(message.Model)
-		// Tool and summary usage has no model attribution in the native transcript.
-		if provider == "" && modelID == "" {
-			continue
-		}
-		key := provider + "\x00" + modelID
-		model := models[key]
-		model.Provider, model.Model = provider, modelID
-		if message.Role == "assistant" {
-			model.AssistantMessages++
-		}
-		mergeTokens(&model.Tokens, tokens)
-		model.Cost += message.Usage.Cost.Total
-		models[key] = model
-	}
-	usage.Models = make([]ModelUsage, 0, len(models))
-	for _, model := range models {
-		usage.Models = append(usage.Models, model)
-	}
-	return usage, header.CWD, true
+	return detail.Usage, detail.CWD, true
 }
 
 func tokensFromRaw(usage rawUsage) TokenUsage {

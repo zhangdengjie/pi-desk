@@ -37,6 +37,14 @@ export function GetSessionUsage(request: domain$0.ListSessionsRequest): $Cancell
     return $Call.ByID(3606949216, request);
 }
 
+/**
+ * GetUsageReport powers the usage dashboard: same transcripts, same reader, but bucketed by local
+ * day and grouped by workspace so the page can answer "where did the tokens go".
+ */
+export function GetUsageReport(request: domain$0.UsageReportRequest): $CancellablePromise<domain$0.UsageReport> {
+    return $Call.ByID(1323690200, request);
+}
+
 export function ListSessions(request: domain$0.ListSessionsRequest): $CancellablePromise<domain$0.SessionSummary[] | null> {
     return $Call.ByID(4007152500, request);
 }
