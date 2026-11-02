@@ -322,6 +322,61 @@ describe("ConversationPane", () => {
     wrapper.unmount();
   });
 
+  // A held button is the reader, not the document. Measured in the sandbox 2026-11-02
+  // (`.pi/bin/hitprobe/devSelectionJumpProbe.ts.keep`): while the answer streamed, a reader who
+  // pressed and then dragged upward was pulled *below* where they started - 48px up, then 60px
+  // back down on the next growth, every iteration. `markReaderInput` only ran on `pointerdown`,
+  // so a drag that began more than INPUT_WINDOW_MS after the press had no release path at all:
+  // its scroll events fell into the self-growth grace that exists for scroll anchoring.
+  it("does not move the tail under a held pointer while the reader drags a selection", async () => {
+    const { wrapper, timeline, stream } = await mountPinnedTail();
+
+    await wrapper.get(".timeline").trigger("pointerdown", { pointerType: "mouse", button: 0, buttons: 1 });
+    // 20px above the bottom: inside the near-bottom band, so nothing but the press itself could
+    // release the follow. This is the shape of a drag that starts at the newest message.
+    timeline.scrollTop = 1180;
+    await wrapper.get(".timeline").trigger("scroll");
+    await stream("Message 3 is still writing", 1900);
+
+    expect(timeline.scrollTop).toBe(1180);
+
+    // Releasing away from the tail leaves the follow released - the reader did leave.
+    window.dispatchEvent(new Event("pointerup"));
+    await flushPromises();
+    await stream("and still writing", 2020);
+    expect(timeline.scrollTop).toBe(1180);
+
+    wrapper.unmount();
+  });
+
+  it("keeps following after a press and release that never left the tail", async () => {
+    const { wrapper, timeline, stream } = await mountPinnedTail();
+
+    timeline.scrollTop = 1200; // the bottom of a 1800px document in a 600px scrollport
+    await wrapper.get(".timeline").trigger("pointerdown", { pointerType: "mouse", button: 0, buttons: 1 });
+    window.dispatchEvent(new Event("pointerup"));
+    await flushPromises();
+    await stream("Message 3 is still writing", 1900);
+
+    expect(timeline.scrollTop).toBe(1300);
+    wrapper.unmount();
+  });
+
+  it("recovers the follow when the release itself is lost", async () => {
+    const { wrapper, timeline, stream } = await mountPinnedTail();
+
+    await wrapper.get(".timeline").trigger("pointerdown", { pointerType: "mouse", button: 0, buttons: 1 });
+    timeline.scrollTop = 1200;
+    // WebKit drops the `pointerup` of a drag released outside the window; the next move with no
+    // button down is the only evidence that nothing is held any more.
+    window.dispatchEvent(new PointerEvent("pointermove", { buttons: 0 }));
+    await flushPromises();
+    await stream("Message 3 is still writing", 1900);
+
+    expect(timeline.scrollTop).toBe(1300);
+    wrapper.unmount();
+  });
+
   // Scroll anchoring is the other author of scroll events: when a reasoning window
   // collapses above the viewport the browser compensates scrollTop by itself, and reading
   // that as "the reader left" would disarm the follow in the middle of a run - the

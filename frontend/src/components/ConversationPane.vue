@@ -247,6 +247,9 @@ function observeTranscriptRow(ref: Element | ComponentPublicInstance | null) {
 
 function scrollToBottom() {
   const element = timeline.value;
+  // A pin while the reader is holding the scrollport is the same yank as a follow step; the
+  // button that asks for one (`followLatest`) is clicked after `pointerup`, so it is not affected.
+  if (pointerHeld) return;
   // Pin to the exact bottom (padding included) so the streaming tail stays
   // visible above the floating composer; estimate-based scrollToIndex fights
   // the ResizeObserver size corrections while content streams in.
@@ -372,6 +375,8 @@ watch(() => appStore.paneResizing, (resizing) => {
 function stepTail(): boolean {
   const element = timeline.value;
   if (!element || !stickToBottom.value) return false;
+  // The reader's own gesture owns the offset until they let go (see `pointerHeld`).
+  if (pointerHeld) return false;
   const now = performance.now();
   // Below 4ms this is the same frame (two observers firing in one tick), not a fast display:
   // scaling the share by a 0.2ms delta would make the follow crawl. Treat it as one frame.
@@ -473,8 +478,59 @@ const INPUT_WINDOW_MS = 600;
 let readerInputAt = 0;
 let selfGrowthUntil = 0;
 
+// A primary button held inside the transcript is a gesture the reader owns: a text-selection
+// drag, or a scrollbar drag. Content growth must not touch the offset while one is in progress.
+//
+// Measured 2026-11-02 in the sandbox (`devSelectionJumpProbe`, `drag*` rows): while the answer
+// streamed, a reader who pressed and then dragged upward got pulled *below* where they started -
+// 48px up, then 60px back down on the next growth, every iteration. Two things conspired:
+//   1. `markReaderInput` only ran on `pointerdown`, so a drag that began more than
+//      INPUT_WINDOW_MS after the press had no release path at all (wheel already refuses to do
+//      it while the pointer is busy selecting); its scroll events were then swallowed by the
+//      `selfGrowthUntil` grace above, which left `stickToBottom` armed.
+//   2. `stepTail` kept easing the tail down under the reader's cursor.
+// The invariant is the same one the wheel path already honours: while the reader is moving the
+// scrollport by hand, nothing else writes `scrollTop`.
+let pointerHeld = false;
+
 function markReaderInput() {
   readerInputAt = Date.now();
+}
+
+function onTimelinePointerDown(event: PointerEvent) {
+  // Touch reports button 0 as well; only a right/middle mouse press is not a drag source here.
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  pointerHeld = true;
+  markReaderInput();
+}
+
+/**
+ * The release half of `pointerHeld`.
+ *
+ * A drag that ended away from the tail leaves the follow released; one that ended at the tail - a
+ * quote made inside the newest message - keeps it, because the reader never left.
+ */
+function onWindowPointerUp() {
+  if (!pointerHeld) return;
+  pointerHeld = false;
+  const element = timeline.value;
+  if (!element) return;
+  stickToBottom.value = isNearBottom(element.scrollTop, element.clientHeight, element.scrollHeight, followResumePx());
+  if (!stickToBottom.value) stopFollowingTail();
+  updateActiveNavigation();
+}
+
+/**
+ * The lost-release net.
+ *
+ * WebKit can drop the `pointerup` that ends a drag (released outside the window, or swallowed by
+ * a native selection session - the same ghost `services/ghostSelectionGuard` exists for). A move
+ * with no button down means nothing is held any more; without this the follow would stay disarmed
+ * until the next press.
+ */
+function onWindowPointerMove(event: PointerEvent) {
+  if (!pointerHeld || event.buttons !== 0) return;
+  onWindowPointerUp();
 }
 
 function noteSelfGrowth() {
@@ -493,7 +549,9 @@ function onTimelineScroll() {
     return;
   }
   const now = Date.now();
-  if (now - readerInputAt > INPUT_WINDOW_MS && now < selfGrowthUntil) {
+  // A held button outranks the self-growth grace: those scroll events are the reader's drag, not
+  // the document growing underneath a still pointer (see `pointerHeld`).
+  if (!pointerHeld && now - readerInputAt > INPUT_WINDOW_MS && now < selfGrowthUntil) {
     updateActiveNavigation();
     return;
   }
@@ -805,6 +863,12 @@ onMounted(() => {
     updateActiveNavigation();
   });
   if (timelineContent.value) contentResizeObserver.observe(timelineContent.value);
+  // A selection drag can end anywhere (outside the pane, outside the window); `pointerup` on the
+  // element is not enough, and a lost release would leave the follow disarmed for good.
+  window.addEventListener("pointerup", onWindowPointerUp, true);
+  window.addEventListener("pointercancel", onWindowPointerUp, true);
+  window.addEventListener("pointermove", onWindowPointerMove, true);
+  window.addEventListener("blur", onWindowPointerUp);
   void openConversation();
 });
 
@@ -818,6 +882,11 @@ watch(virtualTotalSize, () => {
 });
 onBeforeUnmount(() => {
   contentResizeObserver?.disconnect();
+  window.removeEventListener("pointerup", onWindowPointerUp, true);
+  window.removeEventListener("pointercancel", onWindowPointerUp, true);
+  window.removeEventListener("pointermove", onWindowPointerMove, true);
+  window.removeEventListener("blur", onWindowPointerUp);
+  pointerHeld = false;
   stopFollowingTail();
   cancelAnimationFrame(pinFrames);
   rowObserver?.disconnect();
@@ -874,7 +943,7 @@ onBeforeUnmount(() => {
           <span><em>{{ tr("conversation.navigationAnswer") }}</em>{{ hoveredNavigationItem.answer }}</span>
         </aside>
       </nav>
-      <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--composer-overlay-reserve': `${composerHeight}px` }" @scroll="onTimelineScroll" @wheel="onTimelineWheel" @pointerdown="markReaderInput" @keydown="markReaderInput">
+      <div ref="timeline" class="timeline h-full w-full min-w-0 overflow-x-clip overflow-y-auto" role="log" aria-live="polite" :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--composer-overlay-reserve': `${composerHeight}px` }" @scroll="onTimelineScroll" @wheel="onTimelineWheel" @pointerdown="onTimelinePointerDown" @keydown="markReaderInput">
       <div ref="timelineContent" class="timeline-content">
       <div v-if="appStore.sessionMutationErrorByThread?.[appStore.activeThreadId]" class="conversation-operation-banner mb-4 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] px-3 py-2 text-[var(--font-size-label)] text-[var(--text-secondary)]" role="status">
         {{ tr("conversation.historyMutationLimit") }}
