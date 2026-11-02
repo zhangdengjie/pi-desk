@@ -758,9 +758,11 @@ onMounted(() => { void refresh(); });
   background: var(--accent);
 }
 
+/* Input and output used to be two shades of the same accent (100% vs a 25% text mix), which read as
+ * one colour wherever a segment is only a few pixels tall. Output gets its own hue instead. */
 .usage-swatch.is-output,
 .usage-chart-segment.is-output {
-  background: color-mix(in srgb, var(--accent) 75%, var(--text) 25%);
+  background: var(--amber);
 }
 
 .usage-swatch.is-other,
