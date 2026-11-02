@@ -138,6 +138,34 @@ describe("SelectionQuoteBar", () => {
     expect(document.querySelector(".selection-actions")).not.toBeNull();
   });
 
+  it("anchors at the caret the drag ended on, not the document-order end", async () => {
+    // An upward drag presses at the bottom and releases at the top: `lastRect` (document order)
+    // names the bottom, the focus caret names where the pointer stopped. Reported 2026-11-02 as
+    // "the bar is not next to the cursor after release".
+    useAppStore().activeThreadId = "thread-1";
+    document.body.innerHTML = '<div class="timeline"><p id="top">上面一段</p><p id="bottom">下面一段</p></div>';
+    const caretBox = rect(140, 120, 2, 20);
+    const rangeBox = rect(120, 420, 180, 60);
+    Range.prototype.getClientRects = function getClientRects() {
+      return Object.assign([rangeBox], { item: (index: number) => (index === 0 ? rangeBox : null) }) as unknown as DOMRectList;
+    };
+    Range.prototype.getBoundingClientRect = function getBoundingClientRect() {
+      return this.collapsed ? caretBox : rangeBox;
+    };
+    wrapper = mount(SelectionQuoteBar, { attachTo: document.body });
+
+    const top = document.getElementById("top")!.firstChild!;
+    const bottom = document.getElementById("bottom")!.firstChild!;
+    window.getSelection()!.setBaseAndExtent(bottom, 2, top, 1);
+    document.dispatchEvent(new Event("selectionchange"));
+    await settle();
+
+    const bar = document.querySelector(".selection-actions") as HTMLElement;
+    expect(bar).not.toBeNull();
+    // Above the caret the drag ended on: 120 minus the 8px gap - not above the 420px range end.
+    expect(bar.style.top).toBe("112px");
+  });
+
   it("stays out of the way of a selection outside the transcript", async () => {
     useAppStore().activeThreadId = "thread-1";
     document.body.innerHTML = '<div class="composer"><p id="draft">草稿里的字</p></div>';

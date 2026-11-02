@@ -78,10 +78,33 @@ function reset() {
   }
 }
 
-/** The last rect of the range, i.e. where the selection ends - the anchor macOS popovers use. */
+/** The last rect of the range, i.e. the document-order end of the selection - the fallback anchor. */
 function lastRect(range: Range): DOMRect | undefined {
   const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 || rect.height > 0);
   return rects[rects.length - 1] ?? (range.getBoundingClientRect().width > 0 ? range.getBoundingClientRect() : undefined);
+}
+
+/**
+ * The caret the selection *moves* with - where the reader's pointer stopped, or where the
+ * keyboard cursor sits.
+ *
+ * `lastRect` is the document-order end, which for an upward drag is the press point at the
+ * bottom: the bar landed a screen away from the cursor that just released (reported
+ * 2026-11-02). The focus edge is the end the reader is looking at in both drag directions,
+ * and for shift+arrow selection it is the only end that moves.
+ */
+function focusRect(selection: Selection): DOMRect | undefined {
+  const node = selection.focusNode;
+  if (!node) return undefined;
+  const caret = document.createRange();
+  try {
+    caret.setStart(node, selection.focusOffset);
+  } catch {
+    return undefined;
+  }
+  caret.collapse(true);
+  const rect = caret.getBoundingClientRect();
+  return rect.width > 0 || rect.height > 0 ? rect : undefined;
 }
 
 /** The element the selection lives in, or undefined when it is not transcript prose. */
@@ -106,7 +129,9 @@ function update() {
   if (!normalizeSelectionText(text)) return reset();
 
   const range = selection.getRangeAt(0);
-  const rect = lastRect(range);
+  // The caret the drag ended on, not the document-order end of the range: for an upward drag
+  // those are opposite ends, and the bar belongs where the reader released (see focusRect).
+  const rect = focusRect(selection) ?? lastRect(range);
   if (!rect) return reset();
 
   // A rect that has scrolled out of the pane is not something to point at. A zero-height pane is
