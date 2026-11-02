@@ -414,10 +414,13 @@ func readUsageDetail(path string, fallback time.Time) (usageFileDetail, bool) {
 		Path:      path,
 		Usage:     UsageSummary{Sessions: 1, Models: []ModelUsage{}},
 		CWD:       header.CWD,
-		Title:     header.Title,
 		UpdatedAt: header.ModifiedAt,
 		Days:      make(map[string]usageDayTotals),
 	}
+	// The transcript header carries no title, so the readable name comes from the same two sources the
+	// sidebar uses: Pi's `session_info` name, else the first user message. Without this the usage table
+	// showed the file name (a timestamp + UUID), which says nothing about the session.
+	var sessionName, firstUserMessage string
 	models := make(map[string]ModelUsage)
 	latest := detail.UpdatedAt
 	for _, entry := range entries {
@@ -429,6 +432,12 @@ func readUsageDetail(path string, fallback time.Time) (usageFileDetail, bool) {
 				continue
 			}
 			countsMessage = true
+			if firstUserMessage == "" && message.Role == "user" {
+				firstUserMessage = sessionTitleText(extractText(message.Content))
+			}
+		case "session_info":
+			sessionName = strings.TrimSpace(entry.Name)
+			continue
 		case "usage", "compaction", "branch_summary":
 			message = rawMessage{Provider: entry.Provider, Model: entry.Model, Usage: entry.Usage}
 		default:
@@ -520,6 +529,15 @@ func readUsageDetail(path string, fallback time.Time) (usageFileDetail, bool) {
 		detail.Days[date] = bucket
 	}
 	detail.Usage.Models = sortModelUsage(models)
+	// Same title rule as the sidebar summary, minus the "Empty session" placeholder: an empty title
+	// lets the UI fall back to the file name, which is more useful than repeating a placeholder.
+	detail.Title = compactText(sessionName, maxTitleRunes)
+	if corruptedAutomaticName(detail.Title, firstUserMessage) {
+		detail.Title = ""
+	}
+	if detail.Title == "" {
+		detail.Title = compactText(firstUserMessage, maxTitleRunes)
+	}
 	// readHeader's ModifiedAt is empty for transcripts whose entries carry only numeric stamps,
 	// so the walk's own high-water mark wins when it is later.
 	detail.UpdatedAt = latest

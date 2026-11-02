@@ -229,3 +229,47 @@ func TestUsageReportCapsSessionRows(t *testing.T) {
 		t.Fatalf("negative TopN should skip rows but keep totals: %#v", all)
 	}
 }
+
+// The usage table lists sessions by path; without a title it showed the transcript file name
+// (a timestamp plus a UUID), which readers cannot identify. The name must follow the sidebar rule.
+func TestUsageReportFillsSessionTitleFromTranscript(t *testing.T) {
+	root := t.TempDir()
+	workspace := filepath.Join(root, "ws")
+	for _, directory := range []string{workspace, filepath.Join(root, "sessions", "ws-a")} {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	workspace = canonicalTestPath(t, workspace)
+	now := time.Now()
+
+	writeSession(t, filepath.Join(root, "sessions", "ws-a", "named.jsonl"), strings.Join([]string{
+		usageHeader(workspace, now),
+		fmt.Sprintf(`{"type":"message","id":"u1","parentId":null,"message":{"role":"user","timestamp":%d,"content":"原始提问"}}`, now.UnixMilli()),
+		`{"type":"session_info","id":"n1","timestamp":"2026-08-10T08:02:00Z","name":"Runtime audit"}`,
+		usageAssistantLine("a1", "u1", "openai", "gpt-5", now.UnixMilli(), 100, 20),
+	}, "\n")+"\n")
+	writeSession(t, filepath.Join(root, "sessions", "ws-a", "unnamed.jsonl"), strings.Join([]string{
+		usageHeader(workspace, now),
+		fmt.Sprintf(`{"type":"message","id":"u2","parentId":null,"message":{"role":"user","timestamp":%d,"content":"帮我看看这个 bug 到底出在哪一层"}}`, now.UnixMilli()),
+		usageAssistantLine("a2", "u2", "openai", "gpt-5", now.UnixMilli(), 10, 5),
+	}, "\n")+"\n")
+
+	report, err := New(filepath.Join(root, "sessions")).UsageReport(context.Background(), UsageReportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Sessions) != 2 {
+		t.Fatalf("expected two session rows, got %#v", report.Sessions)
+	}
+	titles := map[string]string{}
+	for _, session := range report.Sessions {
+		titles[filepath.Base(session.Path)] = session.Title
+	}
+	if titles["named.jsonl"] != "Runtime audit" {
+		t.Fatalf("session_info name should win, got %q", titles["named.jsonl"])
+	}
+	if titles["unnamed.jsonl"] != "帮我看看这个 bug 到底出在哪一层" {
+		t.Fatalf("first user message should be the fallback title, got %q", titles["unnamed.jsonl"])
+	}
+}
