@@ -97,6 +97,47 @@ describe("SelectionQuoteBar", () => {
     expect(document.querySelector(".selection-actions")).toBeNull();
   });
 
+  it("stays hidden while a selection drag is in progress, then appears on release", async () => {
+    // The bar anchors just above the selection's end - exactly where an upward drag is heading.
+    // Shown mid-drag it becomes the drag's next hit target, and WebKit resolves the focus over a
+    // `user-select: none` island to the edge of the selectable region around it: measured
+    // 2026-11-02 in the sandbox, the selection flipped between the dragged range and
+    // "anchor .. bottom of transcript" on consecutive frames while the bar jumped with it.
+    useAppStore().activeThreadId = "thread-1";
+    document.body.innerHTML = '<div class="timeline"><p id="answer">第一段 正文</p></div>';
+    wrapper = mount(SelectionQuoteBar, { attachTo: document.body });
+
+    window.dispatchEvent(new PointerEvent("pointerdown", { button: 0, buttons: 1, bubbles: true }));
+    selectTextOf(document.getElementById("answer")!);
+    await settle();
+    expect(document.querySelector(".selection-actions")).toBeNull();
+
+    window.dispatchEvent(new PointerEvent("pointerup", { buttons: 0, bubbles: true }));
+    await settle();
+    expect(document.querySelector(".selection-actions")).not.toBeNull();
+
+    // The next press hides it again before the drag can reach it.
+    window.dispatchEvent(new PointerEvent("pointerdown", { button: 0, buttons: 1, bubbles: true }));
+    await settle();
+    expect(document.querySelector(".selection-actions")).toBeNull();
+  });
+
+  it("keeps the bar when the press lands on the bar itself", async () => {
+    useAppStore().activeThreadId = "thread-1";
+    document.body.innerHTML = '<div class="timeline"><p id="answer">一段正文</p></div>';
+    wrapper = mount(SelectionQuoteBar, { attachTo: document.body });
+
+    selectTextOf(document.getElementById("answer")!);
+    await settle();
+    const bar = document.querySelector(".selection-actions");
+    expect(bar).not.toBeNull();
+
+    // A press on its own buttons must not remove them before their `click` fires.
+    bar!.querySelector("button")!.dispatchEvent(new PointerEvent("pointerdown", { button: 0, buttons: 1, bubbles: true }));
+    await settle();
+    expect(document.querySelector(".selection-actions")).not.toBeNull();
+  });
+
   it("stays out of the way of a selection outside the transcript", async () => {
     useAppStore().activeThreadId = "thread-1";
     document.body.innerHTML = '<div class="composer"><p id="draft">草稿里的字</p></div>';

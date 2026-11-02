@@ -31,6 +31,41 @@ const bar = ref<HTMLElement>();
 let frame = 0;
 let copiedTimer: number | undefined;
 
+/**
+ * A selection drag in progress owns the pointer's path, and the bar must not sit in it.
+ *
+ * The bar anchors just above the selection's end - exactly where an upward drag is heading.
+ * Shown mid-drag, the next pointermove lands on it: it is a `user-select: none` island, so WebKit
+ * resolves the drag's focus to the edge of the selectable region *around* it (measured 2026-11-02:
+ * the selection flipped between the dragged range and "anchor .. bottom of transcript" on
+ * consecutive frames), `lastRect` moves, the bar jumps, the pointer is over prose again, and the
+ * loop runs at frame rate. So the bar only ever appears once the button is up - which is also when
+ * every other harness shows its selection popover.
+ */
+let dragHeld = false;
+
+function onWindowPointerDown(event: PointerEvent) {
+  const target = event.target;
+  // The bar's own buttons need their click: hiding on their pointerdown would remove the target
+  // before `click` fires.
+  if (target instanceof Element && target.closest(".selection-actions")) return;
+  if (!(event.buttons & 1)) return;
+  dragHeld = true;
+  reset();
+}
+
+function onWindowPointerUp() {
+  if (!dragHeld) return;
+  dragHeld = false;
+  scheduleUpdate();
+}
+
+/** The lost-release net: WebKit can drop the `pointerup` of a drag ended outside the window. */
+function onWindowPointerMove(event: PointerEvent) {
+  if (!dragHeld || event.buttons !== 0) return;
+  onWindowPointerUp();
+}
+
 const preview = computed(() => normalizeSelectionText(rawText.value, 60));
 
 function reset() {
@@ -63,6 +98,7 @@ function transcriptElement(selection: Selection): Element | undefined {
 
 function update() {
   frame = 0;
+  if (dragHeld) return;
   if (!appStore.activeThreadId) return reset();
   const selection = window.getSelection();
   if (!selection || !transcriptElement(selection)) return reset();
@@ -146,6 +182,10 @@ onMounted(() => {
   document.addEventListener("keyup", scheduleUpdate);
   document.addEventListener("pointerdown", onDocumentPointerDown, true);
   document.addEventListener("keydown", onKeydown);
+  window.addEventListener("pointerdown", onWindowPointerDown, true);
+  window.addEventListener("pointerup", onWindowPointerUp, true);
+  window.addEventListener("pointercancel", onWindowPointerUp, true);
+  window.addEventListener("pointermove", onWindowPointerMove, true);
   window.addEventListener("scroll", reset, true);
   window.addEventListener("resize", reset);
 });
@@ -158,6 +198,10 @@ onBeforeUnmount(() => {
   document.removeEventListener("keyup", scheduleUpdate);
   document.removeEventListener("pointerdown", onDocumentPointerDown, true);
   document.removeEventListener("keydown", onKeydown);
+  window.removeEventListener("pointerdown", onWindowPointerDown, true);
+  window.removeEventListener("pointerup", onWindowPointerUp, true);
+  window.removeEventListener("pointercancel", onWindowPointerUp, true);
+  window.removeEventListener("pointermove", onWindowPointerMove, true);
   window.removeEventListener("scroll", reset, true);
   window.removeEventListener("resize", reset);
 });
