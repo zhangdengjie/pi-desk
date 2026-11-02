@@ -1044,6 +1044,54 @@ describe("ComposerBar", () => {
     expect(wrapper.get(".model-button").text()).toContain("Grok 4.6 · high");
   });
 
+  it("scrolls the model list so the checked model is visible when the menu opens", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    const models = Array.from({ length: 8 }, (_, index) => ({
+      id: `model-${index}`, name: `Model ${index}`, provider: "openai", contextWindow: 200_000,
+    }));
+    store.$patch({
+      threads: [{
+        id: "thread-model-scroll", title: "Models", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: true, generation: 1,
+      }],
+      activeThreadId: "thread-model-scroll",
+      sessionStateByThread: { "thread-model-scroll": { model: models[6], thinkingLevel: "medium" } },
+      modelsByThread: { "thread-model-scroll": models },
+      thinkingLevelsByThread: { "thread-model-scroll": ["off", "medium"] },
+    });
+    store.refreshConfiguredModels = vi.fn().mockResolvedValue(undefined);
+
+    // jsdom has no layout: give the scroll box and each row a fake geometry so the reveal is
+    // measurable. Rows move with the box's scrollTop, the way a real layout would, so the second
+    // pass (after the catalogue refresh) finds the row already visible and stays put.
+    const realRect = HTMLElement.prototype.getBoundingClientRect;
+    const rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("model-menu-options")) return elementRect(0, 100, 270, 200);
+      if (this.getAttribute("role") === "menuitemradio") {
+        const index = Number(this.textContent?.match(/Model (\d+)/)?.[1] ?? 0);
+        const scrolled = this.closest(".model-menu-options")?.scrollTop ?? 0;
+        return elementRect(0, 460 + index * 40 - scrolled, 270, 32);
+      }
+      return realRect.call(this);
+    });
+
+    try {
+      const wrapper = mount(ComposerBar, { global: { plugins: [pinia] } });
+      await wrapper.get(".model-button").trigger("click");
+      await flushPromises();
+
+      const options = wrapper.get<HTMLElement>(".model-menu-options");
+      expect(wrapper.findAll(".model-menu-options button")[6].attributes("aria-checked")).toBe("true");
+      // Row 6 sits 460 + 6 * 40 = 700px down, i.e. 600px below the box top, and the box is 200px
+      // tall: centring means 600 - (200 - 32) / 2 = 516.
+      expect(options.element.scrollTop).toBe(516);
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
   it("shows context, input, output, and cache token metrics below the composer", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

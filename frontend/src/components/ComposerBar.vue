@@ -25,6 +25,9 @@ const commandButton = ref<HTMLElement>();
 const composer = ref<HTMLElement>();
 const modelMenu = ref<HTMLElement>();
 const modelMenuOpen = ref(false);
+// Set as soon as the user touches the menu, so the delayed re-reveal (after the catalogue refresh
+// lands) never yanks the list back while they are already scrolling.
+const modelMenuTouched = ref(false);
 const modelChanging = ref(false);
 const modelCatalogRefreshing = ref(false);
 const accessMenuOpen = ref(false);
@@ -680,20 +683,42 @@ function positionOpenMenus() {
   if (accessMenuOpen.value) accessMenuStyle.value = floatingMenuStyle(accessMenu.value, 390);
 }
 
+/* The menu remounts on every open, so `.model-menu-options` starts at scrollTop 0. With enough
+   providers the checked model sits below the fold and the list looks like it opened somewhere
+   random, so centre that row. Measured rather than `scrollIntoView`: the menu is position:fixed and
+   `scrollIntoView` would let the browser walk further up and scroll the page behind it. */
+function revealCheckedModel() {
+  const options = modelMenu.value?.querySelector<HTMLElement>(".model-menu-options");
+  const checked = options?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]');
+  if (!options || !checked) return;
+  const box = options.getBoundingClientRect();
+  const row = checked.getBoundingClientRect();
+  // No layout (jsdom, or the menu was closed again before this ran): nothing honest to measure.
+  if (box.height === 0 || row.height === 0) return;
+  if (row.top >= box.top && row.bottom <= box.bottom) return;
+  options.scrollTop += row.top - box.top - (box.height - row.height) / 2;
+}
+
 async function toggleModelMenu() {
   if (modelMenuOpen.value) {
     modelMenuOpen.value = false;
     return;
   }
   modelMenuOpen.value = true;
+  modelMenuTouched.value = false;
   await nextTick();
   positionOpenMenus();
+  revealCheckedModel();
   modelCatalogRefreshing.value = true;
   try {
     await appStore.refreshConfiguredModels();
   } finally {
     modelCatalogRefreshing.value = false;
   }
+  // The refresh can add or reorder rows, which moves the checked one; re-centre unless the user has
+  // taken over the scroll position.
+  await nextTick();
+  if (modelMenuOpen.value && !modelMenuTouched.value) revealCheckedModel();
 }
 
 async function chooseModel(model: PiModel) {
@@ -914,7 +939,7 @@ onBeforeUnmount(() => {
               <span>{{ modelButtonLabel }}</span>
               <ChevronDown :size="13" />
             </button>
-            <div v-if="modelMenuOpen" class="model-menu !fixed" :class="ui.menuSurface" :style="modelMenuStyle" role="menu" @pointerdown.stop>
+            <div v-if="modelMenuOpen" class="model-menu !fixed" :class="ui.menuSurface" :style="modelMenuStyle" role="menu" @pointerdown.stop="modelMenuTouched = true">
               <div class="menu-section-label">
                 {{ tr("composer.model") }}
                 <LoaderCircle v-spin v-if="modelCatalogRefreshing" :size="11" class="is-spinning" />
