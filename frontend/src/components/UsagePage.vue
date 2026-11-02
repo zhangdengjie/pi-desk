@@ -10,6 +10,8 @@ import { vSpin } from "../utils/spin";
 
 type RangeDays = 0 | 1 | 7 | 30;
 type SortKey = "tokens" | "messages" | "sessions";
+/** `auto` keeps the current B/M/K thresholds; the others force one unit down the whole table. */
+type TokenUnit = "auto" | "K" | "M" | "B";
 
 const appStore = useAppStore();
 
@@ -26,6 +28,14 @@ const loading = ref(false);
 const error = ref("");
 const report = ref<UsageReport | null>(null);
 const sortKey = ref<SortKey>("tokens");
+
+const tokenUnits: { value: TokenUnit; label: string }[] = [
+  { value: "auto", label: "usage.unitAuto" },
+  { value: "K", label: "usage.unitK" },
+  { value: "M", label: "usage.unitM" },
+  { value: "B", label: "usage.unitB" },
+];
+const tokenUnit = ref<TokenUnit>("auto");
 
 const workspacePath = computed(() => {
   const thread = appStore.activeThread;
@@ -123,6 +133,25 @@ function formatCompact(value: number): string {
   if (magnitude >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
   if (magnitude >= 1e3) return `${(value / 1e3).toFixed(1)}K`;
   return `${Math.round(value)}`;
+}
+
+/**
+ * Token counts are the only column where a forced unit helps: mixing 149.8M and 420.8K down one
+ * column makes the rows hard to compare. Counts (messages/sessions) keep `formatCompact`.
+ */
+function formatTokenCompact(value: number): string {
+  const scaled = (divisor: number, suffix: string, digits: number) =>
+    `${numberFormat.format(Number((value / divisor).toFixed(digits)))}${suffix}`;
+  switch (tokenUnit.value) {
+    case "K":
+      return scaled(1e3, "K", 1);
+    case "M":
+      return scaled(1e6, "M", 1);
+    case "B":
+      return scaled(1e9, "B", 2);
+    default:
+      return formatCompact(value);
+  }
 }
 
 function formatCost(value: number): string {
@@ -273,6 +302,16 @@ onMounted(() => { void refresh(); });
           @click="selectRange(option.days)"
         >{{ tr(option.label) }}</button>
       </div>
+      <div class="usage-units" role="group" :aria-label="tr('usage.tokenUnit')">
+        <span class="usage-units-label">{{ tr("usage.tokenUnit") }}</span>
+        <button
+          v-for="unit in tokenUnits"
+          :key="unit.value"
+          type="button"
+          :aria-pressed="tokenUnit === unit.value"
+          @click="tokenUnit = unit.value"
+        >{{ tr(unit.label) }}</button>
+      </div>
       <div class="usage-actions">
         <button type="button" class="usage-scope" :aria-pressed="workspaceFilter === ''" @click="clearWorkspaceFilter">{{ tr("usage.scopeAll") }}</button>
         <button type="button" class="usage-scope" :aria-pressed="workspaceFilter === workspacePath" :disabled="!workspacePath" @click="selectWorkspace(workspacePath)">{{ tr("usage.scopeCurrent") }}</button>
@@ -301,8 +340,8 @@ onMounted(() => { void refresh(); });
       <div class="usage-kpis">
         <section class="usage-kpi">
           <span>{{ tr("usage.kpiTokens") }}</span>
-          <strong :title="formatTokens(totals.tokens.total)">{{ formatCompact(totals.tokens.total) }}</strong>
-          <small>{{ tr("usage.legendInput") }} {{ formatCompact(totals.tokens.input) }} · {{ tr("usage.legendOutput") }} {{ formatCompact(totals.tokens.output) }}</small>
+          <strong :title="formatTokens(totals.tokens.total)">{{ formatTokenCompact(totals.tokens.total) }}</strong>
+          <small>{{ tr("usage.legendInput") }} {{ formatTokenCompact(totals.tokens.input) }} · {{ tr("usage.legendOutput") }} {{ formatTokenCompact(totals.tokens.output) }}</small>
         </section>
         <section class="usage-kpi">
           <span>{{ tr("usage.kpiMessages") }}</span>
@@ -312,7 +351,7 @@ onMounted(() => { void refresh(); });
         <section class="usage-kpi">
           <span>{{ tr("usage.kpiCacheHit") }}</span>
           <strong>{{ cacheHitRate === null ? "—" : formatPercent(cacheHitRate) }}</strong>
-          <small :title="tr('usage.kpiCacheHitHelp')">{{ formatCompact(totals.tokens.cacheRead) }}</small>
+          <small :title="tr('usage.kpiCacheHitHelp')">{{ formatTokenCompact(totals.tokens.cacheRead) }}</small>
         </section>
         <section class="usage-kpi">
           <span>{{ tr("usage.kpiCost") }}</span>
@@ -384,16 +423,16 @@ onMounted(() => { void refresh(); });
           <thead>
             <tr>
               <th scope="col">{{ tr("usage.workspaceName") }}</th>
-              <th scope="col">
+              <th scope="col" class="is-numeric">
                 <button type="button" :aria-pressed="sortKey === 'tokens'" @click="toggleSort('tokens')">{{ tr("usage.columnTokens") }}</button>
               </th>
-              <th scope="col">
+              <th scope="col" class="is-numeric">
                 <button type="button" :aria-pressed="sortKey === 'messages'" @click="toggleSort('messages')">{{ tr("usage.columnMessages") }}</button>
               </th>
-              <th scope="col">
+              <th scope="col" class="is-numeric">
                 <button type="button" :aria-pressed="sortKey === 'sessions'" @click="toggleSort('sessions')">{{ tr("usage.columnSessions") }}</button>
               </th>
-              <th scope="col">{{ tr("usage.columnShare") }}</th>
+              <th scope="col" class="is-numeric">{{ tr("usage.columnShare") }}</th>
             </tr>
           </thead>
           <tbody>
@@ -401,7 +440,7 @@ onMounted(() => { void refresh(); });
               <td class="usage-cell-name">
                 <button type="button" class="usage-link" :title="workspace.path || workspace.name" @click="selectWorkspace(workspace.path)">{{ workspace.name || tr("usage.unknownWorkspace") }}</button>
               </td>
-              <td class="usage-cell-number" :title="formatTokens(workspace.tokens.total)">{{ formatCompact(workspace.tokens.total) }}</td>
+              <td class="usage-cell-number" :title="formatTokens(workspace.tokens.total)">{{ formatTokenCompact(workspace.tokens.total) }}</td>
               <td class="usage-cell-number">{{ formatTokens(workspace.messages) }}</td>
               <td class="usage-cell-number">{{ formatTokens(workspace.sessions) }}</td>
               <td class="usage-cell-number">{{ formatPercent(shareOfTotal(workspace.tokens.total)) }}</td>
@@ -419,8 +458,8 @@ onMounted(() => { void refresh(); });
             <thead>
               <tr>
                 <th scope="col">{{ tr("usage.sessionTitle") }}</th>
-                <th scope="col">{{ tr("usage.columnTokens") }}</th>
-                <th scope="col">{{ tr("usage.sessionUpdated") }}</th>
+                <th scope="col" class="is-numeric">{{ tr("usage.columnTokens") }}</th>
+                <th scope="col" class="is-numeric">{{ tr("usage.sessionUpdated") }}</th>
               </tr>
             </thead>
             <tbody>
@@ -429,7 +468,7 @@ onMounted(() => { void refresh(); });
                   <span class="usage-session-title" :title="row.path">{{ sessionLabel(row) }}</span>
                   <small class="usage-session-meta">{{ row.model || tr("usage.unknownModel") }} · {{ formatTokens(row.messages) }}</small>
                 </td>
-                <td class="usage-cell-number" :title="formatTokens(row.tokens.total)">{{ formatCompact(row.tokens.total) }}</td>
+                <td class="usage-cell-number" :title="formatTokens(row.tokens.total)">{{ formatTokenCompact(row.tokens.total) }}</td>
                 <td class="usage-cell-time" :title="formatStamp(row.updatedAt)">{{ formatTableStamp(row.updatedAt) }}</td>
               </tr>
             </tbody>
@@ -445,8 +484,8 @@ onMounted(() => { void refresh(); });
             <thead>
               <tr>
                 <th scope="col">{{ tr("usage.sessionModel") }}</th>
-                <th scope="col">{{ tr("usage.columnTokens") }}</th>
-                <th scope="col">{{ tr("usage.kpiCost") }}</th>
+                <th scope="col" class="is-numeric">{{ tr("usage.columnTokens") }}</th>
+                <th scope="col" class="is-numeric">{{ tr("usage.kpiCost") }}</th>
               </tr>
             </thead>
             <tbody>
@@ -455,7 +494,7 @@ onMounted(() => { void refresh(); });
                   <span class="usage-session-title">{{ model.model || tr("usage.unknownModel") }}</span>
                   <small class="usage-session-meta">{{ model.provider || tr("usage.unknownWorkspace") }}</small>
                 </td>
-                <td class="usage-cell-number" :title="formatTokens(model.tokens.total)">{{ formatCompact(model.tokens.total) }}</td>
+                <td class="usage-cell-number" :title="formatTokens(model.tokens.total)">{{ formatTokenCompact(model.tokens.total) }}</td>
                 <td class="usage-cell-number">{{ formatCostCell(model.cost) }}</td>
               </tr>
             </tbody>
@@ -519,13 +558,21 @@ onMounted(() => { void refresh(); });
 }
 
 .usage-ranges,
+.usage-units,
 .usage-actions {
   display: flex;
   align-items: center;
   gap: var(--space-1);
 }
 
+.usage-units-label {
+  margin-right: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--font-size-caption, 11px);
+}
+
 .usage-ranges button,
+.usage-units button,
 .usage-scope,
 .usage-action {
   display: inline-flex;
@@ -542,6 +589,7 @@ onMounted(() => { void refresh(); });
 }
 
 .usage-ranges button:hover,
+.usage-units button:hover,
 .usage-scope:hover,
 .usage-action:hover {
   background: var(--bg-hover);
@@ -549,6 +597,7 @@ onMounted(() => { void refresh(); });
 }
 
 .usage-ranges button[aria-selected="true"],
+.usage-units button[aria-pressed="true"],
 .usage-scope[aria-pressed="true"] {
   background: var(--bg-active);
   color: var(--text);
@@ -865,11 +914,19 @@ onMounted(() => { void refresh(); });
   text-align: left;
 }
 
+/* Numeric columns are right-aligned on the data cells; the header must follow, otherwise the label
+ * sits at the left edge of a column whose numbers hug the right edge. */
+.usage-table th.is-numeric {
+  text-align: right;
+}
+
 .usage-table th button {
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
+  /* UA stylesheet centres button text; without this the sortable headers stay misaligned. */
+  text-align: inherit;
   cursor: pointer;
 }
 
