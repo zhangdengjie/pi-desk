@@ -312,13 +312,22 @@ describe("assistant request status", () => {
 });
 
 describe("assistant output waiting indicator", () => {
-  it("keeps the spinner on the conversation content axis without a visible label", async () => {
+  // It used to be the last row of the transcript, which cost 44px of empty content at the end of
+  // every session and made the "newest line stays above the composer" margin depend on a decorative
+  // element. As an overlay the slot is padding (`.timeline`, workbench.css) and the ring cannot be
+  // scrolled into or out of place.
+  it("floats on the conversation content axis instead of scrolling with it", async () => {
     const layout = await layoutText();
     const status = firstRuleBody(layout, ".waiting-for-output");
-    expect(status).toMatch(/width:\s*100%/);
-    expect(status).toMatch(/justify-content:\s*flex-start/);
-    expect(status).toMatch(/margin:\s*0/);
-    expect(status).not.toMatch(/margin:\s*0\s+auto/);
+    expect(status).toMatch(/position:\s*absolute/);
+    // The inset is published by the component (it is the composer wrap's padding-left, the same token
+    // `.timeline` pads with); the fallback is the registered initial value of the gutter.
+    expect(status).toMatch(/left:\s*var\(--tail-status-inset, 32px\)/);
+    expect(status).toMatch(/bottom:\s*calc\(var\(--composer-overlay-reserve\) \+ var\(--tail-slack/);
+    expect(status).toMatch(/pointer-events:\s*none/);
+    expect(status).toMatch(/width:\s*32px/);
+    // A width of 100% would stretch it across the pane, which is the old in-flow contract.
+    expect(status).not.toMatch(/width:\s*100%/);
   });
 });
 

@@ -948,7 +948,10 @@ describe("ConversationPane", () => {
     expect(status.text()).toBe("");
     expect(status.attributes("aria-label")).toBe("Thinking");
     expect(status.find("span.loading-ring").exists()).toBe(true);
-    expect(wrapper.get(".timeline-content").element.lastElementChild?.classList.contains("waiting-for-output")).toBe(true);
+    // An overlay next to the scroller, never inside it: as content it both cost 44px at the end of
+    // every transcript and carried the margin that keeps the newest line above the composer.
+    expect(wrapper.get(".timeline-content").element.querySelector(".waiting-for-output")).toBeNull();
+    expect(status.element.parentElement?.classList.contains("conversation-scroll-region")).toBe(true);
 
     store.retryByThread["thread-1"] = { attempt: 1, maxAttempts: 3, delayMs: 4000 };
     await wrapper.vm.$nextTick();

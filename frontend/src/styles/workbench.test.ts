@@ -175,7 +175,11 @@ describe("responsive workbench layout", () => {
     expect(css).toMatch(/\.conversation-pane\s*{[^}]*--bg-workspace:\s*var\(--bg-conversation\)/s);
     expect(css).toMatch(/--composer-overlay-reserve:\s*0px/);
     expect(css).toMatch(/\.conversation-scroll-region\s*{[^}]*grid-column:\s*1[^}]*grid-row:\s*1 \/ -1/s);
-    expect(css).toMatch(/\.timeline\s*{[^}]*width:\s*100%[^}]*padding:\s*24px var\(--conversation-inline-space\) calc\(var\(--composer-overlay-reserve\) \+ 20px\)[^}]*scroll-padding-bottom:\s*var\(--composer-overlay-reserve\)/s);
+    // The bottom padding reserves three things in this order: the composer's opaque band, the tail
+    // status ring's slot, and the slack that absorbs the follow's lag. `scroll.test.ts` pins the
+    // relation between the last two and `TAIL_LAG_CAP_PX`.
+    expect(css).toMatch(/\.timeline\s*{[^}]*width:\s*100%[^}]*padding:\s*24px var\(--conversation-inline-space\) calc\(var\(--composer-overlay-reserve\) \+ var\(--tail-status-slot\) \+ var\(--tail-slack\)\)[^}]*scroll-padding-bottom:\s*var\(--composer-overlay-reserve\)/s);
+    expect(css).toMatch(/\.conversation-pane\s*{[^}]*--tail-status-slot:\s*44px[^}]*--tail-slack:\s*20px/s);
     expect(css).toMatch(/\.composer-wrap\s*{[^}]*--composer-max-width:\s*var\(--conversation-content-width\)[^}]*--composer-stack-total-inset:\s*20px[^}]*--conversation-inline-space:/s);
     expect(css).toMatch(/\.composer-wrap\s*{[^}]*grid-column:\s*1[^}]*grid-row:\s*2[^}]*background:\s*linear-gradient\(to right, var\(--bg-workspace\) calc\(100% - 15px\), transparent calc\(100% - 15px\)\)[^}]*pointer-events:\s*none/s);
     expect(css).toMatch(/\.composer-wrap\s*{[^}]*padding:\s*8px var\(--conversation-inline-space\) 14px/s);
@@ -212,7 +216,10 @@ describe("responsive workbench layout", () => {
     const css = await workbenchText();
     expect(css).toMatch(/\.composer-wrap\s*{[^}]*pointer-events:\s*none/s);
     expect(css).toMatch(/\.composer-stack-panel\s*{[^}]*pointer-events:\s*auto/s);
-    expect(css).toMatch(/@media \(max-width: 760px\)[\s\S]*\.timeline\s*{[^}]*padding:\s*26px 16px calc\(var\(--composer-overlay-reserve\) \+ 18px\)/);
+    // The narrow layout keeps the same three-part bottom padding; only the slack shrinks (18px), and
+    // it does so through the token so the status ring's `bottom` follows it.
+    expect(css).toMatch(/@media \(max-width: 760px\)[\s\S]*\.conversation-pane\s*{[^}]*--tail-slack:\s*18px/);
+    expect(css).toMatch(/@media \(max-width: 760px\)[\s\S]*\.timeline\s*{[^}]*padding:\s*26px 16px calc\(var\(--composer-overlay-reserve\) \+ var\(--tail-status-slot\) \+ var\(--tail-slack\)\)/);
   });
 
   it("defines inspector drawer and compact sidebar breakpoints", async () => {

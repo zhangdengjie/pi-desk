@@ -1731,14 +1731,33 @@ html.is-resizing-pane .inspector {
   line-height: 1.55;
 }
 
+/* The tail status ring. It is an overlay on the transcript, not its last row: as content it added
+   44px of empty space to the end of every transcript (measured 2026-11-04: scrollHeight 6163 with it,
+   6119 without) and - worse - the margin that keeps the newest line out from under the composer was
+   carried by it. `.timeline`'s bottom padding reserves the same band now (`--tail-status-slot`), so
+   the layout no longer depends on this element existing. */
 .waiting-for-output {
+  position: absolute;
+  z-index: 2;
+  /* The transcript's inline start, published by ConversationPane from `.composer-wrap`'s padding-left
+     (the same token `.timeline` pads with). It cannot be read from here directly:
+     `--conversation-inline-space` is registered `inherits: false`, so this element only ever sees the
+     registered initial value. `32px` is that initial value - the gutter - so a missing measurement
+     still lines up with the left-aligned transcript instead of jumping to the pane's edge. */
+  left: var(--tail-status-inset, 32px);
+  bottom: calc(var(--composer-overlay-reserve) + var(--tail-slack, 20px));
   display: flex;
-  width: 100%;
-  min-height: 28px;
+  width: 32px;
+  height: 32px;
   align-items: center;
-  justify-content: flex-start;
-  margin: 0;
-  color: var(--text-muted);
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+  /* A status readout must not swallow a click meant for the text underneath it. */
+  pointer-events: none;
 }
 
 .waiting-for-output svg {

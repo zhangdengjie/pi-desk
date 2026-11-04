@@ -20,6 +20,10 @@ const timeline = ref<HTMLElement>();
 const timelineContent = ref<HTMLElement>();
 const composerBar = ref<ComponentPublicInstance>();
 const composerHeight = ref(0);
+// The transcript's inline start, for the tail status ring (an overlay outside the scroller). Read off
+// the composer wrap because that element pads with the same token `.timeline` does, and it is already
+// observed - `--conversation-inline-space` cannot be read from the ring itself (`inherits: false`).
+const tailStatusInset = ref(32);
 const searchPopover = ref<InstanceType<typeof SearchPopover>>();
 const searchOpen = ref(false);
 const searchQuery = ref("");
@@ -786,6 +790,7 @@ watch(() => composerBar.value?.$el, (element, _previous, onCleanup) => {
     return;
   }
   const measureComposer = () => {
+    tailStatusInset.value = Math.round(Number.parseFloat(getComputedStyle(element).paddingLeft) || 0);
     const height = Math.ceil(element.getBoundingClientRect().height);
     if (height === composerHeight.value) return;
     composerHeight.value = height;
@@ -1035,17 +1040,21 @@ onBeforeUnmount(() => {
 
       <ConversationMessage v-for="message in directMessages" :key="message.renderKey ?? message.id" :ref="observeTranscriptRow" :message="message" :search-query="searchQuery" :search-active="message.id === activeSearchMessageId" :search-active-index="activeSearchHitIndex" @reader-takeover="onReaderTakeover" />
       </template>
+      </div>
+      </div>
+      <!-- The tail status ring is an overlay, not the last row of the transcript: as content it added
+           44px of empty space to every transcript and the "newest line never under the composer"
+           margin depended on it. `--tail-status-slot` in workbench.css reserves the same band. -->
       <div
         v-if="messages.length > 0"
-        class="waiting-for-output mt-3 inline-flex size-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-raised)] text-[var(--text-secondary)] shadow-sm"
+        class="waiting-for-output"
         :class="{ invisible: !appStore.activeWaitingForOutput || Boolean(appStore.activeRetry) }"
+        :style="{ '--tail-status-inset': `${tailStatusInset}px`, '--composer-overlay-reserve': `${composerHeight}px` }"
         role="status"
         aria-live="polite"
         :aria-label="tr('conversation.waitingForOutput')"
       >
         <LoadingRing :size="14" />
-      </div>
-      </div>
       </div>
       <button
         v-if="!stickToBottom && messages.length"

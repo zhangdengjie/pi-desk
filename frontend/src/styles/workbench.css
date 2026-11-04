@@ -780,6 +780,12 @@
 
 .conversation-pane {
   --bg-workspace: var(--bg-conversation);
+  /* The band the transcript's bottom padding reserves for the tail status ring, and the slack that
+     keeps the newest line above the composer's opaque top edge. `TAIL_LAG_CAP_PX` in utils/scroll.ts
+     has to fit inside `--tail-slack + --tail-status-slot - the row's own padding`; scroll.test.ts
+     asserts that sum, so changing either side fails the suite instead of the layout. */
+  --tail-status-slot: 44px;
+  --tail-slack: 20px;
   min-width: 0;
   min-height: 0;
 }
@@ -793,7 +799,7 @@
   --conversation-inline-space: max(var(--conversation-gutter), calc((100% - var(--conversation-content-width)) / 2));
   width: 100%;
   max-width: none;
-  padding: 24px var(--conversation-inline-space) calc(var(--composer-overlay-reserve) + 20px);
+  padding: 24px var(--conversation-inline-space) calc(var(--composer-overlay-reserve) + var(--tail-status-slot) + var(--tail-slack));
   /* The band a search hit is centred in, declared once. Measured in the running app (devSearchProbe,
    * 2026-09-29): the scrollport already starts below the title bar - port.top = 44 = topbar height -
    * so this is NOT an overlap repair. It is the top inset the transcript scroller subtracts when it
@@ -2278,10 +2284,15 @@
     display: none;
   }
 
+  .conversation-pane {
+    --tail-slack: 18px;
+  }
+
   .timeline {
     width: 100%;
-    padding: 26px 16px calc(var(--composer-overlay-reserve) + 18px);
+    padding: 26px 16px calc(var(--composer-overlay-reserve) + var(--tail-status-slot) + var(--tail-slack));
   }
+
 
   /* The narrow-layout copy of the rule above: same selectors, so it has to read the same token or a
      pane under the breakpoint silently puts the paragraphs back to a literal. */
