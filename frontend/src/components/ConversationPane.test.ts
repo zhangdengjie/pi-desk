@@ -588,11 +588,11 @@ describe("ConversationPane", () => {
     wrapper.unmount();
     vi.useRealTimers();
   });
-  // A jump bigger than a typing step is eased over frames, and every step of that ease
-  // moves the scroll position - which the browser reports as a scroll event. If the
-  // follow read its own steps as "the reader left the tail", one jump would be enough
-  // to stop following the run for good.
-  it("keeps following the tail across an eased jump", async () => {
+  // A jump wider than a line is pinned in one write (`TAIL_LAG_CAP_PX`): easing it would spend
+  // frames with the newest line under the composer's opaque top edge. That write still comes back
+  // as a scroll event, and if the follow read it as "the reader left the tail" one jump would be
+  // enough to stop following the run for good.
+  it("pins a jump wider than a line and keeps following it", async () => {
     const frames: FrameRequestCallback[] = [];
     const observers: Array<{ callback: () => void; targets: Element[] }> = [];
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
@@ -624,13 +624,83 @@ describe("ConversationPane", () => {
     const rowObserver = observers.find((entry) => entry.targets.some((target) => target.classList.contains("stub-message")))!;
     rowObserver.callback();
 
-    expect(timeline.scrollTop).toBeGreaterThan(1200);
-    expect(timeline.scrollTop).toBeLessThan(2100);
-
-    await wrapper.get(".timeline").trigger("scroll");
-    for (let guard = 0; guard < 900 && frames.length; guard += 1) frames.shift()!(0);
+    // 900px is a jump, not a line: one write, no ease, nothing painted in between.
     expect(timeline.scrollTop).toBe(2100);
+
+    // Our own write arrives as a scroll event; it must not release the follow.
+    await wrapper.get(".timeline").trigger("scroll");
+    sizes.scrollHeight = 2700 + 500;
+    rowObserver.callback();
+    expect(timeline.scrollTop).toBe(2600);
     wrapper.unmount();
+  });
+
+  // WebKit stops delivering rAF callbacks while the window is occluded, and the handle it returned
+  // never resets - so a `tailFrame` guard alone latches the follow shut for good and the newest line
+  // stays under the composer (measured in the sandbox 2026-11-04: `tailFrame` stuck at 8, a 73px gap
+  // for 3.7s, while every later ResizeObserver event asked for a follow and got nothing).
+  it("restarts the frame chain when the engine dropped its callback", async () => {
+    const frames: FrameRequestCallback[] = [];
+    let handle = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      handle += 1;
+      return handle;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const observers: Array<{ callback: () => void; targets: Element[] }> = [];
+    vi.stubGlobal("ResizeObserver", class {
+      record: { callback: () => void; targets: Element[] };
+      constructor(callback: () => void) {
+        this.record = { callback, targets: [] };
+        observers.push(this.record);
+      }
+      observe(target: Element) { this.record.targets.push(target); }
+      unobserve() {}
+      disconnect() {}
+    });
+    const clock = vi.spyOn(performance, "now");
+    let now = 1_000;
+    clock.mockImplementation(() => now);
+
+    const wrapper = mountTranscript(4);
+    await flushPromises();
+    const sizes = { clientHeight: 600, scrollHeight: 1800 };
+    const timeline = wrapper.get(".timeline").element as HTMLElement;
+    Object.defineProperties(timeline, {
+      clientHeight: { configurable: true, get: () => sizes.clientHeight },
+      scrollHeight: { configurable: true, get: () => sizes.scrollHeight },
+    });
+    timeline.scrollTop = 1200;
+    await wrapper.get(".timeline").trigger("scroll");
+    const rowObserver = observers.find((entry) => entry.targets.some((target) => target.classList.contains("stub-message")))!;
+
+    // One line of growth: eased, so the tail still has a gap and the chain is left in flight.
+    sizes.scrollHeight = 1830;
+    now += 20;
+    const beforeChain = frames.length;
+    rowObserver.callback();
+    expect(frames.length).toBe(beforeChain + 1);
+
+    // Inside one frame's worth of time that callback is real: no second chain.
+    sizes.scrollHeight = 1860;
+    now += 20;
+    rowObserver.callback();
+    expect(frames.length).toBe(beforeChain + 1);
+
+    // Past the staleness window it can only be a callback the engine dropped, so it is cleared and
+    // a fresh chain is requested - otherwise the follow is latched shut for the rest of the run and
+    // the newest line stays under the composer (the sandbox's stuck `tailFrame = 8`).
+    sizes.scrollHeight = 1890;
+    now += 300;
+    rowObserver.callback();
+    expect(frames.length).toBe(beforeChain + 2);
+
+    // Draining the restarted chain lands the tail on the bottom.
+    for (let guard = 0; guard < 900 && frames.length; guard += 1) frames.shift()!(0);
+    expect(timeline.scrollTop).toBe(1290);
+    wrapper.unmount();
+    clock.mockRestore();
   });
 
   it("leaves the reader's place alone when a collapsed panel grows above them", async () => {

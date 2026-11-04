@@ -96,6 +96,28 @@ export const CATCH_UP_PX = 160;
 export const FULL_EASE_SHARE = 0.32;
 
 /**
+ * The widest gap the follow may leave *unclosed* while the tail is pinned.
+ *
+ * This is not a feel number, it is the composer's safety margin. `.composer-wrap` paints an opaque
+ * band over the bottom `--composer-overlay-reserve` px of the scrollport, so the resting distance
+ * between the last row's bottom and the composer's top edge is
+ * `padding slack (20px) + the invisible waiting indicator (44px)`; the last line's ink sits another
+ * row padding (12px) above that, i.e. ~64px of buffer (measured 2026-11-04 in the sandbox with the
+ * dev tail probe: `.timeline` padBottom 141 = reserve 121 + 20, composer 133, last row bottom 52px
+ * above the composer's top).
+ *
+ * A tail `δ` behind the bottom pushes the newest line down by `δ`, so past that buffer the line is
+ * under the composer - which is what reads as "the newest line is only half rendered". Easing is
+ * only defensible while `δ` stays inside the buffer, and one line of prose is 17-34px, so anything
+ * wider than a line is a *jump* (a settling block, a folding panel) and is pinned in one write.
+ * Measured: an 87px settle jump eased over two frames left the newest line covered by 22.6px.
+ *
+ * Keep this below `buffer - row padding` (64 - 12 = 52 here) if either side of that arithmetic
+ * changes: `workbench.css`'s `.timeline` padding slack, or the transcript's trailing spacer.
+ */
+export const TAIL_LAG_CAP_PX = 40;
+
+/**
  * Smallest step the control law may ask for.
  *
  * Sub-pixel steps do not survive the engine: a 0.78px write came back as 0 for five frames in
@@ -105,6 +127,17 @@ export const FULL_EASE_SHARE = 0.32;
  * (`pendingStep` in ConversationPane). This floor only keeps the request non-zero.
  */
 const MIN_STEP_PX = 0.01;
+
+/**
+ * The band to hand `nextTailScroll` for a gap the document just grew by.
+ *
+ * The configured band answers "how close to the bottom still counts as there" (sub-pixel rounding,
+ * 2px shipped). `TAIL_LAG_CAP_PX` answers a different question - "is this a line or a jump" - and a
+ * jump must pin in one write, which is what an infinite band means to `nextTailScroll`.
+ */
+export function tailSnapBand(band: number, gap: number): number {
+  return gap > TAIL_LAG_CAP_PX ? Number.POSITIVE_INFINITY : band;
+}
 
 export function nextTailScroll(
   currentTop: number,

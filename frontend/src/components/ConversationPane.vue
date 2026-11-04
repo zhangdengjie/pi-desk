@@ -8,7 +8,7 @@ import ConversationMessage from "./ConversationMessage.vue";
 import SearchPopover from "./SearchPopover.vue";
 import { useAppStore } from "../stores/app";
 import { CONVERSATION_VIRTUALIZATION_THRESHOLD, estimateMessageSize, shouldVirtualizeMessages } from "../utils/conversationVirtualization";
-import { isNearBottom, createSettleSnap, nestedScrollerCanGoUp, nextTailScroll, TAIL_PIN_OFFSET } from "../utils/scroll";
+import { isNearBottom, createSettleSnap, nestedScrollerCanGoUp, nextTailScroll, tailSnapBand, TAIL_PIN_OFFSET } from "../utils/scroll";
 import { PANEL_MOTION_MS, PANEL_SETTLE_MS } from "../utils/paneMotion";
 import { streamTuning } from "../utils/streamTuning";
 import { groupConversationTurns } from "../utils/conversationGrouping";
@@ -262,10 +262,20 @@ function scrollToBottom() {
   if (element) element.scrollTop = TAIL_PIN_OFFSET;
 }
 
+function pinOnReturn() {
+  if (document.visibilityState !== "visible") return;
+  if (stickToBottom.value) scrollToBottom();
+}
+
 // The follow is one frame chain, not one scroll per event: several ResizeObserver
 // callbacks and stream signals land inside a single frame, and chasing each of them
 // would force extra layouts and let intermediate offsets reach the screen.
 let tailFrame = 0;
+// When `tailFrame` was requested. Only used to tell "a frame is in flight" from "the engine dropped
+// that callback while the window was occluded" - the handle number cannot answer that (see
+// followTail).
+let tailFrameAt = 0;
+const TAIL_FRAME_STALE_MS = 250;
 // Our own writes to scrollTop come back as scroll events - synchronously in some
 // engines, on the next frame in others. Both cases have to be recognised, or the
 // follow reads its own steps as "the reader left the tail" and releases itself.
@@ -383,12 +393,6 @@ function stepTail(): boolean {
   const sinceLast = lastStepAt ? now - lastStepAt : 0;
   const dtMs = sinceLast >= 4 && sinceLast <= STEP_DT_MAX_MS ? sinceLast : 1000 / 60;
   lastStepAt = now;
-  // Either window pins: they are independent causes with the same remedy, and `limit` answers
-  // either the configured band or Infinity, so the wider one wins.
-  const snapBand = Math.max(
-    settleSnap.limit(streamTuning.scroll.snapWithinPx),
-    paneMotionSnap.limit(streamTuning.scroll.snapWithinPx),
-  );
   // Growing content keeps the configured share; a still document means the gap is a leftover
   // layout change and is closed quickly (see QUIET_SHARE above).
   if (element.scrollHeight !== lastContentHeight) {
@@ -397,6 +401,18 @@ function stepTail(): boolean {
   }
   const quiet = now - contentSettledAt > QUIET_MS;
   const share = quiet ? Math.max(streamTuning.scroll.factor, QUIET_SHARE) : streamTuning.scroll.factor;
+  const gapBefore = element.scrollHeight - element.clientHeight - element.scrollTop;
+  // Either window pins: they are independent causes with the same remedy, and `limit` answers
+  // either the configured band or Infinity, so the wider one wins. `tailSnapBand` adds the third,
+  // always-on rule: a gap wider than a line is a jump and pins in one write, because easing it
+  // would spend frames with the newest line under the composer's opaque edge.
+  const snapBand = tailSnapBand(
+    Math.max(
+      settleSnap.limit(streamTuning.scroll.snapWithinPx),
+      paneMotionSnap.limit(streamTuning.scroll.snapWithinPx),
+    ),
+    gapBefore,
+  );
   const next = nextTailScroll(
     element.scrollTop,
     element.scrollHeight,
@@ -406,7 +422,6 @@ function stepTail(): boolean {
     streamTuning.scroll.catchUpPx,
     dtMs,
   );
-  const gapBefore = element.scrollHeight - element.clientHeight - element.scrollTop;
   const delta = next - element.scrollTop;
   let step = 0;
   if (gapBefore <= snapBand || delta <= 0) {
@@ -438,9 +453,21 @@ function stepTail(): boolean {
 
 function followTail() {
   if (!stepTail()) return;
-  if (tailFrame) return;
+  // A frame that is genuinely in flight must not be duplicated: several ResizeObserver callbacks
+  // land in one frame and each of them would otherwise start its own chain. But the handle alone is
+  // not proof of life - WebKit drops the callback entirely while the window is occluded or
+  // minimised, and a handle that never resets latches this gate shut for good. The follow then
+  // degrades to one sub-pixel step per resize event (floored to 0px by the engine), the tail stays
+  // where it was, and the newest line sits under the composer until the reader scrolls. Measured in
+  // the sandbox 2026-11-04: `tailFrame` stuck at 8 with a 73px gap for 3.7s. A visible window fires
+  // rAF within ~16ms, so 250ms means the callback is gone.
+  const now = performance.now();
+  if (tailFrame && now - tailFrameAt < TAIL_FRAME_STALE_MS) return;
+  if (tailFrame) cancelAnimationFrame(tailFrame);
+  tailFrameAt = now;
   tailFrame = requestAnimationFrame(() => {
     tailFrame = 0;
+    tailFrameAt = 0;
     if (stepTail()) followTail();
   });
 }
@@ -766,13 +793,16 @@ watch(() => composerBar.value?.$el, (element, _previous, onCleanup) => {
       if (composerBar.value?.$el === element && stickToBottom.value) scrollToBottom();
     });
   };
-  let resizeFrame = 0;
   const observer = new ResizeObserver(() => {
     // Same reason as the row observer: a pane drag resizes the composer every frame and
     // measuring it forces a synchronous layout. Stand down for the drag, catch up on release.
     if (appStore.paneResizing) return;
-    cancelAnimationFrame(resizeFrame);
-    resizeFrame = requestAnimationFrame(measureComposer);
+    // Measured right here, not in a rAF: a ResizeObserver callback already runs once per frame,
+    // after layout and before paint, and deferring the measurement meant it never ran at all while
+    // the window was occluded (WebKit drops rAF then) - so the reserve kept the height the composer
+    // had before it grew a row and the transcript's padding stayed 12px short of the composer's
+    // real edge (measured 2026-11-04: reserve 121px, `.composer-wrap` 133px).
+    measureComposer();
   });
   watch(() => appStore.paneResizing, (resizing) => {
     if (!resizing) measureComposer();
@@ -781,7 +811,6 @@ watch(() => composerBar.value?.$el, (element, _previous, onCleanup) => {
   measureComposer();
   onCleanup(() => {
     observer.disconnect();
-    cancelAnimationFrame(resizeFrame);
     stopPaneMotionPin();
   });
 }, { flush: "post" });
@@ -869,6 +898,14 @@ onMounted(() => {
   window.addEventListener("pointercancel", onWindowPointerUp, true);
   window.addEventListener("pointermove", onWindowPointerMove, true);
   window.addEventListener("blur", onWindowPointerUp);
+  // The follow is a frame chain, and WebKit stops delivering frames while the window is occluded.
+  // A run that finishes in the background therefore leaves the tail wherever it was, and nothing
+  // wakes the follow until the next content change - the newest line then sits under the composer
+  // for as long as the reader looks at it (the same mechanism `followTail`'s stale-handle watchdog
+  // recovers from, but that one needs a resize event to fire). Coming back to the window is the one
+  // moment where a hard pin is both cheap and invisible.
+  document.addEventListener("visibilitychange", pinOnReturn);
+  window.addEventListener("focus", pinOnReturn);
   void openConversation();
 });
 
@@ -886,6 +923,8 @@ onBeforeUnmount(() => {
   window.removeEventListener("pointercancel", onWindowPointerUp, true);
   window.removeEventListener("pointermove", onWindowPointerMove, true);
   window.removeEventListener("blur", onWindowPointerUp);
+  document.removeEventListener("visibilitychange", pinOnReturn);
+  window.removeEventListener("focus", pinOnReturn);
   pointerHeld = false;
   stopFollowingTail();
   cancelAnimationFrame(pinFrames);

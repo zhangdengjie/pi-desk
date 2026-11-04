@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSettleSnap, FULL_EASE_SHARE, isNearBottom, nextTailScroll, TAIL_PIN_OFFSET } from "./scroll";
+import { createSettleSnap, FULL_EASE_SHARE, isNearBottom, nextTailScroll, tailSnapBand, TAIL_LAG_CAP_PX, TAIL_PIN_OFFSET } from "./scroll";
 
 describe("TAIL_PIN_OFFSET", () => {
   it("stays under the ceiling where WebKit drops a scrollTop write at the top", () => {
@@ -135,5 +135,44 @@ describe("createSettleSnap", () => {
     snap.arm();
     clock = 500;
     expect(snap.limit(140)).toBe(140);
+  });
+});
+
+describe("TAIL_LAG_CAP_PX", () => {
+  it("is wider than a line of prose, so the ease still owns a single line of growth", () => {
+    // 17-34px is the measured range of one line of Markdown prose (see nextTailScroll's comment).
+    // At or below 34 the cap would swallow the one-line step and bring back the per-line push.
+    expect(TAIL_LAG_CAP_PX).toBeGreaterThan(34);
+  });
+
+  it("stays under the buffer the composer's opaque band leaves above the tail", () => {
+    // `.timeline` padding slack (20px) + the invisible waiting indicator (44px, `mt-3 size-8`)
+    // - the last row's own padding (12px) = 52px of room before the newest line's ink reaches the
+    // composer's top edge. The cap has to fit inside it, or "never covered" is not a guarantee.
+    // Change any of those three and this test is the place that notices.
+    const paddingSlack = 20;
+    const waitingIndicator = 44;
+    const rowPadding = 12;
+    expect(TAIL_LAG_CAP_PX).toBeLessThanOrEqual(paddingSlack + waitingIndicator - rowPadding);
+  });
+});
+
+describe("tailSnapBand", () => {
+  it("leaves a gap a line can explain to the ease", () => {
+    // The shipped band is sub-pixel; a 26px line must still travel over frames, not step.
+    expect(tailSnapBand(2, 26)).toBe(2);
+    expect(tailSnapBand(2, TAIL_LAG_CAP_PX)).toBe(2);
+  });
+
+  it("pins a gap wider than a line in one write", () => {
+    // 87px is what a settling block measured in the sandbox (2026-11-04). Eased at the one-line
+    // share it left the newest line 22.6px under the composer's opaque top edge for two frames.
+    expect(tailSnapBand(2, TAIL_LAG_CAP_PX + 1)).toBe(Number.POSITIVE_INFINITY);
+    expect(nextTailScroll(713, 1000, 200, tailSnapBand(2, 87))).toBe(800);
+  });
+
+  it("keeps a window that pins everything, including a gap inside the cap", () => {
+    // The end-of-run batch hands in Infinity already; the cap must not narrow it.
+    expect(tailSnapBand(Number.POSITIVE_INFINITY, 12)).toBe(Number.POSITIVE_INFINITY);
   });
 });
