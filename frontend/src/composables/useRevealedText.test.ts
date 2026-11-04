@@ -1,7 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, ref } from "vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useRevealedText } from "./useRevealedText";
+import { catchUpAllReveals, useRevealedText } from "./useRevealedText";
 import { applyStreamTuning, resetStreamTuning, SHIPPED, streamTuning } from "../utils/streamTuning";
 
 // A separate file on purpose: the tuning is a module singleton, and a case that changes it
@@ -109,6 +109,36 @@ describe("useRevealedText + streamTuning", () => {
     } finally {
       wrapper.unmount();
       Reflect.deleteProperty(document, "visibilityState");
+    }
+    vi.useRealTimers();
+  });
+
+  it("reveals the whole backlog at once when the reader returns to the bottom", async () => {
+    vi.useFakeTimers();
+    applyStreamTuning({ split: 1000, floor: 1, ceiling: 1 }, null);
+    const { wrapper, source } = harness("");
+    const backlog = "abcdefghij";
+    try {
+      source.value = backlog;
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(16);
+      expect(wrapper.text()).toBe("a");
+
+      // The reader scrolled up and back: followLatest calls catchUpAllReveals, which lands the
+      // backlog whole instead of replaying it a character a frame.
+      source.value = backlog + backlog;
+      await flushPromises();
+      catchUpAllReveals();
+      await flushPromises();
+      expect(wrapper.text()).toBe(backlog + backlog);
+
+      // And the run may still be going: the next delta continues from the full prefix.
+      source.value = backlog + backlog + "z";
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(16);
+      expect(wrapper.text()).toBe(backlog + backlog + "z");
+    } finally {
+      wrapper.unmount();
     }
     vi.useRealTimers();
   });

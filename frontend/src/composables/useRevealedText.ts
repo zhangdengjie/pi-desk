@@ -30,6 +30,19 @@ function installListener(): void {
 }
 
 /**
+ * Reveal everything pending across every live stream, right now.
+ *
+ * `visibilitychange` above already does this when the window comes back; the reader returning to
+ * the bottom of the transcript is the same "I want the latest" moment, so `followLatest` shares it.
+ * The reveal is proportional to the backlog, so without this a stream that fell behind while the
+ * reader was scrolled up would catch up in chunks - several characters a frame - instead of landing
+ * whole once and then typing smoothly.
+ */
+export function catchUpAllReveals(): void {
+  for (const reveal of Array.from(waiting)) reveal();
+}
+
+/**
  * A string that arrives on screen one animation frame at a time.
  *
  * The caller keeps owning the authoritative text; this only decides how fast the

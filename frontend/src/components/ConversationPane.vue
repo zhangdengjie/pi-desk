@@ -7,6 +7,7 @@ import ComposerBar from "./ComposerBar.vue";
 import ConversationMessage from "./ConversationMessage.vue";
 import SearchPopover from "./SearchPopover.vue";
 import { useAppStore } from "../stores/app";
+import { catchUpAllReveals } from "../composables/useRevealedText";
 import { CONVERSATION_VIRTUALIZATION_THRESHOLD, estimateMessageSize, shouldVirtualizeMessages } from "../utils/conversationVirtualization";
 import { isNearBottom, createSettleSnap, nestedScrollerCanGoUp, nextTailScroll, tailSnapBand, TAIL_PIN_OFFSET } from "../utils/scroll";
 import { PANEL_MOTION_MS, PANEL_SETTLE_MS } from "../utils/paneMotion";
@@ -604,8 +605,13 @@ function onTimelineWheel(event: WheelEvent) {
 
 // The follow only resumes on an actual arrival at the bottom, so the reader
 // needs one click to get back to a streaming tail instead of dragging.
-function followLatest() {
+async function followLatest() {
   stickToBottom.value = true;
+  // The reveal is proportional to the backlog, so a stream that fell behind while the reader was
+  // scrolled up would otherwise catch up in chunks - several characters a frame. Land it whole
+  // once (the reader asked for the latest), then keep typing smoothly.
+  catchUpAllReveals();
+  await nextTick();
   scrollToBottom();
   updateActiveNavigation();
 }
