@@ -236,6 +236,29 @@ export function hasUnclosedFence(text: string): boolean {
   return fence !== null;
 }
 
+export type TailBlockKind = "paragraph" | "table" | "structural";
+
+/**
+ * The block kind of the live tail, decided from its first line. This routes the tail render: a
+ * paragraph and a table are inline-rendered (append-only, a painted line never moves), while a
+ * structural block (heading / fence / list / blockquote) is block-rendered so it shows its real
+ * shape while it types instead of snapping to it when the block closes.
+ *
+ * A table is deliberately kept out of the block renderer even though it is structural: its columns
+ * re-size as rows arrive, which is exactly the re-flow this mechanism exists to avoid. A table row
+ * starts with `|`, which is what this keys on - before the delimiter row arrives markdown-it reads
+ * it as a paragraph anyway, so "starts with `|`" is a conservative table catch.
+ */
+export function tailBlockKind(text: string): TailBlockKind {
+  const first = text.split("\n", 1)[0] ?? "";
+  if (/^ {0,3}#{1,6}( |$)/.test(first)) return "structural";
+  if (FENCE.test(first)) return "structural";
+  if (/^ {0,3}> /.test(first)) return "structural";
+  if (LIST_ITEM.test(first)) return "structural";
+  if (/^ {0,3}\|/.test(first)) return "table";
+  return "paragraph";
+}
+
 /**
  * Whether the two blocks that meet at a render seam need the paragraph-rhythm margin.
  *

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasBackwardReference, hasUnclosedFence, seamNeedsSpacing, splitSettledMarkdown } from "./markdownSettled";
+import { hasBackwardReference, hasUnclosedFence, seamNeedsSpacing, splitSettledMarkdown, tailBlockKind } from "./markdownSettled";
 import { renderMarkdownDocument } from "./markdownRenderer";
 
 /**
@@ -120,6 +120,16 @@ describe("splitSettledMarkdown", () => {
     expect(hasUnclosedFence(`${head}\n\n\`\`\`python\nx = 1 ** 2`)).toBe(true);
     expect(hasUnclosedFence(`${head}\n\n\`\`\`\ncode\n\`\`\`\n\ntail`)).toBe(false);
     expect(hasUnclosedFence(`${head}\n\na plain paragraph`)).toBe(false);
+  });
+
+  it("classifies the tail's block kind from its first line", () => {
+    expect(tailBlockKind("## Title")).toBe("structural");
+    expect(tailBlockKind("```python\nx = 1")).toBe("structural");
+    expect(tailBlockKind("- one\n- two")).toBe("structural");
+    expect(tailBlockKind("> quote")).toBe("structural");
+    expect(tailBlockKind("| a | b |")).toBe("table");
+    expect(tailBlockKind("just prose")).toBe("paragraph");
+    expect(tailBlockKind("")).toBe("paragraph");
   });
 });
 

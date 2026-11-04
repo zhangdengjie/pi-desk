@@ -1220,6 +1220,14 @@
   margin-top: var(--md-block-gap);
 }
 
+/* A structural tail (heading / fence / list / blockquote) renders as a real block while it types, so
+   its own top margin already provides the gap to the settled content. Only the bottom margin has to
+   go: it would otherwise leave a trailing gap under the newest line, in front of the composer's
+   reserve. Same contract as `.md-tail > :last-child` in layout.css for the two-piece branch. */
+.markdown-body.is-plain-stream > .md-tail-plain > .md-tail-block > :last-child {
+  margin-bottom: 0;
+}
+
 /* The caret sits after the last character, so it reads as a terminal cursor. `steps(2, start)` is
    a hard on/off blink; a fade would look like a loading pulse. The element is aria-hidden and the
    text is untouched, so it is neither announced nor copied. */

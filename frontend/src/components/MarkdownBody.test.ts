@@ -653,16 +653,52 @@ describe("MarkdownBody typewriter mode", () => {
     vi.useRealTimers();
   });
 
-  it("keeps a code fence literal: backticks are content, not inline markup", async () => {
+  it("renders a fence as a code block live, keeping ** inside code literal", async () => {
     vi.useFakeTimers();
     const { wrapper } = mountMarkdown("seed", { streaming: true });
     await wrapper.setProps({ text: "```python\nx = 1 ** 2" });
     await vi.advanceTimersByTimeAsync(5_000);
 
-    // An unclosed fence must not be inline-rendered: `**` inside code is prose, not emphasis.
+    // A fence renders as a code panel while it streams (block mode), and `**` inside code is prose,
+    // not emphasis - the block renderer knows the fence, the inline renderer would not.
     expect(wrapper.find(".md-tail-plain strong").exists()).toBe(false);
-    expect(wrapper.get(".md-plain-text").text()).toContain("```python");
-    expect(wrapper.get(".md-plain-text").text()).toContain("x = 1 ** 2");
+    expect(wrapper.get(".md-tail-block code").text()).toContain("x = 1 ** 2");
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("renders a heading live as a heading, not as literal `##`", async () => {
+    vi.useFakeTimers();
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text: "## Title" });
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(wrapper.get(".md-tail-block h2").text()).toBe("Title");
+    expect(wrapper.find(".md-plain-caret").exists()).toBe(false);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("renders a list live as a list", async () => {
+    vi.useFakeTimers();
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text: "- one\n- two" });
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    const items = wrapper.findAll(".md-tail-block li");
+    expect(items.map((li) => li.text())).toEqual(["one", "two"]);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("keeps a table literal while it streams: columns re-size, so it must not block-render", async () => {
+    vi.useFakeTimers();
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text: "| a | b |\n|---|---|" });
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(wrapper.find(".md-tail-block table").exists()).toBe(false);
+    expect(wrapper.get(".md-plain-text").text()).toContain("| a | b |");
     wrapper.unmount();
     vi.useRealTimers();
   });

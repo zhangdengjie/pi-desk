@@ -6,7 +6,7 @@ import { useRevealedText } from "../composables/useRevealedText";
 import type { WorkspaceFileLink } from "../utils/fileLinks";
 import { slugifyHeading } from "../utils/markdown";
 import { renderInlineMarkdown, renderMarkdownDocument } from "../utils/markdownRenderer";
-import { hasUnclosedFence, seamNeedsSpacing, splitSettledMarkdown } from "../utils/markdownSettled";
+import { hasUnclosedFence, seamNeedsSpacing, splitSettledMarkdown, tailBlockKind } from "../utils/markdownSettled";
 import { streamTuning } from "../utils/streamTuning";
 import { collectMarkdownOutline, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import FileLinkContextMenu from "./FileLinkContextMenu.vue";
@@ -144,23 +144,24 @@ const split = computed(() => {
 });
 
 /**
- * The live tail rendered as inline Markdown (`**bold**` -> bold) instead of raw source.
+ * How the live tail is rendered. `inline` = append-only inline Markdown (a paragraph or a table,
+ * both of which can only extend the last line); `block` = the full block renderer, so a heading /
+ * fence / list / blockquote shows its real shape while it types instead of snapping to it when the
+ * block closes. `none` = not streaming (or an empty tail), the template has nothing to draw.
  *
- * This is the half of "render like a chat client" that removes the most common jump: with the plain
- * text fallback, `**bold**` sits on screen as literal asterisks while the run streams and only
- * snaps to bold when the block settles. Inline rendering keeps every already-painted line stable -
- * its markers are resolved - and only the line still being written re-flows, which is the same
- * trade the mainstream clients make. Block-level constructs are untouched (a heading stays `##`, a
- * fence stays backticks) and still settle when the block closes.
- *
- * A code fence is the one block that must NOT be inline-rendered: its backticks are content, and a
- * `**` inside code is prose. When the tail is inside an unclosed fence the plain-text fallback stays.
+ * A table stays inline even though it is structural: its columns re-size as rows arrive, which is
+ * the re-flow this whole mechanism exists to avoid. A fence inside a paragraph-shaped tail (raw
+ * mode, where the tail is the whole answer) must still go through the block renderer, or its code
+ * would be read as inline emphasis.
  */
-const tailInlineHtml = computed(() => {
-  if (!plainStream.value) return "";
+const tailRenderMode = computed<"none" | "inline" | "block">(() => {
+  if (!plainStream.value) return "none";
   const tail = split.value.tail;
-  if (!tail || hasUnclosedFence(tail)) return "";
-  return renderInlineMarkdown(tail);
+  if (!tail) return "none";
+  const kind = tailBlockKind(tail);
+  if (kind === "table") return "inline";
+  if (kind === "paragraph" && !hasUnclosedFence(tail)) return "inline";
+  return "block";
 });
 
 /**
@@ -268,12 +269,11 @@ const pieces = computed(() => {
     }
     // Two separate elements, two separate writes: a frame that only reveals more text touches
     // `.md-tail` and leaves every settled node exactly where it is - no re-parse, no re-layout.
-    // In plain mode the tail is not HTML at all: the template prints it as text, which is what
-    // makes the live block impossible to re-flow.
+    // The tail is rendered inline (append-only) or as a block (structural), per `tailRenderMode`.
     return {
       shell: settledMemo.html,
-      tail: plainStream.value
-        ? tail
+      tail: tailRenderMode.value === "inline"
+        ? renderInlineMarkdown(tail)
         : renderMarkdownDocument(tail, { ...env, preserveSlugs: true }, instanceUid, false),
     };
   }
@@ -449,7 +449,7 @@ function openContextMenu(event: MouseEvent) {
     :data-markdown-uid="instanceUid"
   >
     <div ref="settledElement" class="md-settled" />
-    <div class="md-tail-plain" :class="{ 'is-seamed': rendered !== '' }"><span v-if="tailInlineHtml" class="md-plain-text" v-html="tailInlineHtml" /><span v-else class="md-plain-text">{{ split.tail }}</span><span class="md-plain-caret" aria-hidden="true" /></div>
+    <div class="md-tail-plain" :class="{ 'is-seamed': rendered !== '' && tailRenderMode === 'inline' }"><span v-if="tailRenderMode === 'inline'" class="md-plain-text" v-html="tailHtml" /><div v-else-if="tailRenderMode === 'block'" class="md-tail-block" v-html="tailHtml" /><span v-if="tailRenderMode === 'inline'" class="md-plain-caret" aria-hidden="true" /></div>
   </div>
   <!-- One pass: the whole block in a single v-html. This is the settled shape every layout.css rule
        was written against, and it is what a non-streaming block keeps using. -->
