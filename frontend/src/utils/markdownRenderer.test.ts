@@ -34,6 +34,16 @@ describe("renderInlineMarkdown", () => {
   });
 });
 
+describe("streaming table", () => {
+  it("locks a streaming table's columns via the is-streaming class", () => {
+    const source = "| a | b |\n|---|---|\n| c | d |\n";
+    const streaming = renderMarkdownDocument(source, { ...env(), streamingTable: true }, "md1", false);
+    const settled = renderMarkdownDocument(source, env(), "md1", false);
+    expect(streaming).toContain('class="is-streaming"');
+    expect(settled).not.toContain("is-streaming");
+  });
+});
+
 describe("ordered list markers", () => {
   it("hands the CSS counter its start, and keeps the role the list-style reset costs", () => {
     const html = renderMarkdownDocument("8. 八\n9. 九\n", env(), "md1");

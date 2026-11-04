@@ -40,6 +40,13 @@ export interface MarkdownRenderEnv extends Env {
    * identical one above it and the outline points at whichever came first in the DOM.
    */
   preserveSlugs?: boolean;
+  /**
+   * The table is the one block that still re-flows in a live tail: auto table layout sizes its
+   * columns from every row, so each data row that arrives moves the columns already painted. Mark
+   * the render as streaming and the table gets `table-layout: fixed`, which sizes the columns once
+   * from the header and lets later rows wrap instead of re-flowing earlier ones.
+   */
+  streamingTable?: boolean;
 }
 
 /**
@@ -116,8 +123,13 @@ function cellFitClass(tokens: CellTokens, index: number): string {
 // to divide the pane by it: an absolute floor on every prose cell summed past the
 // reading axis on wide tables (8 columns x 200px in a 880px pane), so the table
 // overflowed and the label columns were left with one glyph per line.
-markdown.renderer.rules.table_open = (tokens, index, options, _env, self) =>
-  `<div class="markdown-table-scroll" style="--markdown-table-cols:${tableColumnCount(tokens, index)}">${self.renderToken(tokens, index, options)}`;
+markdown.renderer.rules.table_open = (tokens, index, options, env, self) => {
+  // In a live tail the columns are decided once (from the header) and never move as data rows
+  // arrive - auto layout would re-size them on every row. `table-layout: fixed` is that lock. The
+  // settled render keeps auto layout, which is the one that lets wide data cells grow their column.
+  if ((env as MarkdownRenderEnv).streamingTable) tokens[index].attrSet("class", "is-streaming");
+  return `<div class="markdown-table-scroll" style="--markdown-table-cols:${tableColumnCount(tokens, index)}">${self.renderToken(tokens, index, options)}`;
+};
 markdown.renderer.rules.table_close = (tokens, index, options, _env, self) =>
   `${self.renderToken(tokens, index, options)}</div>`;
 

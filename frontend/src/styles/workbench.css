@@ -1362,6 +1362,13 @@
   border: 1px solid var(--md-rule);
 }
 
+/* A table inside a live tail: its columns are decided once (from the header) and never move as data
+   rows arrive - auto layout would re-size them on every row. The settled render drops this class,
+   which is the one place the table is allowed to re-size - once, when the block closes. */
+.markdown-body table.is-streaming {
+  table-layout: fixed;
+}
+
 .markdown-body th,
 .markdown-body td {
   padding: 8px 10px;

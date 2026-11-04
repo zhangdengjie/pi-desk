@@ -691,14 +691,15 @@ describe("MarkdownBody typewriter mode", () => {
     vi.useRealTimers();
   });
 
-  it("keeps a table literal while it streams: columns re-size, so it must not block-render", async () => {
+  it("renders a table live with locked columns (no re-size as rows arrive)", async () => {
     vi.useFakeTimers();
     const { wrapper } = mountMarkdown("seed", { streaming: true });
-    await wrapper.setProps({ text: "| a | b |\n|---|---|" });
+    await wrapper.setProps({ text: "| a | b |\n|---|---|\n| c | d |" });
     await vi.advanceTimersByTimeAsync(5_000);
 
-    expect(wrapper.find(".md-tail-block table").exists()).toBe(false);
-    expect(wrapper.get(".md-plain-text").text()).toContain("| a | b |");
+    const table = wrapper.get(".md-tail-block table");
+    expect(table.classes()).toContain("is-streaming");
+    expect(table.text()).toContain("c");
     wrapper.unmount();
     vi.useRealTimers();
   });

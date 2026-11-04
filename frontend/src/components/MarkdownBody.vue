@@ -144,22 +144,21 @@ const split = computed(() => {
 });
 
 /**
- * How the live tail is rendered. `inline` = append-only inline Markdown (a paragraph or a table,
- * both of which can only extend the last line); `block` = the full block renderer, so a heading /
- * fence / list / blockquote shows its real shape while it types instead of snapping to it when the
- * block closes. `none` = not streaming (or an empty tail), the template has nothing to draw.
+ * How the live tail is rendered. `inline` = append-only inline Markdown (a paragraph, which can
+ * only extend the last line); `block` = the full block renderer, so a heading / fence / list /
+ * blockquote / table shows its real shape while it types instead of snapping to it when the block
+ * closes. `none` = not streaming (or an empty tail), the template has nothing to draw.
  *
- * A table stays inline even though it is structural: its columns re-size as rows arrive, which is
- * the re-flow this whole mechanism exists to avoid. A fence inside a paragraph-shaped tail (raw
- * mode, where the tail is the whole answer) must still go through the block renderer, or its code
- * would be read as inline emphasis.
+ * A table's columns would re-size as its rows arrive under auto layout, so the block renderer locks
+ * them (see the `streamingTable` env flag). A fence inside a paragraph-shaped tail (raw mode, where
+ * the tail is the whole answer) must still go through the block renderer, or its code would be read
+ * as inline emphasis.
  */
 const tailRenderMode = computed<"none" | "inline" | "block">(() => {
   if (!plainStream.value) return "none";
   const tail = split.value.tail;
   if (!tail) return "none";
   const kind = tailBlockKind(tail);
-  if (kind === "table") return "inline";
   if (kind === "paragraph" && !hasUnclosedFence(tail)) return "inline";
   return "block";
 });
@@ -274,7 +273,7 @@ const pieces = computed(() => {
       shell: settledMemo.html,
       tail: tailRenderMode.value === "inline"
         ? renderInlineMarkdown(tail)
-        : renderMarkdownDocument(tail, { ...env, preserveSlugs: true }, instanceUid, false),
+        : renderMarkdownDocument(tail, { ...env, preserveSlugs: true, streamingTable: true }, instanceUid, false),
     };
   }
   settledMemo.chars = 0;
