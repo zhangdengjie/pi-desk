@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasBackwardReference, seamNeedsSpacing, splitSettledMarkdown } from "./markdownSettled";
+import { hasBackwardReference, hasUnclosedFence, seamNeedsSpacing, splitSettledMarkdown } from "./markdownSettled";
 import { renderMarkdownDocument } from "./markdownRenderer";
 
 /**
@@ -114,6 +114,12 @@ describe("splitSettledMarkdown", () => {
     expect(hasBackwardReference(`${head}\n\n[a]: https://e.com\n\nx`)).toBe(true);
     // inside a fence a definition line is just text
     expect(hasBackwardReference(`${head}\n\n\`\`\`\n[a]: https://e.com\n\`\`\`\n\nx`)).toBe(false);
+  });
+
+  it("detects an unclosed fence, which the inline renderer must not touch", () => {
+    expect(hasUnclosedFence(`${head}\n\n\`\`\`python\nx = 1 ** 2`)).toBe(true);
+    expect(hasUnclosedFence(`${head}\n\n\`\`\`\ncode\n\`\`\`\n\ntail`)).toBe(false);
+    expect(hasUnclosedFence(`${head}\n\na plain paragraph`)).toBe(false);
   });
 });
 

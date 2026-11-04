@@ -217,6 +217,26 @@ export function hasBackwardReference(text: string): boolean {
 }
 
 /**
+ * Whether `text` is still inside an unclosed fenced code block. The inline renderer
+ * (`renderInlineMarkdown`) must not touch fence contents - a `**` inside code is prose, not
+ * emphasis, and rendering it would turn code into bold. This is the same fence scan
+ * `splitSettledMarkdown` performs, exposed for the live tail, which has no block context of its own.
+ */
+export function hasUnclosedFence(text: string): boolean {
+  let fence: { marker: string; length: number } | null = null;
+  for (const row of lines(text)) {
+    const match = FENCE.exec(row.body);
+    if (fence) {
+      if (match && match[1][0] === fence.marker && match[1].length >= fence.length
+        && row.body.slice(match[0].length).trim() === "") fence = null;
+      continue;
+    }
+    if (match) fence = { marker: match[1][0], length: match[1].length };
+  }
+  return fence !== null;
+}
+
+/**
  * Whether the two blocks that meet at a render seam need the paragraph-rhythm margin.
  *
  * `styles/workbench.css` gives 12px between finished blocks via four sibling selectors

@@ -567,10 +567,11 @@ describe("MarkdownBody streaming split", () => {
 });
 
 /**
- * The shipped render mode. A Markdown tail re-flows content that is already on screen - a closing
- * `**` deletes two characters, a table re-sizes its columns as rows arrive - and that re-flow is
- * what the transcript showed as jumping. Plain text has no such reach: appending a character can
- * only extend the last line, so a painted character never moves.
+ * The shipped render mode. A full Markdown tail re-flows content that is already on screen - a
+ * table re-sizes its columns as rows arrive - and that re-flow is what the transcript showed as
+ * jumping. The live tail is therefore inline-rendered: a closed `**bold**` is bold while it types
+ * (its already-painted lines stay stable, only the line still being written re-flows), but no block
+ * structure is applied until the block settles. An unclosed `**bo` stays literal asterisks.
  */
 describe("MarkdownBody typewriter mode", () => {
   beforeEach(() => {
@@ -597,12 +598,14 @@ describe("MarkdownBody typewriter mode", () => {
     vi.useRealTimers();
   });
 
-  it("switches to Markdown the moment the run settles", async () => {
+  it("applies inline Markdown while streaming, block structure when the run settles", async () => {
     vi.useFakeTimers();
     const { wrapper } = mountMarkdown("seed", { streaming: true });
     await wrapper.setProps({ text: "seed **bold**" });
     await vi.advanceTimersByTimeAsync(2_000);
-    expect(wrapper.find("strong").exists()).toBe(false);
+    // Inline markers resolve live (no more end-of-run snap for bold/code); block structure is still
+    // deferred, so the tail has no <p> wrapper yet.
+    expect(wrapper.get(".md-tail-plain strong").text()).toBe("bold");
 
     await wrapper.setProps({ streaming: false });
     expect(wrapper.get("strong").text()).toBe("bold");
@@ -630,21 +633,36 @@ describe("MarkdownBody typewriter mode", () => {
   // `raw` removes the one re-layout `plain` still performs: handing a closed block over from
   // source to the Markdown renderer (a heading grows, a fence gains a panel). Nothing is handed
   // over, so nothing on screen can change shape while the reader watches it.
-  it("keeps the whole answer as source in raw mode", async () => {
+  it("keeps the whole answer in the tail in raw mode, inline-resolved but not block-parsed", async () => {
     vi.useFakeTimers();
     applyStreamTuning({ mode: "raw" }, null);
     const { wrapper } = mountMarkdown("seed", { streaming: true });
     await wrapper.setProps({ text: "seed\n\n**done**\n\nstill typing" });
     await vi.advanceTimersByTimeAsync(5_000);
 
+    // Nothing settles (raw mode), but inline markers resolve live in the tail.
     expect(wrapper.find(".md-settled strong").exists()).toBe(false);
-    expect(wrapper.get(".md-plain-text").text()).toContain("**done**");
+    expect(wrapper.get(".md-tail-plain strong").text()).toBe("done");
     expect(wrapper.get(".md-plain-text").text()).toContain("still typing");
 
     // And the Markdown render still takes over the moment the run settles.
     await wrapper.setProps({ streaming: false });
     expect(wrapper.get("strong").text()).toBe("done");
     expect(wrapper.find(".md-plain-caret").exists()).toBe(false);
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("keeps a code fence literal: backticks are content, not inline markup", async () => {
+    vi.useFakeTimers();
+    const { wrapper } = mountMarkdown("seed", { streaming: true });
+    await wrapper.setProps({ text: "```python\nx = 1 ** 2" });
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    // An unclosed fence must not be inline-rendered: `**` inside code is prose, not emphasis.
+    expect(wrapper.find(".md-tail-plain strong").exists()).toBe(false);
+    expect(wrapper.get(".md-plain-text").text()).toContain("```python");
+    expect(wrapper.get(".md-plain-text").text()).toContain("x = 1 ** 2");
     wrapper.unmount();
     vi.useRealTimers();
   });

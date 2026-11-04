@@ -165,6 +165,21 @@ export function renderMarkdownHtml(text: string, env: MarkdownRenderEnv): string
   return markdown.render(normalizeMarkdownBreakTags(text), env);
 }
 
+/**
+ * Inline-only render for a block that is still streaming. Unlike the full block parser it never
+ * re-flows earlier content: a heading stays literal `##`, a fence marker stays literal backticks,
+ * and only inline constructs - emphasis, code spans, links - resolve. The streamed tail is shown
+ * with this so `**bold**` is bold while it types instead of snapping at the end of the run; the
+ * fence guard lives with the caller, which knows the block context.
+ *
+ * `breaks: true` makes markdown-it emit `<br>\n` for each soft break, and the transcript paints
+ * the live block as `white-space: pre-wrap` text - the stray `\n` after `<br>` would double-space.
+ * Strip it here so the inline render and the plain-text fallback wrap identically.
+ */
+export function renderInlineMarkdown(text: string): string {
+  return markdown.renderInline(normalizeMarkdownBreakTags(text)).replaceAll("<br>\n", "<br>");
+}
+
 export type MarkdownRender = (text: string, env: MarkdownRenderEnv) => string;
 
 export interface MarkdownRenderCacheStats {

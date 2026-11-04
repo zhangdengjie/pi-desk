@@ -5,8 +5,8 @@ import { useAppStore } from "../stores/app";
 import { useRevealedText } from "../composables/useRevealedText";
 import type { WorkspaceFileLink } from "../utils/fileLinks";
 import { slugifyHeading } from "../utils/markdown";
-import { renderMarkdownDocument } from "../utils/markdownRenderer";
-import { seamNeedsSpacing, splitSettledMarkdown } from "../utils/markdownSettled";
+import { renderInlineMarkdown, renderMarkdownDocument } from "../utils/markdownRenderer";
+import { hasUnclosedFence, seamNeedsSpacing, splitSettledMarkdown } from "../utils/markdownSettled";
 import { streamTuning } from "../utils/streamTuning";
 import { collectMarkdownOutline, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import FileLinkContextMenu from "./FileLinkContextMenu.vue";
@@ -141,6 +141,26 @@ const split = computed(() => {
   // Raw mode settles nothing: the only stable shape is "the whole answer is still source".
   if (rawStream.value) return { settledLength: 0, settled: "", tail: shownText.value, reason: "ok" as const };
   return splitSettledMarkdown(shownText.value, plainStream.value ? 0 : undefined);
+});
+
+/**
+ * The live tail rendered as inline Markdown (`**bold**` -> bold) instead of raw source.
+ *
+ * This is the half of "render like a chat client" that removes the most common jump: with the plain
+ * text fallback, `**bold**` sits on screen as literal asterisks while the run streams and only
+ * snaps to bold when the block settles. Inline rendering keeps every already-painted line stable -
+ * its markers are resolved - and only the line still being written re-flows, which is the same
+ * trade the mainstream clients make. Block-level constructs are untouched (a heading stays `##`, a
+ * fence stays backticks) and still settle when the block closes.
+ *
+ * A code fence is the one block that must NOT be inline-rendered: its backticks are content, and a
+ * `**` inside code is prose. When the tail is inside an unclosed fence the plain-text fallback stays.
+ */
+const tailInlineHtml = computed(() => {
+  if (!plainStream.value) return "";
+  const tail = split.value.tail;
+  if (!tail || hasUnclosedFence(tail)) return "";
+  return renderInlineMarkdown(tail);
 });
 
 /**
@@ -429,7 +449,7 @@ function openContextMenu(event: MouseEvent) {
     :data-markdown-uid="instanceUid"
   >
     <div ref="settledElement" class="md-settled" />
-    <div class="md-tail-plain" :class="{ 'is-seamed': rendered !== '' }"><span class="md-plain-text">{{ split.tail }}</span><span class="md-plain-caret" aria-hidden="true" /></div>
+    <div class="md-tail-plain" :class="{ 'is-seamed': rendered !== '' }"><span v-if="tailInlineHtml" class="md-plain-text" v-html="tailInlineHtml" /><span v-else class="md-plain-text">{{ split.tail }}</span><span class="md-plain-caret" aria-hidden="true" /></div>
   </div>
   <!-- One pass: the whole block in a single v-html. This is the settled shape every layout.css rule
        was written against, and it is what a non-streaming block keeps using. -->

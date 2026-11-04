@@ -3,6 +3,7 @@ import {
   MARKDOWN_UID_PLACEHOLDER,
   createMarkdownRenderCache,
   markdownRenderCache,
+  renderInlineMarkdown,
   renderMarkdownDocument,
 } from "./markdownRenderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,6 +20,19 @@ function env(overrides: Partial<{ workspacePath: string; baseDir: string }> = {}
 }
 
 beforeEach(() => markdownRenderCache.clear());
+
+describe("renderInlineMarkdown", () => {
+  it("resolves emphasis and code spans, and keeps block markers literal", () => {
+    expect(renderInlineMarkdown("**bold** and `code`")).toBe("<strong>bold</strong> and <code>code</code>");
+    expect(renderInlineMarkdown("## not a heading")).toBe("## not a heading");
+    expect(renderInlineMarkdown("- not a list")).toBe("- not a list");
+  });
+
+  it("strips the stray newline after each soft break so pre-wrap does not double-space", () => {
+    expect(renderInlineMarkdown("line1\nline2")).toBe("line1<br>line2");
+    expect(renderInlineMarkdown("para one\n\npara two")).toBe("para one<br><br>para two");
+  });
+});
 
 describe("ordered list markers", () => {
   it("hands the CSS counter its start, and keeps the role the list-style reset costs", () => {
