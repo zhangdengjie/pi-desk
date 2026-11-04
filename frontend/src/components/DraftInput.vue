@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   candidateSplit,
   closeUndoGroup,
@@ -47,8 +47,13 @@ let committedFrom = "";
 
 let lastHeight = -1;
 let lastLength = 0;
+// The width the last measurement was taken at - see the note inside `resize`.
+let measuredWidth = -1;
+// Coalesces the width watcher below to one measurement per frame.
+let widthWatcher: ResizeObserver | undefined;
+let pendingWidthSync = 0;
 
-function resize() {
+function resize(bulk = false) {
   const element = input.value;
   if (!element) return;
   // `field-sizing: content` is what this wants, but WKWebView on macOS 15 is Safari 18 and does not
@@ -63,14 +68,59 @@ function resize() {
   // unchanged height now skips the style write entirely instead of dirtying the tree for nothing.
   const shorter = element.value.length < lastLength;
   lastLength = element.value.length;
-  if (shorter || lastHeight < 0) {
+  // `scrollHeight` never reports *less* than `clientHeight`, so a box that grew too tall cannot
+  // notice it should shrink, and a box that shrank too small is only noticed by the reader (a second
+  // scrollbar inside the field). Both states come from the same blind spot: a re-wrap that arrives
+  // with no edit. The width is the trigger, so remember it - a pane resize, the inspector opening, the
+  // font-size token, or the container's own scrollbar appearing all change it. A bulk edit (paste,
+  // drop, undo) is the other trigger: it can re-wrap the same draft into more or fewer lines in one
+  // event, which is how a paste used to leave a blank band under the last line.
+  const measure = bulk || shorter || lastHeight < 0 || element.clientWidth !== measuredWidth;
+  let held: { scroller: HTMLElement; top: number }[] = [];
+  if (measure) {
+    // Collapsing to `auto` is only a measurement step, but it is not a private one: for the length of
+    // one synchronous task the field really is at its one-line floor, so every scroll container that
+    // holds it clamps its `scrollTop` to 0 - and the restored height never brings that offset back.
+    // The reader's symptom is the draft jumping to its first line on every deleted character
+    // (`.pi/bin/hitprobe/draft-resize.html`: `.composer-editor` 211 -> 0 on one Backspace while the
+    // content height never changed, 391px before and after). Nothing paints inside one task, so
+    // putting the offsets back after the write is invisible.
+    held = scrollAncestors(element).map((scroller) => ({ scroller, top: scroller.scrollTop }));
     element.style.height = "auto";
     lastHeight = -1;
   }
-  const next = element.scrollHeight;
-  if (next === lastHeight) return;
-  lastHeight = next;
-  element.style.height = `${next}px`;
+  // Every height write can add or drop the container's own scrollbar, which narrows this field and
+  // re-wraps the text - so the number just written is not necessarily the number the reader needs
+  // (too short = a second scrollbar inside the box, too tall = a blank band under the last line).
+  // Settle against the width the field will really be laid out at; two passes in practice.
+  let next = element.scrollHeight;
+  for (let pass = 0; pass < 3; pass++) {
+    if (pass > 0 && next === lastHeight) break;
+    if (pass === 0 && !measure && next === lastHeight) break;
+    lastHeight = next;
+    element.style.height = `${next}px`;
+    if (element.scrollHeight <= element.clientHeight + 1) break;
+    next = element.scrollHeight;
+  }
+  // The field is always exactly as tall as its content, so it has no legitimate internal scroll
+  // offset: a non-zero one is leftover from the collapsed measurement, where the caret-reveal scrolled
+  // the field itself instead of `.composer-editor`. Left alone it shows as blank space under the last
+  // line until something else resets it.
+  if (element.scrollTop !== 0) element.scrollTop = 0;
+  // Writing a height past the new maximum clamps by itself, so a shrink keeps whatever of the offset
+  // still exists instead of teleporting to the top.
+  for (const { scroller, top } of held) scroller.scrollTop = top;
+  measuredWidth = element.clientWidth;
+}
+
+/** The boxes above the field that own a scroll position: only those move when it collapses. */
+function scrollAncestors(element: HTMLElement): HTMLElement[] {
+  const scrollers: HTMLElement[] = [];
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const overflow = getComputedStyle(node).overflowY;
+    if (overflow === "auto" || overflow === "scroll") scrollers.push(node);
+  }
+  return scrollers;
 }
 
 /**
@@ -95,7 +145,9 @@ function write(value: string, caret: number | null) {
   }
   if (value !== props.modelValue) emit("update:modelValue", value);
   void nextTick(() => {
-    resize();
+    // A programmatic replacement (a picked mention, a draft restored from the store) can re-wrap the
+    // draft into a different number of lines in either direction, so it measures instead of assuming growth.
+    resize(true);
     if (!element || caret === null) {
       emitCaret();
       return;
@@ -191,16 +243,17 @@ function onInput(event: Event) {
   lastValue = element.value;
   emit("update:modelValue", element.value);
   emitCaret();
-  resize();
+  const touched =
+    Math.abs(element.value.length - before) ||
+    (/^(insert|delete)/.test(inputType) ? 1 : 0);
+  // Bulk edits re-wrap the draft without walking the caret through it: measure instead of assuming growth.
+  resize(/^(insertFromPaste|insertFromDrop|insertReplacementText|historyUndo|historyRedo)$/.test(inputType));
   // The engine coalesces a whole run of typing into ONE undo group no matter how long the pauses are
   // (0 / 300 / 900 / 2000 ms measured identical), so a single `Cmd+Z` deletes the entire draft. It
   // closes the group itself the moment the selection moves, and re-asserting the caret where it
   // already sits is invisible, costs no phantom undo steps, and makes each step one character
   // (`.pi/bin/hitprobe/undo-battery.html` V3, and `undo-real-draft.html` P1 against the shipped field).
   // A character typed over an equally long selection moves no length, hence the inputType fallback.
-  const touched =
-    Math.abs(element.value.length - before) ||
-    (/^(insert|delete)/.test(inputType) ? 1 : 0);
   if (
     shouldCloseUndoGroup({ inputType, charsSinceGroup: touched, composing })
   ) {
@@ -266,9 +319,32 @@ watch(
 
 onMounted(() => {
   const element = input.value;
-  if (element && element.value !== props.modelValue)
-    element.value = props.modelValue;
+  if (!element) return;
+  if (element.value !== props.modelValue) element.value = props.modelValue;
   resize();
+  // A re-wrap also arrives with no edit at all: hiding the file panel widens the composer (fewer
+  // lines, so the box keeps the old height and shows a blank band), opening it narrows the composer
+  // (more lines, so the field overflows itself and gets a second scrollbar next to
+  // `.composer-editor`'s). `resize()` only runs on edits, so watch the width. The observer cannot loop:
+  // the callback is deferred to the next frame, and `resize()` does nothing unless the width actually
+  // differs from the one it measured at - a height write only changes the height.
+  if (typeof ResizeObserver !== "function") return;
+  widthWatcher = new ResizeObserver(() => {
+    if (pendingWidthSync) return;
+    pendingWidthSync = requestAnimationFrame(() => {
+      pendingWidthSync = 0;
+      // A hidden composer measures 0 and would write `height: 0px`; the next edit remeasures anyway.
+      if (input.value?.clientWidth) resize();
+    });
+  });
+  widthWatcher.observe(element);
+});
+
+onBeforeUnmount(() => {
+  widthWatcher?.disconnect();
+  widthWatcher = undefined;
+  if (pendingWidthSync) cancelAnimationFrame(pendingWidthSync);
+  pendingWidthSync = 0;
 });
 
 defineExpose({ focus, replaceMarkdown, handleEnter, captureTextInsertion });

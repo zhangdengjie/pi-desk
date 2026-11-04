@@ -9622,6 +9622,12 @@ article.mcp-server-row {
   line-height: 1.5;
   caret-color: var(--text);
   overflow-wrap: anywhere;
+  /* The field is always sized to its content (DraftInput's `resize`), so it never legitimately
+     scrolls - `.composer-editor` above it is the scroll box (max-height 180px). A textarea defaults
+     to `overflow: auto`, which means every re-wrap that lands before the height write shows a
+     SECOND scrollbar inside the field, next to the editor's own (visible while dragging the pane
+     divider, where the width changes once per frame). Hiding it can only clip for that same frame. */
+  overflow: hidden;
   resize: none;
   outline: 0;
 }
