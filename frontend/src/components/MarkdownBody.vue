@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { computed, getCurrentInstance, ref, watchPostEffect } from "vue";
+import { computed, getCurrentInstance, ref, watch, watchPostEffect } from "vue";
 import { useAppStore } from "../stores/app";
 import { useRevealedText } from "../composables/useRevealedText";
 import type { WorkspaceFileLink } from "../utils/fileLinks";
@@ -61,6 +61,14 @@ const slugCounts = new Map<string, number>();
 // first delta, so a raw render lands each provider chunk as a block - which is what
 // reads as typing in clauses with stalls between them.
 const shownText = useRevealedText(() => props.text, () => props.streaming === true);
+
+// The reveal pacer appends characters *between* source deltas, and a wrap is what changes the
+// rendered height. A panel that scrolls its own tail (the reasoning window) therefore cannot hang
+// its pin off the source length: the last wrap of a run would never be followed and the newest line
+// would stay half-cut under the window's bottom edge. Announcing the reveal is the signal that
+// actually matches the height change. `flush: "post"` is the point - the DOM has been patched.
+const emit = defineEmits<{ revealed: [] }>();
+watch(shownText, () => { emit("revealed"); }, { flush: "post" });
 const renderMarkdown = computed(() => shownText.value.length
   <= (props.streaming === true ? STREAMING_MARKDOWN_CHARS : SETTLED_MARKDOWN_CHARS));
 

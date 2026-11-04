@@ -467,6 +467,19 @@ watch(liveReasoningId, (id, previous) => {
 let reasoningTail: InnerTail | undefined;
 let reasoningTailEl: HTMLElement | undefined;
 
+/**
+ * The reasoning window's own tail, stepped on every reveal frame.
+ *
+ * The watcher below arms the window from the *source* text length, which is the wrong clock for a
+ * paced reveal: `reveal.split` characters land per frame, so a line wraps in a frame where the
+ * source did not move - and the last wrap of a run lands after the final delta, so nothing steps the
+ * window again and the newest line stays half-cut under its bottom edge. `step()` is a no-op unless
+ * the window is armed (live, open, and the reader has not taken it over).
+ */
+function stepReasoningTail() {
+  reasoningTail?.step();
+}
+
 function armReasoningTail(step: ExecutionStep | undefined) {
   if (!step) {
     // Closed or stopped growing: drop the listeners so a re-open arms a fresh follow from the tail.
@@ -617,6 +630,7 @@ watch(() => props.message.id, () => closeAnswerOutline());
               <MarkdownBody
                 class="thinking-body"
                 :class="{ 'is-live': liveReasoningWindow(step) || foldingStepId === step.id, 'is-folding': foldingStepId === step.id }"
+                @revealed="stepReasoningTail"
                 :style="foldingStepId === step.id ? { '--reasoning-fold-ms': `${streamTuning.scroll.reasoningFoldMs}ms` } : undefined"
                 :text="stepThinking(step)"
                 :streaming="liveReasoningWindow(step)"

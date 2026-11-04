@@ -3,6 +3,7 @@ import { createPinia, setActivePinia, type Pinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import ConversationMessage from "./ConversationMessage.vue";
+import MarkdownBody from "./MarkdownBody.vue";
 import { type TimelineMessage, useAppStore } from "../stores/app";
 import { groupConversationTurns } from "../utils/conversationGrouping";
 import { forgetPanelOpenStates, pinPanelOpen } from "../utils/detailsOpenState";
@@ -310,6 +311,38 @@ describe("ConversationMessage", () => {
     await wrapper.setProps({ message: message("First part, then a lot more", false) });
     expect(wrapper.get(".thinking-block .thinking-body").classes()).not.toContain("is-live");
     expect(wrapper.get(".thinking-block").attributes("open")).toBeUndefined();
+    wrapper.unmount();
+    vi.unstubAllGlobals();
+  });
+
+  // The reveal pacer appends characters between source deltas, and it is the *wrap* that changes
+  // the rendered height. A window pinned only from the source length therefore misses the last wrap
+  // of a run (nothing steps it again) and the newest line stays half-cut under its bottom edge.
+  it("steps the reasoning window on a reveal frame, not only on a source delta", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const pinia = createPinia();
+    const message = (text: string, streaming = true) => ({
+      id: "reveal-tail", role: "assistant" as const, text: "", thinking: text, timestamp: "10:07",
+      streaming, activeExecution: streaming ? "thinking" as const : undefined, tools: [],
+    });
+    const wrapper = mount(ConversationMessage, { props: { message: message("First part") }, global: { plugins: [pinia] } });
+    const body = wrapper.get(".thinking-block .thinking-body");
+    let height = 900;
+    Object.defineProperty(body.element, "scrollHeight", { configurable: true, get: () => height });
+
+    await wrapper.setProps({ message: message("First part, then a lot more") });
+    await wrapper.vm.$nextTick();
+    while (frames.length) frames.shift()?.(0);
+    expect((body.element as HTMLElement).scrollTop).toBe(900);
+
+    // A reveal frame wraps a line while the source stays put: no source watcher can fire here.
+    height = 1180;
+    // The thinking body is the only MarkdownBody in this message (its answer text is empty).
+    wrapper.findComponent(MarkdownBody).vm.$emit("revealed");
+    await wrapper.vm.$nextTick();
+    expect((body.element as HTMLElement).scrollTop).toBe(1180);
     wrapper.unmount();
     vi.unstubAllGlobals();
   });
