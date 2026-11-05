@@ -3420,13 +3420,90 @@ html.is-resizing-pane .inspector {
   padding: 16px;
   overflow: auto;
   background: var(--bg-app);
+  /* No text layer exists inside a bitmap: an I-beam over the image would promise a selection that
+     cannot happen. Drag pans, so the pointer is the default arrow (grab once zoomed below). */
+  cursor: default;
+  /* The preview has no selectable text: dragging pans (and a double-click toggles zoom), so a
+     double-click must not turn the <img> into a blue selected element. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .image-preview-stage img {
   display: block;
+  flex: none;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+  cursor: inherit;
+  -webkit-user-drag: none;
+}
+
+/* Explicit pixel zoom (from ImagePreviewDialog): the image is sized inline in px, so the flex
+   container must not shrink it back to the stage. Starting from flex-start keeps the top-left
+   corner reachable once the content overflows (a centred flex item clips the negative side). */
+.image-preview-stage.is-zoomed {
+  align-items: flex-start;
+  justify-content: flex-start;
+  cursor: grab;
+}
+
+.image-preview-stage.is-zoomed img {
+  max-width: none;
+  max-height: none;
+}
+
+.image-preview-stage.is-panning {
+  cursor: grabbing;
+}
+
+.image-preview-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.image-preview-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.image-preview-tools button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.image-preview-tools button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.image-preview-tools button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.image-preview-tools button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.image-preview-tools .image-preview-zoom-level {
+  width: auto;
+  min-width: 50px;
+  padding: 0 6px;
+  font-size: calc(11.5px + var(--font-size-delta));
+  font-variant-numeric: tabular-nums;
 }
 
 .attachment-error {
