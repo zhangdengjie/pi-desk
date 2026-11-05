@@ -1986,6 +1986,13 @@ html.is-resizing-pane .inspector {
   text-underline-offset: 2px;
 }
 
+.markdown-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  cursor: zoom-in;
+}
+
 .markdown-body a.markdown-file-link {
   font-weight: 560;
   cursor: pointer;
@@ -3406,13 +3413,22 @@ html.is-resizing-pane .inspector {
   white-space: nowrap;
 }
 
-.image-preview-stage {
+.zoomable-image {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.zoomable-image-stage {
   /* flex, not grid: a grid item centred by `place-items: center` is align-self:center,
      and Blink then treats its containing block as indefinite and drops `max-height: 100%`
      on the <img> - a tall attachment renders at intrinsic height and the stage scrolls.
      WebKit keeps the box but still counts the intrinsic height in scrollable overflow.
      Flex centring parses the percentage in both engines (measured 2026-10-24). */
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   min-width: 0;
@@ -3420,6 +3436,7 @@ html.is-resizing-pane .inspector {
   padding: 16px;
   overflow: auto;
   background: var(--bg-app);
+  outline: none;
   /* No text layer exists inside a bitmap: an I-beam over the image would promise a selection that
      cannot happen. Drag pans, so the pointer is the default arrow (grab once zoomed below). */
   cursor: default;
@@ -3429,32 +3446,69 @@ html.is-resizing-pane .inspector {
   -webkit-user-select: none;
 }
 
-.image-preview-stage img {
-  display: block;
-  flex: none;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  cursor: inherit;
-  -webkit-user-drag: none;
+.zoomable-image-stage:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
 }
 
-/* Explicit pixel zoom (from ImagePreviewDialog): the image is sized inline in px, so the flex
-   container must not shrink it back to the stage. Starting from flex-start keeps the top-left
-   corner reachable once the content overflows (a centred flex item clips the negative side). */
-.image-preview-stage.is-zoomed {
+.zoomable-image-frame {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+}
+
+/* The frame owns the scaled layout box. The image keeps its intrinsic layout size and is only
+   composited through `transform`, so changing zoom never re-lays-out or re-rasterises the bitmap. */
+.zoomable-image-frame img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  /* Tailwind's preflight caps every img at 100% of its containing block. That block is this frame,
+     which is already sized to `natural × zoom`; letting the cap through shrinks the layout box to
+     the frame and then transform-scale shrinks it a second time (a 3133px image at 20% painted at
+     4% of natural). The frame is the size authority here. */
+  max-width: none;
+  max-height: none;
+  transform-origin: 0 0;
+  cursor: inherit;
+  -webkit-user-drag: none;
+  will-change: transform;
+}
+
+/* Explicit zoom: the frame must not shrink back to the stage, and starting from flex-start keeps
+   the top-left corner reachable once the content overflows (a centred flex item clips the negative
+   side). */
+.zoomable-image-stage.is-zoomed {
   align-items: flex-start;
   justify-content: flex-start;
   cursor: grab;
 }
 
-.image-preview-stage.is-zoomed img {
-  max-width: none;
-  max-height: none;
+.zoomable-image-stage.is-panning {
+  cursor: grabbing;
 }
 
-.image-preview-stage.is-panning {
-  cursor: grabbing;
+/* The file preview's own surface; the shared stage keeps the dialog's default background. */
+.file-media-preview .zoomable-image-stage {
+  padding: 12px;
+  background: var(--bg-code);
+}
+
+.zoomable-image-controls {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-menu) 92%, transparent);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 18%);
+  backdrop-filter: blur(6px);
 }
 
 .image-preview-actions {
@@ -3470,7 +3524,7 @@ html.is-resizing-pane .inspector {
   gap: 2px;
 }
 
-.image-preview-tools button {
+.zoom-button {
   display: grid;
   width: 26px;
   height: 26px;
@@ -3483,22 +3537,22 @@ html.is-resizing-pane .inspector {
   cursor: pointer;
 }
 
-.image-preview-tools button:hover:not(:disabled) {
+.zoom-button:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text);
 }
 
-.image-preview-tools button:focus-visible {
+.zoom-button:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
-.image-preview-tools button:disabled {
+.zoom-button:disabled {
   cursor: default;
   opacity: 0.35;
 }
 
-.image-preview-tools .image-preview-zoom-level {
+.zoom-button.zoom-level {
   width: auto;
   min-width: 50px;
   padding: 0 6px;
@@ -4171,9 +4225,8 @@ html.is-resizing-pane .inspector {
 }
 
 .file-media-preview {
-  object-fit: contain;
-  padding: 12px;
-  background: var(--bg-code);
+  display: flex;
+  flex-direction: column;
 }
 
 .file-audio-preview {

@@ -558,7 +558,7 @@ describe("InspectorPanel", () => {
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
 
-    expect(wrapper.get("img.file-media-preview").attributes("src")).toContain("data:image/png");
+    expect(wrapper.get(".file-media-preview img").attributes("src")).toContain("data:image/png");
     expect(wrapper.find(".file-preview-tabs").exists()).toBe(false);
     expect(wrapper.find(".file-preview-meta").exists()).toBe(false);
     await store.openRepositoryFilePreview("README.md");

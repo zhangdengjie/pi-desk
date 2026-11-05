@@ -11,6 +11,7 @@ import CodePreview from "./CodePreview.vue";
 import FileTreeNode from "./FileTreeNode.vue";
 import MarkdownBody from "./MarkdownBody.vue";
 import MarkdownOutlineNav from "./MarkdownOutlineNav.vue";
+import ZoomableImage from "./ZoomableImage.vue";
 import SearchPopover from "./SearchPopover.vue";
 import { collectMarkdownOutline, markdownHasHeadings, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import { tr } from "../i18n";
@@ -946,7 +947,7 @@ watch(() => currentTab.value?.id, async () => {
       <div v-if="appStore.activeRepositoryFilePreviewLoading && !filePreview" class="repository-state" :class="ui.empty"><LoaderCircle v-spin :size="18" class="is-spinning" /></div>
       <div v-else-if="appStore.activeRepositoryFilePreviewError" class="repository-state error-text" :class="ui.empty">{{ appStore.activeRepositoryFilePreviewError }}</div>
       <template v-else-if="filePreview">
-        <img v-if="filePreview.mediaType?.startsWith('image/') && filePreview.dataUrl" class="file-media-preview" :src="filePreview.dataUrl" :alt="filePreviewName" />
+        <ZoomableImage v-if="filePreview.mediaType?.startsWith('image/') && filePreview.dataUrl" class="file-media-preview" :src="filePreview.dataUrl" :alt="filePreviewName" />
         <audio v-else-if="filePreview.mediaType?.startsWith('audio/') && filePreview.dataUrl" class="file-audio-preview" :src="filePreview.dataUrl" controls />
         <object v-else-if="filePreview.mediaType === 'application/pdf' && filePreview.dataUrl" class="file-pdf-preview" :data="filePreview.dataUrl" type="application/pdf"><span>{{ tr("files.pdfUnavailable") }}</span></object>
         <div v-else-if="spreadsheet" class="file-spreadsheet-preview">
