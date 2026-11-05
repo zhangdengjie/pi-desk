@@ -10,6 +10,8 @@ import { hasUnclosedFence, seamNeedsSpacing, splitSettledMarkdown, tailBlockKind
 import { streamTuning } from "../utils/streamTuning";
 import { collectMarkdownOutline, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import FileLinkContextMenu from "./FileLinkContextMenu.vue";
+import ImagePreviewDialog from "./ImagePreviewDialog.vue";
+import { tr } from "../i18n";
 
 const props = defineProps<{
   text: string;
@@ -43,12 +45,14 @@ const STREAMING_MARKDOWN_CHARS = 100_000;
 // settled block can never legitimately exceed this and the file preview always renders.
 const SETTLED_MARKDOWN_CHARS = 1_100_000;
 const workspacePath = computed(() => appStore.activeThread?.workspacePath || "");
+const workspaceId = computed(() => appStore.activeThread?.workspaceId || "");
 const linkBaseDir = computed(() => {
   const path = (props.basePath ?? "").replaceAll("\\", "/");
   const cut = path.lastIndexOf("/");
   return cut < 0 ? "" : path.slice(0, cut);
 });
 const contextMenu = ref<{ file: WorkspaceFileLink; x: number; y: number }>();
+const previewImage = ref<{ name: string; previewUrl: string }>();
 // Headings get an id so the outline and `#anchor` links have something to aim at. The prefix makes
 // the id unique per rendered document: a transcript shows dozens of MarkdownBody instances at once,
 // and two "## Setup" headings in one window would otherwise be an id collision the browser resolves
@@ -236,6 +240,7 @@ const pieces = computed(() => {
   if (!renderMarkdown.value) return NO_PIECES;
   const env = {
     workspacePath: workspacePath.value,
+    workspaceId: workspaceId.value,
     baseDir: linkBaseDir.value,
     // Reset per pass: slugs are deduplicated by occurrence, and re-rendering the same document must
     // produce the same ids, otherwise an open outline would point at headings that no longer exist.
@@ -245,7 +250,7 @@ const pieces = computed(() => {
   if (incremental.value && (settledLength || plainStream.value)) {
     // A moved workspace means different file links, and a *shorter* prefix means this block was
     // handed a new answer. Both throw the accumulation away rather than append to stale HTML.
-    const envKey = `${env.workspacePath ?? ""}\u0000${env.baseDir ?? ""}`;
+    const envKey = `${env.workspaceId ?? ""}\u0000${env.workspacePath ?? ""}\u0000${env.baseDir ?? ""}`;
     if (settledMemo.env !== envKey || settledLength < settledMemo.chars) {
       settledMemo.env = envKey;
       settledMemo.chars = 0;
@@ -400,6 +405,19 @@ function fileLinkFromEvent(event: MouseEvent): WorkspaceFileLink | undefined {
 }
 
 function openPreview(event: MouseEvent) {
+  // A raster image has no selectable text to drag; its useful action is the same zoomable lightbox
+  // the composer and tool panels open. Checked before links so `[![alt](img)](url)` still gives
+  // the image its preview instead of navigating away.
+  const image = event.target instanceof Element ? event.target.closest<HTMLImageElement>("img") : null;
+  if (image?.src && image.naturalWidth > 0) {
+    event.preventDefault();
+    contextMenu.value = undefined;
+    previewImage.value = {
+      name: image.alt || image.title || tr("composer.image"),
+      previewUrl: image.currentSrc || image.src,
+    };
+    return;
+  }
   const file = fileLinkFromEvent(event);
   if (file) {
     event.preventDefault();
@@ -490,4 +508,5 @@ function openContextMenu(event: MouseEvent) {
     :y="contextMenu.y"
     @close="contextMenu = undefined"
   />
+  <ImagePreviewDialog v-if="previewImage" :image="previewImage" @close="previewImage = undefined" />
 </template>

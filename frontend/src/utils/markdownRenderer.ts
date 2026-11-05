@@ -30,6 +30,8 @@ export const MARKDOWN_UID_PLACEHOLDER = "\u0000md-uid\u0000";
 export interface MarkdownRenderEnv extends Env {
   /** Repository root, for resolving a relative link to a workspace file. */
   workspacePath?: string;
+  /** Catalog id of the workspace; preferred over `workspacePath` for local image URLs. */
+  workspaceId?: string;
   /** The directory of the document being previewed; empty means "the reader is at the repository". */
   baseDir?: string;
   /** Per-render heading-slug dedup. Cleared at the start of every render. */
@@ -162,6 +164,34 @@ markdown.renderer.rules.link_open = (tokens, index, options, environment, render
     : renderer.renderToken(tokens, index, options);
 };
 
+const originalImage = markdown.renderer.rules.image;
+
+// A Markdown document lives on disk, but the page lives on `wails://`; a relative `src` would be
+// requested from the asset server as if it were a frontend URL, and a `file:` URL is not readable
+// from that origin. Rewrite workspace-contained images to the route that streams their bytes
+// (internal/appservice/workspaceimage.go), the same contract `/session-image` uses. Remote/data/
+// web images are left alone: the route only serves local workspaces, and a data URL is already
+// self-contained.
+markdown.renderer.rules.image = (tokens, index, options, environment, renderer) => {
+  const rawSource = tokens[index].attrGet("src");
+  const source = typeof rawSource === "string" ? rawSource : String(rawSource ?? "");
+  const imageEnvironment = (environment ?? {}) as MarkdownRenderEnv;
+  const file = resolveWorkspaceFileLink(source, String(imageEnvironment.workspacePath ?? ""), String(imageEnvironment.baseDir ?? ""));
+  if (file) {
+    const query = new URLSearchParams();
+    if (imageEnvironment.workspaceId) query.set("workspaceId", imageEnvironment.workspaceId);
+    else query.set("root", String(imageEnvironment.workspacePath ?? ""));
+    query.set("path", file.relativePath);
+    tokens[index].attrSet("src", `/workspace-image?${query.toString()}`);
+    tokens[index].attrSet("class", "markdown-workspace-image");
+    tokens[index].attrSet("loading", "lazy");
+    tokens[index].attrSet("decoding", "async");
+  }
+  return originalImage
+    ? originalImage(tokens, index, options, environment, renderer)
+    : renderer.renderToken(tokens, index, options);
+};
+
 markdown.renderer.rules.th_open = (tokens, index, options, _env, self) =>
   `${self.renderToken(tokens, index, options)}<div class="markdown-cell${cellFitClass(tokens, index)}">`;
 markdown.renderer.rules.td_open = (tokens, index, options, _env, self) =>
@@ -214,7 +244,7 @@ export function createMarkdownRenderCache(render: MarkdownRender, charBudget = 6
   let hits = 0;
   let misses = 0;
   const key = (text: string, env: MarkdownRenderEnv) =>
-    `${env.workspacePath ?? ""}\u0000${env.baseDir ?? ""}\u0000${text}`;
+    `${env.workspaceId ?? ""}\u0000${env.workspacePath ?? ""}\u0000${env.baseDir ?? ""}\u0000${text}`;
   return {
     /** The cached HTML *with* the uid placeholder still in it - `renderMarkdownDocument` owns the
      *  substitution, so one cache entry can serve every instance that renders the same text. */

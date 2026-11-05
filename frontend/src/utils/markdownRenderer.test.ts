@@ -15,7 +15,7 @@ function longDoc(chars = MARKDOWN_CACHE_MIN_CHARS + 100): string {
   return `## 复核结论\n${body}`;
 }
 
-function env(overrides: Partial<{ workspacePath: string; baseDir: string }> = {}) {
+function env(overrides: Partial<{ workspacePath: string; workspaceId: string; baseDir: string }> = {}) {
   return { slugCounts: new Map<string, number>(), ...overrides };
 }
 
@@ -31,6 +31,48 @@ describe("renderInlineMarkdown", () => {
   it("strips the stray newline after each soft break so pre-wrap does not double-space", () => {
     expect(renderInlineMarkdown("line1\nline2")).toBe("line1<br>line2");
     expect(renderInlineMarkdown("para one\n\npara two")).toBe("para one<br><br>para two");
+  });
+});
+
+describe("workspace images", () => {
+  it("routes a relative image through the workspace asset server", () => {
+    const html = renderMarkdownDocument(
+      "![图示](images/a.png)",
+      { ...env(), workspacePath: "/repo", workspaceId: "ws1", baseDir: "docs" },
+      "md1",
+    );
+    expect(html).toContain(
+      'src="/workspace-image?workspaceId=ws1&amp;path=docs%2Fimages%2Fa.png"',
+    );
+    expect(html).toContain('class="markdown-workspace-image"');
+    expect(html).toContain('loading="lazy"');
+  });
+
+  it("uses the legacy root query when the thread has no workspace id", () => {
+    const html = renderMarkdownDocument(
+      "![图示](images/a.png)",
+      { ...env(), workspacePath: "/repo", baseDir: "docs" },
+      "md1",
+    );
+    expect(html).toContain(
+      'src="/workspace-image?root=%2Frepo&amp;path=docs%2Fimages%2Fa.png"',
+    );
+  });
+
+  it("leaves remote, data and out-of-workspace images alone", () => {
+    const web = renderMarkdownDocument("![x](https://example.com/a.png)", { ...env(), workspacePath: "/repo" }, "md1");
+    expect(web).toContain('src="https://example.com/a.png"');
+    const data = renderMarkdownDocument("![x](data:image/png;base64,AAAA)", { ...env(), workspacePath: "/repo" }, "md1");
+    expect(data).toContain("data:image/png;base64,AAAA");
+    const outside = renderMarkdownDocument("![x](file:///etc/a.png)", { ...env(), workspacePath: "/repo" }, "md1");
+    expect(outside).toContain('src="file:///etc/a.png"');
+    expect(outside).not.toContain("/workspace-image");
+  });
+
+  it("does not rewrite when the host has no workspace", () => {
+    const html = renderMarkdownDocument("![x](images/a.png)", env(), "md1");
+    expect(html).toContain('src="images/a.png"');
+    expect(html).not.toContain("/workspace-image");
   });
 });
 

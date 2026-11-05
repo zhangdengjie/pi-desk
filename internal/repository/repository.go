@@ -582,6 +582,35 @@ type FilePreview struct {
 	Truncated bool
 }
 
+// ReadImage reads a supported image inside root for the asset server. PreviewFile hands images to
+// the renderer as a data URL, which is right for the one file the reader opened; a Markdown page
+// can reference many images, so those travel as URLs instead. The media type is sniffed from the
+// bytes, not trusted from the extension, and anything that is not an image is refused - this route
+// must not become a generic file reader.
+func ReadImage(root, path string) ([]byte, string, error) {
+	resolved, err := ResolveFile(root, path)
+	if err != nil {
+		return nil, "", err
+	}
+	file, err := os.Open(resolved)
+	if err != nil {
+		return nil, "", fmt.Errorf("open workspace image: %w", err)
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, maxMediaBytes+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("read workspace image: %w", err)
+	}
+	if len(content) > maxMediaBytes {
+		return nil, "", errors.New("workspace image is too large")
+	}
+	mediaType := mediaTypeForContent(resolved, content)
+	if !strings.HasPrefix(mediaType, "image/") {
+		return nil, "", errors.New("workspace file is not a supported image")
+	}
+	return content, mediaType, nil
+}
+
 const spreadsheetMediaType = "application/x-pi-desk-spreadsheet"
 
 type spreadsheetPreview struct {

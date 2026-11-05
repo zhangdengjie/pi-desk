@@ -711,3 +711,29 @@ describe("MarkdownBody typewriter mode", () => {
     wrapper.unmount();
   });
 });
+
+describe("MarkdownBody image preview", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("opens the zoomable image dialog when a rendered image is clicked", async () => {
+    const { wrapper } = mountMarkdown("![diagram](images/diagram.png)");
+    const image = wrapper.get("img");
+    const element = image.element as HTMLImageElement;
+    Object.defineProperty(element, "naturalWidth", { configurable: true, value: 1200 });
+    Object.defineProperty(element, "naturalHeight", { configurable: true, value: 800 });
+    await image.trigger("click");
+    await flushPromises();
+
+    const dialog = document.querySelector<HTMLElement>(".image-preview-dialog");
+    expect(dialog).not.toBeNull();
+    expect(dialog?.textContent).toContain("diagram");
+    const close = dialog?.querySelector<HTMLButtonElement>("header button[autofocus]");
+    expect(close).not.toBeNull();
+    close?.click();
+    await flushPromises();
+    expect(document.querySelector(".image-preview-dialog")).toBeNull();
+    wrapper.unmount();
+  });
+});
