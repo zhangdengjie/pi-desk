@@ -3429,8 +3429,13 @@ html.is-resizing-pane .inspector {
      Flex centring parses the percentage in both engines (measured 2026-10-24). */
   display: flex;
   flex: 1 1 auto;
-  align-items: center;
-  justify-content: center;
+  /* The frame centres itself with `margin: auto`, not with justify/align: a centred flex item
+     clips its start edge once it overflows, and auto margins resolve to 0 exactly at the
+     overflow boundary. That keeps the picture centred while it fits and leaves the top-left
+     corner reachable when it does not - flipping justify-content on `is-zoomed` used to snap a
+     still-smaller picture from the centre to the left the moment zoom started. */
+  align-items: flex-start;
+  justify-content: flex-start;
   min-width: 0;
   min-height: 0;
   padding: 16px;
@@ -3454,6 +3459,9 @@ html.is-resizing-pane .inspector {
 .zoomable-image-frame {
   position: relative;
   flex: none;
+  /* Free space is split evenly while the frame fits; once it overflows the auto margins become 0,
+     so the left/top edge lands on the scroll origin instead of an unreachable negative offset. */
+  margin: auto;
   overflow: hidden;
 }
 
@@ -3476,12 +3484,9 @@ html.is-resizing-pane .inspector {
   will-change: transform;
 }
 
-/* Explicit zoom: the frame must not shrink back to the stage, and starting from flex-start keeps
-   the top-left corner reachable once the content overflows (a centred flex item clips the negative
-   side). */
+/* Explicit zoom: the frame must not shrink back to the stage. Alignment stays flex-start plus
+   `margin: auto` on the frame, so crossing from "fits" to "overflows" is continuous. */
 .zoomable-image-stage.is-zoomed {
-  align-items: flex-start;
-  justify-content: flex-start;
   cursor: grab;
 }
 
