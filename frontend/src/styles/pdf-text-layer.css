@@ -9,9 +9,17 @@
  *   python3 - <<'EOF'
  *   ... see frontend/src/readers/README.md
  *   EOF
+ *
+ * Upstream defines `--total-scale-factor` on `.pdfViewer .page`
+ * (`calc(var(--scale-factor) * var(--user-unit))`), not on `.textLayer`. The extraction above only
+ * keeps `.textLayer` blocks, so that line has to be re-added here by hand after every re-extract:
+ * without it the spans fall back to the inherited font-size and the selection highlight no longer
+ * covers the glyphs.
  */
 .textLayer {
   color-scheme: only light;
+
+  --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
 
   position: absolute;
   text-align: initial;
