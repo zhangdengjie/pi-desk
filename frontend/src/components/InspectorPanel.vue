@@ -4,7 +4,7 @@ import { Binary, ChevronRight, FileCode2, FileDiff, PanelRightClose, FolderOpen,
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { pruneTerminalIds, promoteTerminalId } from "../utils/terminalPool";
 import { pruneDocumentIds, promoteDocumentId } from "../utils/documentPool";
-import { type PanelTab, useAppStore } from "../stores/app";
+import { type PanelTab, type ThreadSummary, useAppStore } from "../stores/app";
 import { buildRepositoryTree, type RepositoryTreeEntry, type RepositoryTreeNode } from "../utils/fileMentions";
 import { fuzzyScore } from "../utils/fuzzySearch";
 import { highlightCodeLines, type CodeSegment } from "../utils/codeHighlight";
@@ -47,17 +47,16 @@ const filePreviewName = computed(() => appStore.activeRepositoryFilePreviewPath.
  * the other machine, and `absolutePath` is the field that says so (`RepositoryService.PreviewFile`
  * clears it for SSH).
  *
- * Read from the tab, not from the active one: a reader stays mounted while another tab is in front,
- * so its source must keep describing its own document.
+ * The thread is passed in, not read from the active one: a reader stays mounted while another tab
+ * or another thread is in front, so its source must keep describing its own workspace.
  */
-const documentFor = (tab: PanelTab | undefined) => {
-  if (!tab || tab.kind !== "file") return undefined;
+const documentFor = (tab: PanelTab | undefined, thread: ThreadSummary | undefined) => {
+  if (!tab || tab.kind !== "file" || !thread) return undefined;
   const preview = tab.preview;
   const mediaType = preview?.mediaType ?? "";
   if (mediaType !== "application/pdf" && mediaType !== "application/epub+zip") return undefined;
-  const thread = appStore.activeThread;
   const path = tab.path ?? preview?.path ?? "";
-  if (!thread || !path) return undefined;
+  if (!path) return undefined;
   const src = preview?.absolutePath
     ? workspaceFileUrl({ workspaceId: thread.workspaceId, workspacePath: thread.workspacePath, path })
     : preview?.dataUrl ?? "";
@@ -102,20 +101,32 @@ const mountedTerminalTabs = computed(() => {
 
 // Document readers follow the same rule for the same reason, and one more: a re-created reader
 // re-fetches and re-parses the book (the loading overlay the user sees on every tab switch).
-// Closing or switching threads drops the ids so the readers are actually released.
-const documentTabs = computed(() =>
-  (appStore.activePanel?.tabs ?? []).flatMap((tab) => {
-    const document = documentFor(tab);
-    return document ? [{ tab, document }] : [];
-  }),
-);
+// Unlike terminals they span threads: the tab id starts with its thread id and the owning thread
+// travels with the entry, so switching to another conversation only hides the pane. The pool size
+// comes from `documentPool` in ~/.pi-desk/config.json (default 5).
+const documentTabs = computed(() => {
+  const threads = new Map(appStore.threads.map((thread) => [thread.id, thread]));
+  return Object.entries(appStore.inspectorByThread).flatMap(([threadId, panel]) => {
+    const thread = threads.get(threadId);
+    if (!thread) return [];
+    return panel.tabs.flatMap((tab) => {
+      const document = documentFor(tab, thread);
+      return document ? [{ tab, document }] : [];
+    });
+  });
+});
 const keptDocumentIds = ref<string[]>([]);
 watch(
-  () => [currentTab.value?.id ?? "", documentTabs.value.map((entry) => entry.tab.id).join("\n")],
+  () => [currentTab.value?.id ?? "", appStore.documentPool, documentTabs.value.map((entry) => entry.tab.id).join("\n")],
   () => {
     const active = currentTab.value;
-    if (active && documentFor(active)) keptDocumentIds.value = promoteDocumentId(keptDocumentIds.value, active.id);
+    if (active && documentFor(active, appStore.activeThread)) {
+      keptDocumentIds.value = promoteDocumentId(keptDocumentIds.value, active.id, appStore.documentPool);
+    }
     keptDocumentIds.value = pruneDocumentIds(keptDocumentIds.value, documentTabs.value.map((entry) => entry.tab.id));
+    if (keptDocumentIds.value.length > appStore.documentPool) {
+      keptDocumentIds.value = keptDocumentIds.value.slice(0, appStore.documentPool);
+    }
   },
   { immediate: true },
 );
@@ -125,7 +136,10 @@ const mountedDocumentTabs = computed(() => {
   return documentTabs.value.filter((entry) => ids.has(entry.tab.id));
 });
 /** The active tab is a document, so its reader (not the file panel) owns the content area. */
-const activeDocument = computed(() => Boolean(documentFor(currentTab.value)));
+const activeDocument = computed(() => Boolean(documentFor(currentTab.value, appStore.activeThread)));
+/** The panel is only interactive while it is on screen. The node stays mounted when stowed (warm
+ *  readers), so a closed panel must not keep answering keyboard shortcuts or Tab focus. */
+const panelInteractive = computed(() => appStore.inspectorOpen && appStore.activePage === "task");
 const markdownRendered = computed({ get: () => currentTab.value?.markdownRendered !== false, set: (value) => { if (currentTab.value) currentTab.value.markdownRendered = value; appStore.scheduleDesktopStateSave(); } });
 const activeSpreadsheetSheet = computed({ get: () => currentTab.value?.sheet ?? 0, set: (value) => { if (currentTab.value) currentTab.value.sheet = value; appStore.scheduleDesktopStateSave(); } });
 const filter = computed({ get: () => currentTab.value?.filter ?? "", set: (value) => { if (currentTab.value) currentTab.value.filter = value; appStore.scheduleDesktopStateSave(); } });
@@ -958,7 +972,22 @@ onBeforeUnmount(() => {
   document.removeEventListener("keydown", onDocumentKeydown);
 });
 watch(() => appStore.activeThreadId, () => {
+  // The panel outlives a session switch (that is what keeps warm readers alive), so the ephemeral
+  // UI that used to die with the old per-thread remount has to be reset explicitly.
+  panelMenu.value = undefined;
+  renamingID.value = "";
+  renameDraft.value = "";
+  cancelTabDrag();
+  closePreviewSearch();
+  outlineChoice.value = undefined;
   void appStore.refreshActiveRepository();
+});
+// Reopening used to remount the panel, which refreshed the repository and the preview; the node is
+// sticky now, so the refresh has to be explicit.
+watch(() => appStore.inspectorOpen, (open) => {
+  if (!open) return;
+  void appStore.refreshActiveRepository();
+  refreshPreview();
 });
 watch(() => [currentTab.value?.id, currentTab.value?.loading, markdownRendered.value, activeSpreadsheetSheet.value], restoreScroll, { flush: "post", immediate: true });
 watch(() => currentTab.value?.id, async () => {
@@ -968,7 +997,7 @@ watch(() => currentTab.value?.id, async () => {
 </script>
 
 <template>
-  <aside ref="panelElement" class="inspector panel-workbench" :class="ui.root" :aria-label="tr('inspector.label')" :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--sidebar-width': `${appStore.sidebarWidth}px` }" @scroll.capture="saveScroll">
+  <aside ref="panelElement" class="inspector panel-workbench" :class="ui.root" :aria-label="tr('inspector.label')" :inert="!panelInteractive" :style="{ '--inspector-width': `${appStore.inspectorWidth}px`, '--sidebar-width': `${appStore.sidebarWidth}px` }" @scroll.capture="saveScroll">
     <div class="panel-tabbar">
       <div ref="panelTabs" class="panel-tabs" role="tablist" :aria-label="tr('inspector.workspaceTabs')">
         <div v-for="tab in appStore.activePanel?.tabs" :key="tab.id" :data-panel-tab="tab.id" class="panel-tab" :class="{ 'is-active': currentTab?.id === tab.id, 'is-preview': tab.kind === 'file' && !tab.pinned, 'is-dragging': tabDrag?.moved && tabDrag.id === tab.id, 'is-drop-target': tabDrag?.moved && tabDrag.overId === tab.id }">
@@ -1014,6 +1043,10 @@ watch(() => currentTab.value?.id, async () => {
     <div v-if="panelMenu === 'open'" id="panel-open-menu" ref="openMenu" class="panel-menu" role="menu" :aria-label="tr('inspector.openOptions')" @click="panelMenu = undefined"><button type="button" role="menuitem" @click="void appStore.openActiveRepositoryFile(true)"><FolderOpen :size="17" />{{ tr('inspector.showInExplorer') }}</button></div>
     <p v-if="currentTab?.error && (currentTab.kind === 'browser' || currentTab.kind === 'terminal')" class="diff-notice error-text" role="alert">{{ currentTab.error }}</p>
     <div class="panel-body" :class="{ 'has-tree': (currentTab?.kind === 'file' || currentTab?.kind === 'diff') && currentTab.treeOpen }">
+    <!-- Everything except the reader panes is absent while the inspector is closed: the panel stays
+         mounted so a warm reader keeps its parsed document and its box, but hidden terminals and
+         browser WebViews must not stay alive behind a closed panel. -->
+    <template v-if="appStore.inspectorOpen">
     <div v-if="currentTab?.kind === 'file' && !activeDocument" :key="currentTab.id" class="inspector-content file-preview-panel">
       <div v-if="appStore.activeRepositoryFilePreviewLoading && !filePreview" class="repository-state" :class="ui.empty"><LoadingRing :size="18" /></div>
       <div v-else-if="appStore.activeRepositoryFilePreviewError" class="repository-state error-text" :class="ui.empty">{{ appStore.activeRepositoryFilePreviewError }}</div>
@@ -1098,8 +1131,9 @@ watch(() => currentTab.value?.id, async () => {
 
     <BrowserPane v-else-if="currentTab?.kind === 'browser'" :key="currentTab.id" :tab="currentTab" />
     <TerminalPane v-for="tab in mountedTerminalTabs" v-show="tab.id === currentTab?.id" :key="tab.id" :session-id="tab.terminalId" :active="tab.id === currentTab?.id" />
-    <!-- A reader stays mounted for every warm document tab; switching tabs only hides its pane.
-         `visibility`, not `v-show`: foliate-js pages a book from its container's measured width
+    </template>
+    <!-- A reader stays mounted for every warm document tab; switching tabs or threads only hides its
+         pane. `visibility`, not `v-show`: foliate-js pages a book from its container's measured width
          and pdf.js sizes canvases from it, so a `display:none` box would re-flow/re-render the
          book at 0×0 the moment the reader looked away. The panes share the first grid cell, which
          is why `.panel-body` pins its content children in workbench.css. -->
@@ -1114,7 +1148,7 @@ watch(() => currentTab.value?.id, async () => {
         :src="entry.document.src"
         :name="entry.document.name"
         :position-key="entry.document.positionKey"
-        :active="entry.tab.id === currentTab?.id"
+        :active="panelInteractive && entry.tab.id === currentTab?.id"
       >
         <template #fallback>
           <ReaderFallback @open="void appStore.openActiveRepositoryFile()" @open-with="void appStore.openActiveRepositoryFileWith()" @reveal="void appStore.openActiveRepositoryFile(true)" />
@@ -1125,13 +1159,14 @@ watch(() => currentTab.value?.id, async () => {
         :src="entry.document.src"
         :name="entry.document.name"
         :position-key="entry.document.positionKey"
-        :active="entry.tab.id === currentTab?.id"
+        :active="panelInteractive && entry.tab.id === currentTab?.id"
       >
         <template #fallback>
           <ReaderFallback @open="void appStore.openActiveRepositoryFile()" @open-with="void appStore.openActiveRepositoryFileWith()" @reveal="void appStore.openActiveRepositoryFile(true)" />
         </template>
       </EpubReader>
     </div>
+    <template v-if="appStore.inspectorOpen">
     <div v-if="currentTab?.kind === 'files' || ((currentTab?.kind === 'file' || currentTab?.kind === 'diff') && currentTab.treeOpen)" key="directory" class="panel-directory">
       <label class="panel-file-filter"><Search :size="16" /><input v-model="filter" type="search" :placeholder="tr('inspector.filterFiles')" :aria-label="tr('inspector.filterFiles')" /></label>
       <div v-if="fileEntries.length" class="panel-file-tools">
@@ -1172,6 +1207,7 @@ watch(() => currentTab.value?.id, async () => {
         </template>
       </div>
     </div>
+    </template>
     </div>
 
     <!-- The tab in the reader's hand. Teleported because `.panel-tabs` is `overflow-x: auto`, which

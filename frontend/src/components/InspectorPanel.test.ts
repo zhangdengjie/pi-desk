@@ -568,6 +568,99 @@ describe("InspectorPanel", () => {
     wrapper.unmount();
   });
 
+  it("keeps a document reader mounted while another thread is in front", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    const thread = { id: "thread-doc", title: "Docs", workspace: "repo", workspacePath: "/repo", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
+    const other = { id: "thread-other", title: "Other", workspace: "repo", workspacePath: "/repo", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
+    store.$patch({
+      threads: [thread, other],
+      activeThreadId: "thread-doc",
+      inspectorByThread: {
+        "thread-doc": {
+          open: true, width: 600, expanded: false, activeId: "doc",
+          tabs: [
+            { id: "doc", kind: "file", title: "book.pdf", path: "book.pdf", pinned: true, preview: {
+              path: "book.pdf", absolutePath: "/repo/book.pdf", mediaType: "application/pdf", size: 10, binary: true, truncated: false,
+            } },
+          ],
+        },
+        "thread-other": {
+          open: true, width: 600, expanded: false, activeId: "other-notes",
+          tabs: [
+            { id: "other-notes", kind: "file", title: "other.md", path: "other.md", pinned: true, preview: {
+              path: "other.md", absolutePath: "/repo/other.md", content: "# Other thread", size: 15, binary: false, truncated: false,
+            } },
+          ],
+        },
+      },
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    store.scheduleDesktopStateSave = vi.fn();
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    for (let attempt = 0; attempt < 40 && !wrapper.find(".document-reader-pane .pdf-reader").exists(); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const element = wrapper.find(".document-reader-pane .pdf-reader").element;
+    expect(element).toBeTruthy();
+
+    // Another conversation: the reader belongs to the thread being left, so it must survive.
+    store.activateThread("thread-other");
+    await flushPromises();
+    expect(wrapper.find(".document-reader-pane").classes()).not.toContain("is-active");
+    expect(wrapper.find(".document-reader-pane .pdf-reader").element).toBe(element);
+    expect(wrapper.find(".file-preview-panel").text()).toContain("# Other thread");
+
+    store.activateThread("thread-doc");
+    await flushPromises();
+    expect(wrapper.find(".document-reader-pane").classes()).toContain("is-active");
+    expect(wrapper.find(".document-reader-pane .pdf-reader").element).toBe(element);
+    wrapper.unmount();
+  });
+
+  it("keeps the reader mounted when the inspector itself is closed", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    const thread = { id: "thread-doc", title: "Docs", workspace: "repo", workspacePath: "/repo", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
+    store.$patch({
+      threads: [thread],
+      activeThreadId: "thread-doc",
+      inspectorByThread: {
+        "thread-doc": {
+          open: true, width: 600, expanded: false, activeId: "doc",
+          tabs: [
+            { id: "doc", kind: "file", title: "book.pdf", path: "book.pdf", pinned: true, preview: {
+              path: "book.pdf", absolutePath: "/repo/book.pdf", mediaType: "application/pdf", size: 10, binary: true, truncated: false,
+            } },
+            { id: "notes", kind: "file", title: "notes.md", path: "notes.md", pinned: true, preview: {
+              path: "notes.md", absolutePath: "/repo/notes.md", content: "# Notes", size: 7, binary: false, truncated: false,
+            } },
+          ],
+        },
+      },
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    store.scheduleDesktopStateSave = vi.fn();
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    for (let attempt = 0; attempt < 40 && !wrapper.find(".document-reader-pane .pdf-reader").exists(); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const element = wrapper.find(".document-reader-pane .pdf-reader").element;
+    store.selectPanelTab("notes");
+    await flushPromises();
+    expect(wrapper.find(".file-preview-panel").exists()).toBe(true);
+
+    // Closing the panel parks it instead of unmounting it: the reader (and its parsed document)
+    // must survive, while terminals/browser/markdown content go away.
+    store.inspectorOpen = false;
+    await flushPromises();
+    expect(wrapper.find(".document-reader-pane .pdf-reader").element).toBe(element);
+    expect(wrapper.find(".file-preview-panel").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it("renders a linked file in the right inspector preview", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);

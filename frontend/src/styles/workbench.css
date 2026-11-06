@@ -2482,10 +2482,11 @@ html:not(.is-resizing-pane) .topbar {
   overflow-x: clip;
 }
 
-/* The inspector slides out of the edge it is docked to and back in. The base rule is the stowed
-   state, so the leave has something to interpolate to while App.vue keeps the node mounted for
-   PANEL_SETTLE_MS; the enter needs `is-inspector-open` to arrive two frames after the node does,
-   because a node inserted with its final value already applied has no previous computed value. */
+/* The inspector slides out of the edge it is docked to and back in. The node stays mounted after
+   its first open (it carries the warm PDF/EPUB readers across sessions), so the leave always has
+   something to interpolate to; the enter still needs `is-inspector-open` to arrive two frames after
+   the node is first mounted, because a node inserted with its final value has no previous computed
+   value. */
 .inspector {
   transform: translateX(100%);
   opacity: 0;

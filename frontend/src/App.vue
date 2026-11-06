@@ -22,7 +22,6 @@ import WindowControls from "./components/WindowControls.vue";
 import { tr } from "./i18n";
 import { onBrowserEvent } from "./services/browser";
 import { installGhostSelectionGuard } from "./services/ghostSelectionGuard";
-import { PANEL_SETTLE_MS } from "./utils/paneMotion";
 import { sanitizeFontFamilyList } from "./utils/fontFamily";
 import { anchoredTranscriptTint, legibleCodeColor, TRANSCRIPT_TINT_ANCHOR } from "./utils/transcriptTint";
 import {
@@ -109,24 +108,16 @@ function syncDocumentTranscriptLineHeight(height: string) {
 // cannot simply follow `inspectorOpen`:
 //   - on open, a node inserted while the class is already on it has no previous computed value to
 //     interpolate from, and no transition runs - hence the two-frame `inspectorReserve = false` hold.
-//     Holding it also stops the slide from replaying on every session switch (`:key` remounts the
-//     panel while the class never changes).
-//   - on close, the node has to outlive the class by one transition or the panel is unmounted before
-//     the first frame of its own slide-out - hence `inspectorMounted` + `PANEL_SETTLE_MS`.
+//   - on close, the node stays mounted: the CSS transition owns the leave, and `inspectorMounted` is
+//     sticky on purpose. Unmounting it (the pre-reader behaviour) destroyed every warm PDF/EPUB
+//     reader on a session switch, because the panel carries the reader pool across threads.
 const inspectorVisible = computed(() => appStore.inspectorOpen && appStore.activePage === "task");
 const inspectorMounted = ref(inspectorVisible.value);
 const inspectorReserve = ref(inspectorVisible.value);
-let inspectorSettleTimer: number | undefined;
 let inspectorEnterToken = 0;
 const nextFrame = () => new Promise<void>((resolve) => {
   requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
 });
-
-function clearInspectorSettle() {
-  if (inspectorSettleTimer === undefined) return;
-  window.clearTimeout(inspectorSettleTimer);
-  inspectorSettleTimer = undefined;
-}
 
 async function playInspectorEnter(token: number) {
   inspectorReserve.value = false;
@@ -137,17 +128,12 @@ async function playInspectorEnter(token: number) {
 }
 
 watch(inspectorVisible, (visible) => {
-  clearInspectorSettle();
   if (visible) {
     void playInspectorEnter(++inspectorEnterToken);
     return;
   }
   inspectorEnterToken += 1;
   inspectorReserve.value = false;
-  inspectorSettleTimer = window.setTimeout(() => {
-    inspectorSettleTimer = undefined;
-    if (!inspectorVisible.value) inspectorMounted.value = false;
-  }, PANEL_SETTLE_MS);
 });
 
 // The reader's pick is anchored to the surface it is about to tint, then written onto the root as two
@@ -185,7 +171,6 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  clearInspectorSettle();
   disposeBrowserEvents?.();
   disposeGhostSelectionGuard?.();
   window.removeEventListener("beforeunload", persistDesktopState);
@@ -285,7 +270,7 @@ watch(() => [appStore.codeAccent, darkSurface.value] as const, ([accent, dark]) 
       <UsagePage v-else-if="appStore.activePage === 'usage'" />
       <ConversationPane v-else />
     </main>
-    <InspectorPanel v-if="inspectorMounted" :key="appStore.activeThreadId" v-show="!appStore.settingsOpen" />
+    <InspectorPanel v-if="inspectorMounted" v-show="!appStore.settingsOpen" />
     <PaneResizer
       v-if="!appStore.settingsOpen && inspectorReserve && !appStore.activePanel?.expanded && appStore.activePage === 'task'"
       side="right"
