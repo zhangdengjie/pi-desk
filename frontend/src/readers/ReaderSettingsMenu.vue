@@ -39,7 +39,9 @@ const themeLabels: Record<ReaderTheme, string> = {
         <button type="button" :aria-label="tr('common.close')" @click="open = false"><X :size="13" /></button>
       </div>
 
-      <label class="reader-settings-row">
+      <!-- Theme tints the book's own document; a PDF page is a bitmap the engine already painted,
+           so offering it there would be a control that visibly does nothing. -->
+      <label v-if="props.mode === 'epub'" class="reader-settings-row">
         <span>{{ tr("reader.theme") }}</span>
         <span class="reader-settings-swatches">
           <button
