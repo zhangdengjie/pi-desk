@@ -176,3 +176,30 @@ func TestWorkspaceFileMiddlewareLeavesEveryOtherPathAlone(t *testing.T) {
 		}
 	}
 }
+
+// The route only works if it is wired into the asset chain *and* still passes everything else
+// through: Wails hands the frontend, the `/wails/` runtime and the dev-server proxy down this one
+// handler. This is the shape main.go builds.
+func TestWorkspaceFileMiddlewareInsideAssetChain(t *testing.T) {
+	record := localDocumentWorkspace(t)
+	handler := ChainAssetMiddleware(
+		SessionImageMiddleware(&stubImageSource{}),
+		WorkspaceImageMiddleware(workspaceImageFixture{record: record}),
+		WorkspaceFileMiddleware(workspaceImageFixture{record: record}),
+	)(passthrough())
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet,
+		"/workspace-file?workspaceId=ws-1&path=books%2Fpaper.pdf", nil))
+	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "application/pdf" {
+		t.Fatalf("chained status = %d, content type = %q", response.Code, response.Header().Get("Content-Type"))
+	}
+
+	// The image route must not have been shadowed by its sibling.
+	image := httptest.NewRecorder()
+	handler.ServeHTTP(image, httptest.NewRequest(http.MethodGet,
+		"/workspace-image?workspaceId=ws-1&path=books%2Fpaper.pdf", nil))
+	if image.Code != http.StatusNotFound {
+		t.Fatalf("image route answered a PDF with %d, want 404", image.Code)
+	}
+}
