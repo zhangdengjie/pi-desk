@@ -74,6 +74,10 @@ let searchGeneration = 0;
 let wheelLockedUntil = 0;
 let wheelAccumulator = 0;
 let turning = false;
+/** Direction of the section turn in flight; read by `onViewSwapped` to pick the slide side. */
+let pendingTurnSign = 1;
+/** Drops the page the previous turn parked, if its animation has not finished yet. */
+let pendingSwap: (() => void) | undefined;
 
 const hasToc = computed(() => toc.value.length > 0);
 const colors = computed(() => THEME_COLORS[readerSettings.theme]);
@@ -255,6 +259,10 @@ const open = async () => {
       element.close();
       return;
     }
+    // Not on `element`: `view-swapped` is dispatched by the paginator inside its shadow root, and
+    // `view.js` only re-dispatches `load` / `relocate` / `create-overlayer` on the host. The
+    // renderer is the only object the event actually reaches.
+    rendererElement()?.addEventListener("view-swapped", onViewSwapped as EventListener);
     // Before `init()`: see the note on `applyStyles`. Ordering, not the value, was the bug.
     applyStyles();
     toc.value = (element.book?.toc ?? []) as FoliateTocItem[];
@@ -274,6 +282,89 @@ const open = async () => {
   }
 };
 
+/** A section turn keeps the outgoing page on screen (see src/utils/foliateSplitView.ts), so both
+ *  pages have to be animated by hand: they live in the paginator's closed shadow root, where no
+ *  stylesheet of ours can reach them, and only inline styles / WAAPI apply. */
+const CHAPTER_TURN_MS = 190;
+const CHAPTER_TURN_EASING = "cubic-bezier(0.22, 0.61, 0.36, 1)";
+
+const finishPendingSwap = () => {
+  const remove = pendingSwap;
+  pendingSwap = undefined;
+  remove?.();
+};
+
+/**
+ * A chapter turn holds the page-turn lock until the slide is over, not until `goTo` resolves.
+ * Releasing it at `goTo` left ~200ms where the page looked frozen but another wheel tick was
+ * accepted, and every tick crosses a whole section — which is how one gesture ended up several
+ * chapters away.
+ */
+let releaseTurn: (() => void) | undefined;
+/** Set by `onViewSwapped`; `#display` dispatches the event before `goTo` resolves. */
+let turnSwapSeen = false;
+const settleTurn = () => {
+  const release = releaseTurn;
+  releaseTurn = undefined;
+  release?.();
+};
+
+const clearBookSelection = () => {
+  const doc = view?.renderer?.getContents?.()[0]?.doc;
+  doc?.getSelection?.()?.removeAllRanges();
+};
+
+const onViewSwapped = (event: Event) => {
+  const detail = (event as CustomEvent<{
+    incoming?: HTMLElement;
+    outgoing?: HTMLElement;
+    remove?: () => void;
+  }>).detail;
+  const incoming = detail?.incoming;
+  const outgoing = detail?.outgoing;
+  const remove = detail?.remove;
+  if (!incoming || !outgoing || typeof remove !== "function") return;
+  turnSwapSeen = true;
+  finishPendingSwap();
+  if (!readerSettings.animateTurns || typeof incoming.animate !== "function") {
+    remove();
+    settleTurn();
+    return;
+  }
+  const sign = pendingTurnSign < 0 ? -1 : 1;
+  outgoing.style.zIndex = "2";
+  // Park the incoming page off screen *now*: until the animation starts it is still scrolled to
+  // page 1 (the paginator applies the anchor after dispatching this event), and that one frame
+  // would flash the wrong page.
+  incoming.style.transform = `translateX(${sign * 100}%)`;
+  pendingSwap = remove;
+  // One frame for two things: the anchor scroll above has to land, and the parked transform has to
+  // be the animation's starting value.
+  requestAnimationFrame(() => {
+    clearBookSelection();
+    const options: KeyframeAnimationOptions = {
+      duration: CHAPTER_TURN_MS,
+      easing: CHAPTER_TURN_EASING,
+      fill: "forwards",
+    };
+    const slideOut = outgoing.animate(
+      [{ transform: "translateX(0)" }, { transform: `translateX(${sign * -100}%)` }],
+      options,
+    );
+    const slideIn = incoming.animate(
+      [{ transform: `translateX(${sign * 100}%)` }, { transform: "translateX(0)" }],
+      options,
+    );
+    void Promise.allSettled([slideOut.finished, slideIn.finished]).then(() => {
+      slideIn.cancel();
+      incoming.style.transform = "";
+      if (pendingSwap === remove) pendingSwap = undefined;
+      remove();
+      settleTurn();
+    });
+  });
+};
+
 const turn = (delta: number) => {
   if (!view || loading.value || turning) return;
   const element = rendererElement();
@@ -290,9 +381,24 @@ const turn = (delta: number) => {
     // (empty `DOMRectList` → immediate no-op return) so `View.load` → `onExpand()` does not scroll
     // the new section to the wrong end before `#display` scrolls to the target anchor.
     void element.scrollToAnchor?.(document.createElement("span"));
+    pendingTurnSign = delta;
     turning = true;
+    turnSwapSeen = false;
+    // Safety net: if no swap arrives (nothing to turn to, or the load fails) the lock must still
+    // come back. `settleTurn` clears `releaseTurn`, so this fires at most once per turn.
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      if (releaseTurn === release) releaseTurn = undefined;
+      turning = false;
+    };
+    releaseTurn = release;
+    setTimeout(release, 600);
+    // The swap event has already been dispatched by the time `goTo` resolves, so "no event" here
+    // means there is nothing being animated and the lock can go back immediately.
     void Promise.resolve(element.goTo({ index: nextIndex, anchor: delta < 0 ? () => 1 : () => 0 }))
-      .finally(() => { turning = false; });
+      .then(() => { if (!turnSwapSeen) release(); }, () => { release(); });
     return;
   }
   if (delta < 0) void view.prev();
@@ -513,6 +619,7 @@ onBeforeUnmount(() => {
   watchedDocument = undefined;
   globalThis.removeEventListener("keydown", onKeydown);
   host.value?.removeEventListener("wheel", onWheel);
+  finishPendingSwap();
   view?.close();
   view = undefined;
   host.value?.replaceChildren();
