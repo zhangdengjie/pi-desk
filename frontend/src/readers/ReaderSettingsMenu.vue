@@ -17,6 +17,8 @@ import { useDismiss } from "./useDismiss";
 const props = defineProps<{ mode: "pdf" | "epub" }>();
 
 const open = ref(false);
+/** The parent closes this from outside the panel's own document (a press inside the book iframe). */
+defineExpose({ close: () => { open.value = false; } });
 const panel = ref<HTMLElement | null>(null);
 const root = ref<HTMLElement | null>(null);
 // A settings sheet that only closes when you find its own ✕ feels stuck; a press anywhere else

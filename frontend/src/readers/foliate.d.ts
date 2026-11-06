@@ -31,9 +31,26 @@ declare module "foliate-js/view.js" {
     subitems?: { cfi: string; excerpt?: FoliateSearchExcerpt }[];
   }
 
+  export interface FoliateSection {
+    id: string;
+    /** Builds and caches the section's blob URL; calling it early is what warms the next turn. */
+    load?: () => Promise<string | undefined>;
+    createDocument?: () => Promise<Document>;
+  }
+
   export class FoliateView extends HTMLElement {
-    book?: { toc?: FoliateTocItem[]; metadata?: { title?: unknown; language?: unknown } };
-    renderer?: { setStyles?: (styles: string | [string, string]) => void; next?: () => unknown; prev?: () => unknown };
+    book?: {
+      toc?: FoliateTocItem[];
+      metadata?: { title?: unknown; language?: unknown };
+      sections?: FoliateSection[];
+    };
+    renderer?: {
+      setStyles?: (styles: string | [string, string]) => void;
+      getContents?: () => { index?: number; doc?: Document; overlayer?: unknown }[];
+      atEnd?: boolean;
+      atStart?: boolean;
+      hasAttribute?: (name: string) => boolean;
+    };
     open(source: Blob | string): Promise<void>;
     init(options: { lastLocation?: string; showTextStart?: boolean }): Promise<void>;
     goTo(target: number | string): Promise<unknown>;

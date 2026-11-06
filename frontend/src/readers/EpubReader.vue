@@ -5,6 +5,7 @@ import { tr } from "../i18n";
 import { vSpin } from "../utils/spin";
 import SearchPopover from "../components/SearchPopover.vue";
 import ReaderSettingsMenu from "./ReaderSettingsMenu.vue";
+import type { FoliateSection } from "foliate-js/view.js";
 import { THEME_COLORS, readerSettings } from "./readerSettings";
 import { readPosition, usePositionFlush, writePosition } from "./readingPositions";
 import { useDismiss } from "./useDismiss";
@@ -46,6 +47,7 @@ const activeLabel = ref("");
 const host = ref<HTMLElement | null>(null);
 const searchButton = ref<HTMLElement | null>(null);
 const root = ref<HTMLElement | null>(null);
+const settingsMenu = ref<{ close: () => void } | null>(null);
 
 // Search state. `searchHit` is an index into `hits`; the query is committed by Enter, the same way
 // the Markdown preview commits it, because scanning every section of a book per keystroke is not
@@ -60,6 +62,14 @@ const searchProgress = ref(0);
 
 let view: FoliateView | undefined;
 let destroyed = false;
+/**
+ * The book lives in an iframe, so `pointerdown` and `keydown` inside it never reach this document.
+ * Without listeners on the book's own document, clicking the page (or pressing ⌘F while reading)
+ * did nothing: the dismiss handler only ever saw presses on the reader's own chrome, which is why
+ * the panels closed "above and to the left" of them and nowhere else.
+ */
+let watchedDocument: Document | undefined;
+const warmedSections = new Set<string>();
 let searchGeneration = 0;
 let wheelLockedUntil = 0;
 let wheelAccumulator = 0;
@@ -157,6 +167,8 @@ const onLoad = (event: Event) => {
   const doc = (event as CustomEvent<{ doc?: Document }>).detail?.doc;
   if (!doc) return;
   repairStretchedCovers(doc);
+  // The paginator creates a fresh document per section, so the listeners have to follow it.
+  watchBookDocument();
 };
 
 const onRelocate = (event: Event) => {
@@ -166,6 +178,11 @@ const onRelocate = (event: Event) => {
   if (detail.cfi) {
     writePosition(props.positionKey, { cfi: detail.cfi });
     emit("relocate", detail.cfi, fraction.value);
+  }
+  watchBookDocument();
+  if (typeof detail.index === "number") {
+    warmSection(detail.index + 1);
+    warmSection(detail.index - 1);
   }
 };
 
@@ -218,6 +235,7 @@ const open = async () => {
     loading.value = false;
     await nextTick();
     applyStyles();
+    watchBookDocument();
   } catch (error) {
     if (destroyed) return;
     loading.value = false;
@@ -230,6 +248,45 @@ const turn = (delta: number) => {
   animateTurn(delta);
   if (delta < 0) void view.prev();
   else void view.next();
+};
+
+/** Both floating panels, closed from either document. */
+const closeOverlays = () => {
+  if (searchOpen.value) closeSearch();
+  settingsMenu.value?.close();
+};
+
+const onBookPointerDown = () => { closeOverlays(); };
+
+/** Keyboard inside the book is the same contract as keyboard in the reader: ⌘F, arrows, paging. */
+const onBookKeydown = (event: KeyboardEvent) => onKeydown(event);
+
+const watchBookDocument = () => {
+  const doc = view?.renderer?.getContents?.()[0]?.doc;
+  if (!doc || doc === watchedDocument) return;
+  watchedDocument?.removeEventListener("pointerdown", onBookPointerDown);
+  watchedDocument?.removeEventListener("keydown", onBookKeydown as EventListener);
+  watchedDocument = doc;
+  doc.addEventListener("pointerdown", onBookPointerDown);
+  doc.addEventListener("keydown", onBookKeydown as EventListener);
+};
+
+/**
+ * Builds the adjacent sections' blob URLs ahead of the turn.
+ *
+ * `#createView()` in the paginator destroys the current view *before* the next section's iframe is
+ * loaded, so crossing a section boundary is always a moment with nothing to show. The data work
+ * (unzip, parse, fetch the section's resources) is the slow half of that moment; doing it while the
+ * reader is still on the previous page leaves only the iframe load itself.
+ */
+const warmSection = (index: number) => {
+  const section: FoliateSection | undefined = view?.book?.sections?.[index];
+  if (!section?.id || warmedSections.has(section.id) || typeof section.load !== "function") return;
+  warmedSections.add(section.id);
+  setTimeout(() => {
+    if (destroyed) return;
+    void Promise.resolve(section.load?.()).catch(() => { warmedSections.delete(section.id); });
+  }, 0);
 };
 
 const goToLocation = (href: string) => {
@@ -375,6 +432,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   destroyed = true;
   searchGeneration += 1;
+  watchedDocument?.removeEventListener("pointerdown", onBookPointerDown);
+  watchedDocument?.removeEventListener("keydown", onBookKeydown as EventListener);
+  watchedDocument = undefined;
   globalThis.removeEventListener("keydown", onKeydown);
   host.value?.removeEventListener("wheel", onWheel);
   view?.close();
@@ -392,7 +452,7 @@ onBeforeUnmount(() => {
       <span class="reader-spacer" />
       <button v-if="hasToc" type="button" :class="{ 'is-active': tocOpen }" :aria-expanded="tocOpen" :aria-label="tr('files.epubContents')" :title="tr('files.epubContents')" @click="tocOpen = !tocOpen"><List :size="15" /></button>
       <button ref="searchButton" type="button" :class="{ 'is-active': searchOpen }" :aria-expanded="searchOpen" :aria-label="tr('reader.search')" :title="tr('reader.search')" @click="searchOpen ? closeSearch() : openSearch()"><Search :size="15" /></button>
-      <ReaderSettingsMenu mode="epub" />
+      <ReaderSettingsMenu ref="settingsMenu" mode="epub" />
     </div>
     <!-- The host is never behind a `v-if`. foliate-js pages a book by measuring its own box, so a
          host that is absent while `loading` is true gets a detached `foliate-view`: the element
