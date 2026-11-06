@@ -17,9 +17,9 @@ import (
 // when the browser actually paints one.
 const workspaceImagePrefix = "/workspace-image"
 
-// workspaceImageSource is the narrow half of the workspace catalog this route needs. Keeping it an
+// workspaceAssetSource is the narrow half of the workspace catalog this route needs. Keeping it an
 // interface means the handler is testable with a temp directory and no state file on disk.
-type workspaceImageSource interface {
+type workspaceAssetSource interface {
 	ResolveID(id string) (workspace.Record, error)
 	ResolvePath(path string) (workspace.Record, error)
 }
@@ -27,7 +27,7 @@ type workspaceImageSource interface {
 // WorkspaceImageMiddleware routes `/workspace-image?workspaceId=…&path=…` (or `root=` for a thread
 // written before workspace ids existed) to a trusted local workspace. Every other path passes
 // through untouched, exactly like SessionImageMiddleware.
-func WorkspaceImageMiddleware(source workspaceImageSource) func(http.Handler) http.Handler {
+func WorkspaceImageMiddleware(source workspaceAssetSource) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			if request.URL.Path == workspaceImagePrefix {
@@ -39,7 +39,7 @@ func WorkspaceImageMiddleware(source workspaceImageSource) func(http.Handler) ht
 	}
 }
 
-func serveWorkspaceImage(writer http.ResponseWriter, request *http.Request, source workspaceImageSource) {
+func serveWorkspaceImage(writer http.ResponseWriter, request *http.Request, source workspaceAssetSource) {
 	if request.Method != http.MethodGet && request.Method != http.MethodHead {
 		writer.Header().Set("Allow", "GET, HEAD")
 		http.Error(writer, "method not allowed", http.StatusMethodNotAllowed)

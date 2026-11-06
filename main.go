@@ -295,11 +295,13 @@ func main() {
 			Handler: application.AssetFileServerFS(assets),
 			// Session images are served straight out of the session file instead of travelling in the
 			// transcript snapshot (see internal/sessionindex/imagerefs.go), workspace images back a
-			// Markdown document's local `src`, and /perf-lag is how the webview's own frame recorder
-			// reaches disk. All three are pass-throughs for every other path.
+			// Markdown document's local `src`, workspace files are the PDF/EPUB bytes the reader view
+			// streams itself, and /perf-lag is how the webview's own frame recorder reaches disk. All
+			// four are pass-throughs for every other path.
 			Middleware: appservice.ChainAssetMiddleware(
 				appservice.SessionImageMiddleware(sessionIndex),
 				appservice.WorkspaceImageMiddleware(catalog),
+				appservice.WorkspaceFileMiddleware(catalog),
 				appservice.LagLogMiddleware(lagLog),
 			),
 		},
