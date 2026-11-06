@@ -28,12 +28,19 @@ function walk(dir: string, out: string[] = []): string[] {
 /** 开标签：属性值里允许出现 `>`（如 v-if="a > b"），所以按引号配对扫描。 */
 const OPEN_TAG = /<[A-Za-z][\w-]*(?:"[^"]*"|'[^']*'|[^>])*?>/g;
 
+/**
+ * Every `.vue` under `src`, not just `components/`: the reader views live in `src/readers` and they
+ * shipped with `<LoaderCircle v-spin>` but no `import { vSpin }` — the icon rendered and never
+ * rotated, which is exactly the silent failure this file exists to prevent.
+ */
+const vueFiles = () => walk(srcRoot()).filter((name) => name.endsWith(".vue"));
+
 describe("spinner rotation contract", () => {
   it("every is-spinning / thread-status tag binds v-spin", () => {
     const offenders: string[] = [];
     let checked = 0;
 
-    for (const file of walk(path.join(srcRoot(), "components")).filter((name) => name.endsWith(".vue"))) {
+    for (const file of vueFiles()) {
       const source = readFileSync(file, "utf8");
       for (const needle of ["is-spinning", "thread-status", "loading-ring"]) {
         for (const tag of (source.match(OPEN_TAG) ?? []).filter((item) => item.includes(needle))) {
@@ -65,8 +72,7 @@ describe("spinner rotation contract", () => {
   });
 
   it("imports vSpin wherever the directive is used", () => {
-    const missing = walk(path.join(srcRoot(), "components"))
-      .filter((name) => name.endsWith(".vue"))
+    const missing = vueFiles()
       .filter((file) => {
         const source = readFileSync(file, "utf8");
         return /\sv-spin[\s=">]/.test(source) && !source.includes("import { vSpin }");

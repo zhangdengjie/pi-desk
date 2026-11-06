@@ -4260,9 +4260,20 @@ html.is-resizing-pane .inspector {
 .epub-reader {
   display: flex;
   flex-direction: column;
+  position: relative;
   min-width: 0;
   min-height: 0;
   height: 100%;
+  background: var(--bg-app);
+}
+
+/* Loading and failure are overlays over a document container that is always mounted. Hiding the
+   container behind `v-if` is what made the readers hang: foliate-js pages a book by measuring its
+   own box, so an absent host means a detached element and an `open()` that never resolves. */
+
+.reader-overlay {
+  position: absolute;
+  inset: 0;
   background: var(--bg-app);
 }
 
@@ -4282,7 +4293,7 @@ html.is-resizing-pane .inspector {
   flex-direction: column;
 }
 
-.pdf-reader-toolbar {
+.reader-toolbar {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -4292,7 +4303,7 @@ html.is-resizing-pane .inspector {
   flex: 0 0 auto;
 }
 
-.pdf-reader-toolbar button {
+.reader-toolbar button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4305,22 +4316,22 @@ html.is-resizing-pane .inspector {
   cursor: pointer;
 }
 
-.pdf-reader-toolbar button:hover:not(:disabled) {
+.reader-toolbar button:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text);
 }
 
-.pdf-reader-toolbar button:disabled {
+.reader-toolbar button:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.pdf-reader-toolbar button.is-active {
+.reader-toolbar button.is-active {
   background: var(--bg-hover);
   color: var(--text);
 }
 
-.pdf-reader-pagecount {
+.reader-pagecount {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -4329,7 +4340,7 @@ html.is-resizing-pane .inspector {
   font-variant-numeric: tabular-nums;
 }
 
-.pdf-reader-pageinput {
+.reader-pageinput {
   width: 44px;
   height: 22px;
   border: 1px solid var(--border);
@@ -4340,13 +4351,13 @@ html.is-resizing-pane .inspector {
   text-align: center;
 }
 
-.pdf-reader-zoomlabel {
+.reader-zoomlabel {
   min-width: 46px;
   font-variant-numeric: tabular-nums;
   font-size: var(--font-size-label);
 }
 
-.pdf-reader-spacer {
+.reader-spacer {
   flex: 1 1 auto;
 }
 

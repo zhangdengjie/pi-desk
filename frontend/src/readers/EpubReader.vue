@@ -2,6 +2,7 @@
 import { ChevronLeft, ChevronRight, List, LoaderCircle, Minus, Plus } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { tr } from "../i18n";
+import { vSpin } from "../utils/spin";
 import type { FoliateLocation, FoliateTocItem, FoliateView } from "foliate-js/view.js";
 
 /**
@@ -191,40 +192,42 @@ watch(() => props.src, () => {
 
 <template>
   <div class="epub-reader">
-    <div v-if="loading" class="pdf-reader-state">
+    <div v-if="!loading && !failure" class="reader-toolbar">
+      <button type="button" :aria-label="tr('files.epubPreviousPage')" :title="tr('files.epubPreviousPage')" @click="turn(-1)"><ChevronLeft :size="15" /></button>
+      <button type="button" :aria-label="tr('files.epubNextPage')" :title="tr('files.epubNextPage')" @click="turn(1)"><ChevronRight :size="15" /></button>
+      <span class="epub-reader-label">{{ activeLabel || name }}</span>
+      <span class="reader-spacer" />
+      <button v-if="hasToc" type="button" :class="{ 'is-active': tocOpen }" :aria-expanded="tocOpen" :aria-label="tr('files.epubContents')" :title="tr('files.epubContents')" @click="tocOpen = !tocOpen"><List :size="15" /></button>
+      <button type="button" :aria-label="tr('files.epubSmallerText')" :title="tr('files.epubSmallerText')" :disabled="font <= MIN_FONT" @click="setFont(font - 1)"><Minus :size="15" /></button>
+      <span class="reader-zoomlabel">{{ font }}px</span>
+      <button type="button" :aria-label="tr('files.epubLargerText')" :title="tr('files.epubLargerText')" :disabled="font >= MAX_FONT" @click="setFont(font + 1)"><Plus :size="15" /></button>
+    </div>
+    <!-- The host is never behind a `v-if`. foliate-js pages a book by measuring its own box, so a
+         host that is absent while `loading` is true gets a detached `foliate-view`: the element
+         never connects, the paginator never sees a size, `open()` never resolves, and the reader
+         shows "loading" forever. The state below is an overlay for exactly that reason. -->
+    <div class="epub-reader-body">
+      <nav v-if="tocOpen && hasToc" class="epub-reader-toc" :aria-label="tr('files.epubContents')">
+        <button
+          v-for="item in flattenToc(toc)"
+          :key="`${item.depth}-${item.href}-${item.label}`"
+          type="button"
+          :style="{ paddingInlineStart: `${10 + item.depth * 12}px` }"
+          @click="goToLocation(item.href)"
+        >{{ item.label }}</button>
+      </nav>
+      <div ref="host" class="epub-reader-host" />
+    </div>
+    <div v-if="!loading && !failure" class="epub-reader-progress" role="progressbar" :aria-valuenow="Math.round(fraction * 100)" aria-valuemin="0" aria-valuemax="100">
+      <span :style="{ width: `${Math.round(fraction * 100)}%` }" />
+    </div>
+    <div v-if="loading" class="pdf-reader-state reader-overlay">
       <LoaderCircle v-spin :size="18" class="is-spinning" />
       <span>{{ tr("files.epubLoading") }}</span>
     </div>
-    <div v-else-if="failure" class="pdf-reader-state pdf-reader-failure">
+    <div v-else-if="failure" class="pdf-reader-state pdf-reader-failure reader-overlay">
       <p>{{ failure === "unsupported" ? tr("files.epubUnsupported") : tr("files.epubLoadFailed") }}</p>
       <slot name="fallback" />
     </div>
-    <template v-else>
-      <div class="pdf-reader-toolbar">
-        <button type="button" :aria-label="tr('files.epubPreviousPage')" :title="tr('files.epubPreviousPage')" @click="turn(-1)"><ChevronLeft :size="15" /></button>
-        <button type="button" :aria-label="tr('files.epubNextPage')" :title="tr('files.epubNextPage')" @click="turn(1)"><ChevronRight :size="15" /></button>
-        <span class="epub-reader-label">{{ activeLabel || name }}</span>
-        <span class="pdf-reader-spacer" />
-        <button v-if="hasToc" type="button" :class="{ 'is-active': tocOpen }" :aria-expanded="tocOpen" :aria-label="tr('files.epubContents')" :title="tr('files.epubContents')" @click="tocOpen = !tocOpen"><List :size="15" /></button>
-        <button type="button" :aria-label="tr('files.epubSmallerText')" :title="tr('files.epubSmallerText')" :disabled="font <= MIN_FONT" @click="setFont(font - 1)"><Minus :size="15" /></button>
-        <span class="pdf-reader-zoomlabel">{{ font }}px</span>
-        <button type="button" :aria-label="tr('files.epubLargerText')" :title="tr('files.epubLargerText')" :disabled="font >= MAX_FONT" @click="setFont(font + 1)"><Plus :size="15" /></button>
-      </div>
-      <div class="epub-reader-body">
-        <nav v-if="tocOpen && hasToc" class="epub-reader-toc" :aria-label="tr('files.epubContents')">
-          <button
-            v-for="item in flattenToc(toc)"
-            :key="`${item.depth}-${item.href}-${item.label}`"
-            type="button"
-            :style="{ paddingInlineStart: `${10 + item.depth * 12}px` }"
-            @click="goToLocation(item.href)"
-          >{{ item.label }}</button>
-        </nav>
-        <div ref="host" class="epub-reader-host" />
-      </div>
-      <div class="epub-reader-progress" role="progressbar" :aria-valuenow="Math.round(fraction * 100)" aria-valuemin="0" aria-valuemax="100">
-        <span :style="{ width: `${Math.round(fraction * 100)}%` }" />
-      </div>
-    </template>
   </div>
 </template>

@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, LoaderCircle, Minus, Plus } from "lucide-vue
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { tr } from "../i18n";
+import { vSpin } from "../utils/spin";
 import { hasNativePdfSupport, loadPdfEngine, pdfDocumentOptions } from "./pdfEngine";
 import "../styles/pdf-text-layer.css";
 
@@ -31,6 +32,21 @@ const MAX_ZOOM = 4;
 const ZOOM_STEP = 1.2;
 /** Pages kept canvassed: the visible window plus this much slack in each direction. */
 const KEEP_DISTANCE = 2;
+/**
+ * Hard ceiling on simultaneously canvassed pages.
+ *
+ * The window above is derived from the viewport, and a viewport is only meaningful when the reader
+ * has a constrained height. If it is ever placed in an auto-height box — a mistaken layout, a
+ * future host — `clientHeight` becomes the whole document and the "visible window" is the entire
+ * book: 102 pages at 1800×2541 is ~1.8GB of canvas. This cap is the difference between a slow
+ * reader and a crashed webview.
+ */
+const MAX_CANVAS_PAGES = 8;
+/**
+ * Pixel budget for a single page canvas. At 4 bytes per pixel, 4M ≈ 16MB — the ceiling the reader
+ * holds per page while scrolling a dense A4 at 2× DPR.
+ */
+const MAX_CANVAS_PIXELS = 4_000_000;
 /** Pages whose size is probed per tick, so a 600-page book does not block the first paint. */
 const SIZE_PROBE_BATCH = 24;
 
@@ -120,7 +136,12 @@ const renderPage = async (pageNumber: number) => {
   const base = page.getViewport({ scale: 1 });
   const cssScale = width / base.width;
   const deviceScale = Math.min(globalThis.devicePixelRatio || 1, 2);
-  const viewport = page.getViewport({ scale: cssScale * deviceScale });
+  // Clamp the backing store, not the CSS size: the page must still fill `width` CSS pixels, but a
+  // 2× DPR copy of a large page is allowed to be rendered at a lower internal resolution.
+  const wanted = cssScale * deviceScale;
+  const pixels = base.width * wanted * base.height * wanted;
+  const renderScale = pixels > MAX_CANVAS_PIXELS ? wanted * Math.sqrt(MAX_CANVAS_PIXELS / pixels) : wanted;
+  const viewport = page.getViewport({ scale: renderScale });
 
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.floor(viewport.width));
@@ -165,7 +186,8 @@ const renderWindow = () => {
   if (destroyed || !pdfDocument) return;
   const { first, last } = visibleRange();
   const from = Math.max(1, first - KEEP_DISTANCE);
-  const to = Math.min(pageCount.value, last + KEEP_DISTANCE);
+  // Never more than the budget, even if the viewport claims to see everything.
+  const to = Math.max(from, Math.min(pageCount.value, last + KEEP_DISTANCE, from + MAX_CANVAS_PAGES - 1));
   for (const page of [...rendered.keys()]) {
     if (page < from || page > to) release(page);
   }
@@ -321,46 +343,47 @@ watch(() => props.src, () => {
 
 <template>
   <div class="pdf-reader">
-    <div v-if="loading" class="pdf-reader-state" :class="$attrs.class">
+    <div v-if="!loading && !failure" class="reader-toolbar">
+      <button type="button" :aria-label="tr('files.pdfPreviousPage')" :title="tr('files.pdfPreviousPage')" :disabled="currentPage <= 1" @click="step(-1)"><ChevronLeft :size="15" /></button>
+      <span class="reader-pagecount">
+        <input
+          :value="currentPage"
+          class="reader-pageinput"
+          type="number"
+          min="1"
+          :max="pageCount"
+          :aria-label="tr('files.pdfGoToPage')"
+          @change="goToPage(Number(($event.target as HTMLInputElement).value) || currentPage)"
+        />
+        <span aria-hidden="true">/ {{ pageCount }}</span>
+      </span>
+      <button type="button" :aria-label="tr('files.pdfNextPage')" :title="tr('files.pdfNextPage')" :disabled="currentPage >= pageCount" @click="step(1)"><ChevronRight :size="15" /></button>
+      <span class="reader-spacer" />
+      <button type="button" :aria-label="tr('files.zoomOut')" :title="tr('files.zoomOut')" :disabled="zoom <= MIN_ZOOM" @click="applyZoom(zoom / ZOOM_STEP)"><Minus :size="15" /></button>
+      <button type="button" class="reader-zoomlabel" :aria-label="tr('files.zoomReset')" :title="tr('files.zoomReset')" @click="applyZoom(1)">{{ Math.round(zoom * 100) }}%</button>
+      <button type="button" :aria-label="tr('files.zoomIn')" :title="tr('files.zoomIn')" :disabled="zoom >= MAX_ZOOM" @click="applyZoom(zoom * ZOOM_STEP)"><Plus :size="15" /></button>
+    </div>
+    <!-- Always mounted, never behind a `v-if`: the scroll listener and the ResizeObserver are bound
+         on mount, and a ref that only exists once loading finished leaves both attached to null —
+         the first window renders, then scrolling never asks for another page. -->
+    <div ref="scroller" class="pdf-reader-scroll">
+      <div class="pdf-reader-stack" :style="{ width: `${pageWidth}px` }">
+        <div
+          v-for="page in pageCount"
+          :key="page"
+          :ref="(element) => setHost(page, element as Element | null)"
+          class="pdf-reader-page"
+          :style="{ width: `${pageWidth}px`, height: `${pageHeight(page - 1)}px` }"
+        />
+      </div>
+    </div>
+    <div v-if="loading" class="pdf-reader-state reader-overlay">
       <LoaderCircle v-spin :size="18" class="is-spinning" />
       <span>{{ tr("files.pdfLoading") }}</span>
     </div>
-    <div v-else-if="failure" class="pdf-reader-state pdf-reader-failure">
+    <div v-else-if="failure" class="pdf-reader-state pdf-reader-failure reader-overlay">
       <p>{{ failure === UNSUPPORTED ? tr("files.pdfEngineUnsupported") : tr("files.pdfLoadFailed") }}</p>
       <slot name="fallback" />
     </div>
-    <template v-else>
-      <div class="pdf-reader-toolbar">
-        <button type="button" :aria-label="tr('files.pdfPreviousPage')" :title="tr('files.pdfPreviousPage')" :disabled="currentPage <= 1" @click="step(-1)"><ChevronLeft :size="15" /></button>
-        <span class="pdf-reader-pagecount">
-          <input
-            :value="currentPage"
-            class="pdf-reader-pageinput"
-            type="number"
-            min="1"
-            :max="pageCount"
-            :aria-label="tr('files.pdfGoToPage')"
-            @change="goToPage(Number(($event.target as HTMLInputElement).value) || currentPage)"
-          />
-          <span aria-hidden="true">/ {{ pageCount }}</span>
-        </span>
-        <button type="button" :aria-label="tr('files.pdfNextPage')" :title="tr('files.pdfNextPage')" :disabled="currentPage >= pageCount" @click="step(1)"><ChevronRight :size="15" /></button>
-        <span class="pdf-reader-spacer" />
-        <button type="button" :aria-label="tr('files.zoomOut')" :title="tr('files.zoomOut')" :disabled="zoom <= MIN_ZOOM" @click="applyZoom(zoom / ZOOM_STEP)"><Minus :size="15" /></button>
-        <button type="button" class="pdf-reader-zoomlabel" :aria-label="tr('files.zoomReset')" :title="tr('files.zoomReset')" @click="applyZoom(1)">{{ Math.round(zoom * 100) }}%</button>
-        <button type="button" :aria-label="tr('files.zoomIn')" :title="tr('files.zoomIn')" :disabled="zoom >= MAX_ZOOM" @click="applyZoom(zoom * ZOOM_STEP)"><Plus :size="15" /></button>
-      </div>
-      <div ref="scroller" class="pdf-reader-scroll">
-        <div class="pdf-reader-stack" :style="{ width: `${pageWidth}px` }">
-          <div
-            v-for="page in pageCount"
-            :key="page"
-            :ref="(element) => setHost(page, element as Element | null)"
-            class="pdf-reader-page"
-            :style="{ width: `${pageWidth}px`, height: `${pageHeight(page - 1)}px` }"
-          />
-        </div>
-      </div>
-    </template>
   </div>
 </template>
