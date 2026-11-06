@@ -42,7 +42,7 @@ func localImageWorkspace(t *testing.T) workspace.Record {
 	}
 }
 
-func serveWorkspaceImageRequest(source workspaceImageSource, target string) *httptest.ResponseRecorder {
+func serveWorkspaceImageRequest(source workspaceAssetSource, target string) *httptest.ResponseRecorder {
 	handler := WorkspaceImageMiddleware(source)(passthrough())
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, target, nil))
@@ -106,7 +106,7 @@ func TestWorkspaceImageMiddlewareRefusesEverythingElse(t *testing.T) {
 	remote.Location = workspace.Location{Kind: workspace.KindSSH}
 	cases := []struct {
 		name   string
-		source workspaceImageSource
+		source workspaceAssetSource
 		target string
 	}{
 		{name: "unknown workspace", source: workspaceImageFixture{err: os.ErrNotExist}, target: "/workspace-image?workspaceId=ws-1&path=docs%2Fpixel.png"},

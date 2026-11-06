@@ -670,6 +670,15 @@ func PreviewFile(root, path string) (FilePreview, error) {
 	if isSpreadsheetPath(resolved) {
 		return previewSpreadsheet(resolved, info.Size())
 	}
+	if mediaType := DocumentMediaType(resolved); mediaType != "" {
+		matches, peekErr := documentMagicMatches(file, mediaType)
+		if peekErr != nil {
+			return FilePreview{}, peekErr
+		}
+		if matches {
+			return previewDocument(resolved, mediaType, info.Size()), nil
+		}
+	}
 	limit := int64(maxFileBytes)
 	if mediaTypeForExtension(resolved) != "" {
 		limit = maxMediaBytes
@@ -695,6 +704,50 @@ func PreviewFile(root, path string) (FilePreview, error) {
 		}
 	}
 	return preview, nil
+}
+
+// DocumentMediaType reports the media type of a file the reader view renders itself. Unlike the
+// media types mediaTypeForExtension recognises, these never become data URLs: a book is routinely
+// tens of megabytes, the reader wants it a page at a time, and a base64 copy of the whole file in
+// the preview payload is exactly the cost this route exists to avoid. The bytes travel as
+// `/workspace-file` instead.
+func DocumentMediaType(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".pdf":
+		return "application/pdf"
+	case ".epub":
+		return "application/epub+zip"
+	default:
+		return ""
+	}
+}
+
+// previewDocument names the reader for a document without carrying its body. The reader streams the
+// bytes through `/workspace-file`, so nothing here reads past the magic number.
+func previewDocument(resolved, mediaType string, size int64) FilePreview {
+	return FilePreview{Path: resolved, Size: size, Binary: true, MediaType: mediaType}
+}
+
+// documentMagicMatches checks the claim the extension makes, then rewinds so the caller can fall
+// back to the generic preview when it does not hold. An extension is only a claim: a text file
+// named `.pdf` belongs in the code preview, not in a viewer that would fail to parse it.
+func documentMagicMatches(file *os.File, mediaType string) (bool, error) {
+	want := []byte("PK\x03\x04")
+	if mediaType == "application/pdf" {
+		want = []byte("%PDF-")
+	}
+	head := make([]byte, len(want))
+	read, err := io.ReadFull(file, head)
+	if _, seekErr := file.Seek(0, io.SeekStart); seekErr != nil {
+		return false, fmt.Errorf("rewind workspace file: %w", seekErr)
+	}
+	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return false, nil
+		}
+		return false, fmt.Errorf("read workspace file: %w", err)
+	}
+	return bytes.HasPrefix(head[:read], want), nil
 }
 
 func isSpreadsheetPath(path string) bool {

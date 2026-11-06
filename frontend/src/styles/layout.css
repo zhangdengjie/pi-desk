@@ -4245,6 +4245,429 @@ html.is-resizing-pane .inspector {
   background: white;
 }
 
+/* Reader views (src/readers). The panel gives them the remaining height; inside, the toolbar is a
+   fixed row and the document area takes the rest, because a scrolling reader must own its own
+   scroll container — the panel itself cannot be the scroller without dragging the toolbar along. */
+.file-document-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.pdf-reader,
+.epub-reader {
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg-app);
+}
+
+/* Loading and failure are overlays over a document container that is always mounted. Hiding the
+   container behind `v-if` is what made the readers hang: foliate-js pages a book by measuring its
+   own box, so an absent host means a detached element and an `open()` that never resolves. */
+
+.reader-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-app);
+}
+
+.pdf-reader-state {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+  text-align: center;
+}
+
+.pdf-reader-failure {
+  flex-direction: column;
+}
+
+.reader-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  flex: 0 0 auto;
+}
+
+.reader-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.reader-toolbar button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.reader-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.reader-toolbar button.is-active {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.reader-pagecount {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: var(--font-size-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.reader-pageinput {
+  width: 44px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-app);
+  color: var(--text);
+  font-size: var(--font-size-label);
+  text-align: center;
+}
+
+.reader-zoomlabel {
+  min-width: 46px;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-label);
+}
+
+.reader-spacer {
+  flex: 1 1 auto;
+}
+
+.pdf-reader-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  overscroll-behavior: contain;
+}
+
+.pdf-reader-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 auto;
+}
+
+/* Positioned for the text layer, which is absolutely placed over the canvas. */
+.pdf-reader-page {
+  position: relative;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+}
+
+.pdf-reader-page canvas {
+  display: block;
+}
+
+.epub-reader-label {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-size-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.epub-reader-body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* No background here: the reader paints the page colour inline, because the paginator only tiles
+   its background inside its own grid tracks — everything outside them shows this element. */
+.epub-reader-host {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.epub-reader-host foliate-view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Overlays the page instead of taking width from it. Squeezing the host re-pages the whole book:
+   the paginator pages by its own box, so a 34% width change re-columnizes every section. With a
+   continuous document that is the entire book, which is exactly the delay this avoids. */
+.reader-toc {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  width: min(260px, 34%);
+  min-width: 120px;
+  padding: 6px 4px;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-raised);
+  box-shadow: 2px 0 12px rgb(0 0 0 / 12%);
+}
+
+.reader-toc button {
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-size-label);
+  text-align: start;
+  cursor: pointer;
+}
+
+.reader-toc button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.epub-reader-progress {
+  flex: 0 0 auto;
+  height: 2px;
+  background: var(--border);
+}
+
+.epub-reader-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+/* The document area plus its floating panels (search, contents): the panels position against this
+   box, not against the whole reader, so a toolbar change never moves them. */
+.reader-stage,
+.epub-reader-stage {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.epub-reader-stage {
+  flex-direction: column;
+}
+
+.reader-search {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: min(360px, calc(100% - 16px));
+}
+
+.reader-search-results {
+  position: absolute;
+  top: 52px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  width: min(360px, calc(100% - 16px));
+  max-height: 45%;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
+}
+
+.reader-search-results button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  text-align: start;
+  cursor: pointer;
+}
+
+.reader-search-results button:last-child {
+  border-bottom: 0;
+}
+
+.reader-search-results button:hover,
+.reader-search-results button.is-active {
+  background: var(--bg-hover);
+}
+
+.reader-search-result-label {
+  color: var(--text-muted);
+  font-size: var(--font-size-label);
+}
+
+.reader-search-result-excerpt {
+  overflow: hidden;
+  font-size: var(--font-size-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-toc-page {
+  display: inline-block;
+  min-width: 26px;
+  margin-inline-end: 4px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-label);
+}
+
+/* pdf.js text-layer hit marker. Colour only: the layer's own absolutely positioned runs must not
+   move, or the selection geometry stops matching the glyphs underneath. */
+.textLayer .pdf-search-hit {
+  background: rgb(250 204 21 / 45%);
+  border-radius: 2px;
+}
+
+/* Reader settings popover */
+.reader-settings {
+  position: relative;
+  display: inline-flex;
+}
+
+.reader-settings-panel {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 244px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 26%);
+  font-size: var(--font-size-label);
+}
+
+.reader-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
+}
+
+.reader-settings-head button {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.reader-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+}
+
+.reader-settings-row select {
+  max-width: 132px;
+}
+
+.reader-settings-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reader-settings-inline input[type="range"] {
+  width: 96px;
+}
+
+.reader-settings-inline b {
+  min-width: 26px;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.reader-settings-swatches {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.reader-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.reader-swatch.is-light { background: #ffffff; }
+.reader-swatch.is-sepia { background: #f4ecd8; }
+.reader-swatch.is-dark { background: #16181c; }
+
+.reader-swatch.is-active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.reader-fallback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.reader-fallback-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: var(--font-size-label);
+  cursor: pointer;
+}
+
+.reader-fallback-actions button:hover {
+  background: var(--bg-hover);
+}
+
 .file-markdown-preview {
   padding: 14px;
   overflow: auto;

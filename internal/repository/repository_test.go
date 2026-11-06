@@ -235,6 +235,50 @@ func TestPreviewFileReturnsMarkdownAndSafeMediaData(t *testing.T) {
 	}
 }
 
+func TestPreviewFileNamesDocumentsWithoutInliningTheirBytes(t *testing.T) {
+	root := t.TempDir()
+	// A real document is far larger than maxMediaBytes; the preview must name it and stop there,
+	// because the reader streams the bytes through /workspace-file with Range support.
+	body := make([]byte, maxMediaBytes+1)
+	copy(body, "%PDF-1.7\n")
+	if err := os.WriteFile(filepath.Join(root, "book.pdf"), body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ebook := append([]byte("PK\x03\x04"), make([]byte, 32)...)
+	if err := os.WriteFile(filepath.Join(root, "book.epub"), ebook, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, mediaType := range map[string]string{"book.pdf": "application/pdf", "book.epub": "application/epub+zip"} {
+		preview, err := PreviewFile(root, name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if preview.MediaType != mediaType {
+			t.Fatalf("%s media type = %q, want %q", name, preview.MediaType, mediaType)
+		}
+		if preview.DataURL != "" || preview.Truncated {
+			t.Fatalf("%s was inlined: dataURL len = %d, truncated = %v", name, len(preview.DataURL), preview.Truncated)
+		}
+	}
+}
+
+// The extension is only a claim: a text file named `.pdf` belongs in the code preview, not in a
+// viewer that would fail to parse it.
+func TestPreviewFileFallsBackWhenDocumentMagicIsMissing(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "fake.pdf"), []byte("plain text, not a pdf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := PreviewFile(root, "fake.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.MediaType != "" || preview.Content != "plain text, not a pdf" {
+		t.Fatalf("unexpected preview %#v", preview)
+	}
+}
+
 func TestPreviewFileReturnsSpreadsheetSheets(t *testing.T) {
 	root := t.TempDir()
 	filename := filepath.Join(root, "report.xlsx")

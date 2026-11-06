@@ -1465,6 +1465,15 @@ export const useAppStore = defineStore("app", {
         && tab.markdownRendered !== false
         && this.activeRepositoryFilePreview?.mediaType === "text/markdown";
     },
+    /** A PDF or EPUB is on screen in the inspector. `Cmd-F` belongs to that reader, so the
+     *  transcript and the Markdown preview both defer to it — same contract as the flag above. */
+    activeDocumentReaderVisible(): boolean {
+      const tab = this.activePanelTab;
+      const mediaType = this.activeRepositoryFilePreview?.mediaType ?? "";
+      return this.inspectorOpen
+        && tab?.kind === "file"
+        && (mediaType === "application/pdf" || mediaType === "application/epub+zip");
+    },
     activeSessionChanges(state): SessionFileChange[] {
       return state.sessionChangesByThread[state.activeThreadId] ?? [];
     },
@@ -2364,6 +2373,12 @@ export const useAppStore = defineStore("app", {
       if (this.activePanelTab?.kind === "diff") void this.closePanelTab(this.activePanelTab.id);
     },
     async openPreviewedRepositoryFile(reveal = false) { await this.openActiveRepositoryFile(reveal); },
+    async openActiveRepositoryFileWith() {
+      const thread = this.activeThread, tab = this.activePanelTab;
+      if (!thread || !tab?.path || thread.trust !== "approve" || this.remoteWorkspaceForThread(thread)) return;
+      try { await repositoryService.openFileWith(thread.workspacePath, tab.path); }
+      catch (error) { tab.error = errorMessage(error); }
+    },
     async openActiveRepositoryFile(reveal = false) {
       const thread = this.activeThread, tab = this.activePanelTab;
       if (!thread || !tab?.path || thread.trust !== "approve" || this.remoteWorkspaceForThread(thread)) return;

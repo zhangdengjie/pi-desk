@@ -12,6 +12,7 @@
 # Build output and dependencies
 /bin/
 /frontend/dist/
+/frontend/public/pdf/
 /frontend/node_modules/
 /build/linux/desktop
 /build/linux/appimage/build/
