@@ -1314,6 +1314,12 @@ export interface UserConfigView {
     "scroll": ScrollTuning;
 
     /**
+     * DocumentPool is how many PDF/EPUB readers the inspector keeps mounted across tab
+     * and thread switches. See userconfig.DefaultDocumentPool.
+     */
+    "documentPool": number;
+
+    /**
      * Error reports an unreadable or unparsable file, or values that were out of range
      * and fell back to their default. The fields above are usable either way, because a
      * broken config must never block the UI.

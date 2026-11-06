@@ -44,6 +44,15 @@ const (
 )
 
 const (
+	// DefaultDocumentPool is how many PDF/EPUB readers stay mounted (and keep their parsed
+	// document, zoom, search and scroll offset) when the file does not say.
+	DefaultDocumentPool = 5
+	// maxDocumentPool caps a hand edit: every warm reader holds a parsed document and its
+	// rendered canvases, so an unbounded pool is a memory leak with extra steps.
+	maxDocumentPool = 20
+)
+
+const (
 	// RevealModePlain renders the live tail as plain text while it grows, and switches
 	// to Markdown once the run settles. A terminal types without re-laying out what is
 	// already on screen; Markdown cannot promise that, because inline markers close
@@ -120,6 +129,9 @@ type Config struct {
 	Reveal Reveal `json:"reveal"`
 	// Scroll tunes tail following.
 	Scroll Scroll `json:"scroll"`
+	// DocumentPool is how many document readers (PDF/EPUB) stay mounted across tab and
+	// thread switches. Out-of-range values fall back to DefaultDocumentPool.
+	DocumentPool int `json:"documentPool"`
 
 	// notes records values that were rejected and replaced by their default.
 	notes []string
@@ -133,6 +145,7 @@ func Defaults() Config {
 		StreamPanels: StreamPanelsAuto,
 		Reveal:       DefaultReveal(),
 		Scroll:       DefaultScroll(),
+		DocumentPool: DefaultDocumentPool,
 	}
 }
 
@@ -226,6 +239,10 @@ func (config *Config) normalise() {
 	if config.Scroll.ReasoningFoldMs < 0 || config.Scroll.ReasoningFoldMs > 2000 {
 		config.note("scroll.reasoningFoldMs", config.Scroll.ReasoningFoldMs, DefaultScroll().ReasoningFoldMs)
 		config.Scroll.ReasoningFoldMs = DefaultScroll().ReasoningFoldMs
+	}
+	if config.DocumentPool < 1 || config.DocumentPool > maxDocumentPool {
+		config.note("documentPool", config.DocumentPool, DefaultDocumentPool)
+		config.DocumentPool = DefaultDocumentPool
 	}
 }
 
@@ -336,6 +353,11 @@ func Load() (Config, string, error) {
 					config.Scroll.SnapWithinPx = DefaultScroll().SnapWithinPx
 				}
 			}
+		case "documentPool":
+			if err := json.Unmarshal(value, &config.DocumentPool); err != nil {
+				config.note("documentPool", string(value), DefaultDocumentPool)
+				config.DocumentPool = DefaultDocumentPool
+			}
 		default:
 			config.extra[key] = value
 		}
@@ -375,6 +397,11 @@ func Save(config Config) (string, error) {
 		return "", fmt.Errorf("encode scroll: %w", err)
 	}
 	fields["scroll"] = scroll
+	documentPool, err := json.Marshal(config.DocumentPool)
+	if err != nil {
+		return "", fmt.Errorf("encode document pool: %w", err)
+	}
+	fields["documentPool"] = documentPool
 	// Go sorts map keys, so the layout is stable and a hand edit never shuffles.
 	encoded, err := json.MarshalIndent(fields, "", "  ")
 	if err != nil {
@@ -437,10 +464,16 @@ func Ensure() (string, error) {
 		_ = file.Close()
 		return path, err
 	}
+	documentPool, err := json.Marshal(defaults.DocumentPool)
+	if err != nil {
+		_ = file.Close()
+		return path, err
+	}
 	encoded, err := json.MarshalIndent(map[string]json.RawMessage{
 		"streamPanels": json.RawMessage(`"` + StreamPanelsAuto + `"`),
 		"reveal":       reveal,
 		"scroll":       scroll,
+		"documentPool": documentPool,
 	}, "", "  ")
 	if err != nil {
 		_ = file.Close()

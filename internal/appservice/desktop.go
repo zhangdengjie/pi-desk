@@ -528,7 +528,7 @@ func normalizeSemver(value string) string {
 func (service *DesktopService) ReadUserConfig() domain.UserConfigView {
 	if _, err := userconfig.Ensure(); err != nil {
 		// Advisory only: a read-only home must still show the working defaults.
-		view := domain.UserConfigView{StreamPanels: userconfig.StreamPanelsAuto, Reveal: domain.RevealTuning{Mode: userconfig.RevealModePlain}}
+		view := domain.UserConfigView{StreamPanels: userconfig.StreamPanelsAuto, Reveal: domain.RevealTuning{Mode: userconfig.RevealModePlain}, DocumentPool: userconfig.DefaultDocumentPool}
 		if path, pathErr := userconfig.Path(); pathErr == nil {
 			view.Path = path
 		}
@@ -539,6 +539,7 @@ func (service *DesktopService) ReadUserConfig() domain.UserConfigView {
 	view := domain.UserConfigView{
 		Path:         path,
 		StreamPanels: config.StreamPanels,
+		DocumentPool: config.DocumentPool,
 		Reveal:       domain.RevealTuning{Mode: config.Reveal.Mode, Split: config.Reveal.Split, Floor: config.Reveal.Floor, Ceiling: config.Reveal.Ceiling},
 		Scroll: domain.ScrollTuning{
 			SnapWithinPx:      config.Scroll.SnapWithinPx,
@@ -575,6 +576,11 @@ func (service *DesktopService) WriteUserConfig(view domain.UserConfigView) (doma
 		return service.ReadUserConfig(), fmt.Errorf("read configuration: %w", err)
 	}
 	config.StreamPanels = mode
+	// The settings dialog does not edit the reader pool; a zero view value means "keep what the
+	// file carries" so a dialog write never resets a hand-tuned pool.
+	if view.DocumentPool > 0 {
+		config.DocumentPool = view.DocumentPool
+	}
 	if revealMode := strings.TrimSpace(view.Reveal.Mode); revealMode != "" {
 		normalized, ok := userconfig.NormalRevealMode(revealMode)
 		if !ok {

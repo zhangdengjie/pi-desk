@@ -38,6 +38,9 @@ export async function writeUserConfig(streamPanels: string, revealMode?: string)
     streamPanels,
     reveal: { ...SHIPPED.reveal, mode: revealMode ?? "" },
     scroll: SHIPPED.scroll,
+    // Written by hand: the dialog does not edit the reader pool, and Go keeps whatever the
+    // file already carries when this is 0.
+    documentPool: 0,
   });
 }
 

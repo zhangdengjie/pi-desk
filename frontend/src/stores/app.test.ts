@@ -170,6 +170,7 @@ vi.mock("../services/terminal", () => ({
   },
 }));
 import { consumeMentionInsert, useAppStore } from "./app";
+import { DEFAULT_DOCUMENT_POOL, MAX_DOCUMENT_POOL } from "../utils/documentPool";
 
 describe("app store", () => {
   it("reveals created and selected browser tabs while keeping state updates in their owning conversation", async () => {
@@ -5026,6 +5027,23 @@ describe("app store", () => {
 
     expect(store.streamPanels).toBe("auto");
     expect(store.userConfigError).toContain("boom");
+  });
+
+  it("reads the document reader pool from the same file and clamps it", async () => {
+    const store = useAppStore();
+
+    mocks.readUserConfig.mockResolvedValue({ path: "/x/config.json", streamPanels: "auto", documentPool: 9 });
+    await store.loadUserConfig();
+    expect(store.documentPool).toBe(9);
+
+    mocks.readUserConfig.mockResolvedValue({ path: "/x/config.json", streamPanels: "auto", documentPool: 999 });
+    await store.loadUserConfig();
+    expect(store.documentPool).toBe(MAX_DOCUMENT_POOL);
+
+    // A file written before the key existed, or a host without the binding, keeps the default.
+    mocks.readUserConfig.mockResolvedValue({ path: "/x/config.json", streamPanels: "auto" });
+    await store.loadUserConfig();
+    expect(store.documentPool).toBe(DEFAULT_DOCUMENT_POOL);
   });
 
   it("writes the policy back through the same file and re-reads what landed", async () => {

@@ -9,6 +9,7 @@ import { onTerminalEvent, terminalService, type TerminalEvent } from "../service
 import { browserService, type BrowserEvent } from "../services/browser";
 import { modelConfigService } from "../services/modelconfig";
 import { applyStreamTuning, type RevealMode } from "../utils/streamTuning";
+import { DEFAULT_DOCUMENT_POOL, MAX_DOCUMENT_POOL, MIN_DOCUMENT_POOL } from "../utils/documentPool";
 import { FONT_FAMILY_INPUT_MAX } from "../utils/fontFamily";
 import { BATCH_ASK_PLACEHOLDER, parseBatchAskEnvelope, type BatchAskQuestion } from "../utils/batchAsk";
 import { formatFileMention } from "../utils/fileMentions";
@@ -1237,6 +1238,10 @@ export const useAppStore = defineStore("app", {
     // field and not state.json, is the truth: the dialog writes it and so does a
     // text editor, and a re-read on every return to the foreground picks that up.
     streamPanels: "auto" as StreamPanelMode,
+    // How many document readers stay mounted across tab and thread switches, read from the same
+    // file (`documentPool`, default 5). The inspector keeps that many warm panes; a reader older
+    // than the pool is released and re-parses on its next visit.
+    documentPool: DEFAULT_DOCUMENT_POOL,
     userConfigPath: "",
     userConfigError: "",
     userConfigLoading: false,
@@ -4609,6 +4614,10 @@ export const useAppStore = defineStore("app", {
       this.userConfigError = config.error ?? "";
       const mode = (config.streamPanels ?? "auto") as StreamPanelMode;
       if (STREAM_PANEL_MODES.includes(mode)) this.streamPanels = mode;
+      const pool = Math.round(Number(config.documentPool));
+      this.documentPool = Number.isFinite(pool) && pool >= MIN_DOCUMENT_POOL
+        ? Math.min(MAX_DOCUMENT_POOL, pool)
+        : DEFAULT_DOCUMENT_POOL;
       // The pace numbers travel with the same read, so one hand edit of the file covers
       // policy, reveal and follow at once.
       applyStreamTuning(config.reveal, config.scroll);

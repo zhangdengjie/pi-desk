@@ -371,3 +371,83 @@ func TestRevealMode(t *testing.T) {
 		t.Fatalf("created file lost the mode:\n%s", raw)
 	}
 }
+
+func TestDocumentPoolDefaultClampAndRoundTrip(t *testing.T) {
+	path := t.TempDir() + "/config.json"
+	t.Setenv(PathEnv, path)
+
+	// No key at all: the shipped pool size, without a note.
+	config, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if config.DocumentPool != DefaultDocumentPool {
+		t.Fatalf("documentPool = %d, want the shipped %d", config.DocumentPool, DefaultDocumentPool)
+	}
+	if len(config.Notes()) != 0 {
+		t.Fatalf("the default produced notes: %v", config.Notes())
+	}
+
+	// A hand edit inside the range is honoured as written.
+	if err := os.WriteFile(path, []byte(`{"documentPool":7}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	config, _, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if config.DocumentPool != 7 {
+		t.Fatalf("documentPool = %d, want 7", config.DocumentPool)
+	}
+
+	// Zero, negatives and absurd values fall back instead of leaving an unusable pool.
+	for _, value := range []string{"0", "-3", "999"} {
+		if err := os.WriteFile(path, []byte(`{"documentPool":`+value+`}`), 0o600); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		config, _, err = Load()
+		if err != nil {
+			t.Fatalf("Load(%s): %v", value, err)
+		}
+		if config.DocumentPool != DefaultDocumentPool {
+			t.Fatalf("documentPool=%s survived as %d", value, config.DocumentPool)
+		}
+		if !strings.Contains(strings.Join(config.Notes(), "; "), "documentPool") {
+			t.Fatalf("documentPool=%s produced no note: %v", value, config.Notes())
+		}
+	}
+
+	// Save writes the value, and reading it back is a fixed point.
+	if err := os.WriteFile(path, []byte(`{"documentPool":8}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	config, _, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if _, err := Save(config); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	roundTrip, _, err := Load()
+	if err != nil {
+		t.Fatalf("Load after Save: %v", err)
+	}
+	if roundTrip.DocumentPool != 8 {
+		t.Fatalf("round trip documentPool = %d, want 8", roundTrip.DocumentPool)
+	}
+
+	// Ensure creates the key too, so a fresh install can be edited without guessing it.
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, err := Ensure(); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(raw), `"documentPool": 5`) {
+		t.Fatalf("created file lost the pool size:\n%s", raw)
+	}
+}
