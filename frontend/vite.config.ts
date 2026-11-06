@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import wails from "@wailsio/runtime/plugins/vite";
 import { applySafari15Rewrites, hasRegexLookbehind } from "./src/utils/safari15Compat.ts";
 import { applyFoliateSplitView, isFoliatePaginator } from "./src/utils/foliateSplitView.ts";
+import { applyContinuousPagination } from "./src/utils/foliateContinuous.ts";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -69,16 +70,18 @@ export default defineConfig({
       enforce: "pre" as const,
       transform(code: string, id: string) {
         if (!id.includes("foliate-js") || !isFoliatePaginator(code)) return null;
-        const result = applyFoliateSplitView(code);
-        if (result.skipped.length > 0) {
+        const split = applyFoliateSplitView(code);
+        // Both patches edit the paginator, so they run in sequence over the same source.
+        const continuous = applyContinuousPagination(split.code);
+        const skipped = [...split.skipped, ...continuous.skipped];
+        if (skipped.length > 0) {
           // A partial match means the upstream code moved: the reader would silently fall back to
-          // destroying the old page and the chapter animation would stop working with no error.
+          // one page per section, or to one section per view, with no error anywhere.
           this.error(
-            `foliate-split-view: ${result.skipped.length} of ${result.applied.length + result.skipped.length} `
-            + `rewrites no longer match ${id}:\n  - ${result.skipped.join("\n  - ")}`,
+            `foliate patches: ${skipped.length} rewrite(s) no longer match ${id}:\n  - ${skipped.join("\n  - ")}`,
           );
         }
-        return { code: result.code, map: null };
+        return { code: continuous.code, map: null };
       },
     },
   ],

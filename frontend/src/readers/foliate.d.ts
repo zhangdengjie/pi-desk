@@ -3,6 +3,17 @@
  * and no `.d.ts`). Only the surface this app touches is declared here; the reader never reaches
  * into the renderers directly, so the rest stays implicit.
  */
+declare module "foliate-js/search.js" {
+  export function searchMatcher(
+    walker: unknown,
+    options: Record<string, unknown>,
+  ): (doc: Document, query: string) => Iterable<{ range: Range; excerpt?: unknown }>;
+}
+
+declare module "foliate-js/text-walker.js" {
+  export function textWalker(node: Node, accept: (node: Node) => number): NodeIterator;
+}
+
 declare module "foliate-js/view.js" {
   export interface FoliateTocItem {
     label: string;
@@ -44,6 +55,8 @@ declare module "foliate-js/view.js" {
       toc?: FoliateTocItem[];
       metadata?: { title?: unknown; language?: unknown };
       sections?: FoliateSection[];
+      /** Absent on some builds; guarded before use. */
+      resolveHref?: (href: string) => { index: number; anchor: (doc: Document) => unknown } | null;
     };
     renderer?: {
       setStyles?: (styles: string | [string, string]) => void;
@@ -59,6 +72,9 @@ declare module "foliate-js/view.js" {
     open(source: Blob | string): Promise<void>;
     init(options: { lastLocation?: string; showTextStart?: boolean }): Promise<void>;
     goTo(target: number | string): Promise<unknown>;
+    getCFI(index: number, range: Range | null): string;
+    resolveCFI(cfi: string): { index: number; anchor: (doc: Document) => unknown };
+    language?: unknown;
     goLeft(): Promise<unknown>;
     goRight(): Promise<unknown>;
     /** Async generator: `{progress}`, then `{index, subitems}` per section, then the string "done". */

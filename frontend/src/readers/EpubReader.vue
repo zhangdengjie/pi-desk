@@ -7,6 +7,7 @@ import SearchPopover from "../components/SearchPopover.vue";
 import ReaderSettingsMenu from "./ReaderSettingsMenu.vue";
 import type { FoliateSection } from "foliate-js/view.js";
 import { THEME_COLORS, readerSettings } from "./readerSettings";
+import { buildContinuousDocument, sectionIndexAt, sectionIndexAtRange, sectionStartNode } from "./continuousDocument";
 import { readPosition, usePositionFlush, writePosition } from "./readingPositions";
 import { useDismiss } from "./useDismiss";
 import type { FoliateLocation, FoliateTocItem, FoliateView } from "foliate-js/view.js";
@@ -141,9 +142,23 @@ type RendererElement = HTMLElement & {
   pages?: number;
   goTo?: (target: { index: number; anchor?: number | ((doc: Document) => number) }) => Promise<unknown>;
   scrollToAnchor?: (anchor: unknown, select?: boolean) => Promise<unknown>;
+  /** Installed by the build-time paginator patch; see src/utils/foliateContinuous.ts. */
+  unitIndexFor?: (index: number) => number;
+  resolveIndex?: (range: Range | null) => number | undefined;
 };
 
 const rendererElement = (): RendererElement | undefined => view?.renderer as RendererElement | undefined;
+
+/**
+ * Whether the whole book is rendered as one document (see `enableContinuousPagination`).
+ *
+ * It changes three things: chapter boundaries stop being page-turn boundaries, so the cross-section
+ * path in `turn()` must never run; `relocate.index` is a real section index rather than the index
+ * of the document on screen; and nothing is left to warm.
+ */
+let continuous = false;
+/** Blob URL of the merged document, revoked on unmount. */
+let continuousUrl: string | undefined;
 
 /**
  * `atStart`/`atEnd` on `foliate-paginator` are true only at the start/end of the *entire book*
@@ -179,6 +194,13 @@ const adjacentSectionIndex = (delta: number): number | undefined => {
 const animateTurn = (delta: number) => {
   const element = rendererElement();
   if (!element) return;
+  // Continuous mode has no section turns: every page lives in the same document, so the paginator's
+  // own slide is always the right one.
+  if (continuous) {
+    if (readerSettings.animateTurns) element.setAttribute("animated", "");
+    else element.removeAttribute("animated");
+    return;
+  }
   const crossing = isCrossingSection(element, delta);
   if (readerSettings.animateTurns && !crossing) element.setAttribute("animated", "");
   else element.removeAttribute("animated");
@@ -226,6 +248,93 @@ const onExternalLink = (event: Event) => {
   event.preventDefault();
 };
 
+/**
+ * Renders the whole book as one document, so a section shorter than one spread no longer leaves the
+ * second column empty (see src/readers/continuousDocument.ts).
+ *
+ * The paginator keeps loading `sections[0]` forever; the two hooks installed on the renderer are
+ * what make that work — `unitIndexFor` maps every `goTo` onto that one document, and `resolveIndex`
+ * turns the range under the viewport back into a real section index so TOC progress, page progress
+ * and `getCFI` keep reporting sections rather than "the whole book".
+ */
+const enableContinuousPagination = async (element: FoliateView): Promise<boolean> => {
+  const book = element.book;
+  const sections = book?.sections;
+  const renderer = element.renderer as RendererElement | undefined;
+  if (!book || !sections?.length || !renderer || typeof sections[0]?.load !== "function") return false;
+
+  const html = await buildContinuousDocument(sections);
+  continuousUrl = URL.createObjectURL(new Blob([html], { type: "application/xhtml+xml" }));
+  sections[0].load = () => Promise.resolve(continuousUrl);
+  renderer.unitIndexFor = () => 0;
+  renderer.resolveIndex = (range) => sectionIndexAtRange(range);
+
+  // A TOC link without a fragment resolves to `anchor: () => 0`, meaning "the start of that
+  // section" while a section is its own document. In the merged document `0` is the start of the
+  // book, so every such entry would jump to the first page; point it at the section wrapper instead.
+  const resolveHref = book.resolveHref?.bind(book);
+  if (resolveHref) {
+    book.resolveHref = (href: string) => {
+      const resolved = resolveHref(href);
+      if (!resolved) return resolved;
+      const { index, anchor } = resolved;
+      return {
+        ...resolved,
+        anchor: (doc: Document) => {
+          const target = anchor(doc);
+          if (target instanceof Range || target instanceof Element) return target;
+          return sectionStartNode(doc, index) ?? target;
+        },
+      };
+    };
+  }
+
+  // A position saved before the book was merged carries a path relative to one section's own
+  // document, which points somewhere unrelated in the merged one. Land on that section's start
+  // instead of at a wrong offset.
+  const resolveCFI = element.resolveCFI?.bind(element);
+  if (resolveCFI) {
+    element.resolveCFI = (cfi: string) => {
+      const resolved = resolveCFI(cfi);
+      const anchor = resolved.anchor;
+      return {
+        index: resolved.index,
+        anchor: (doc: Document) => {
+          const target = anchor(doc) as Node | null;
+          const inside = target instanceof Range
+            ? sectionIndexAtRange(target) !== undefined
+            : sectionIndexAt(target) !== undefined;
+          if (inside) return target;
+          return sectionStartNode(doc, resolved.index) ?? target;
+        },
+      };
+    };
+  }
+
+  // `view.search` parses one document per section; a range from a section's own document produces a
+  // CFI path the merged document cannot resolve, so every hit would jump to the same wrong place.
+  element.search = (async function* (options: Record<string, unknown>) {
+    const [{ searchMatcher }, { textWalker }] = await Promise.all([
+      import("foliate-js/search.js"),
+      import("foliate-js/text-walker.js"),
+    ]);
+    const doc = element.renderer?.getContents?.()[0]?.doc;
+    const query = String(options.query ?? "");
+    if (!doc || !query.trim()) return;
+    const matcher = searchMatcher(textWalker, { ...options, defaultLocale: element.language });
+    const subitems: { cfi: string; excerpt?: unknown }[] = [];
+    for (const { range, excerpt } of matcher(doc, query)) {
+      const index = sectionIndexAtRange(range) ?? 0;
+      subitems.push({ cfi: element.getCFI(index, range), excerpt });
+      if (subitems.length >= MAX_SEARCH_HITS) break;
+    }
+    yield { progress: 1 };
+    if (subitems.length) yield { index: 0, subitems };
+  }) as FoliateView["search"];
+
+  return true;
+};
+
 const open = async () => {
   failure.value = "";
   loading.value = true;
@@ -263,6 +372,11 @@ const open = async () => {
     // `view.js` only re-dispatches `load` / `relocate` / `create-overlayer` on the host. The
     // renderer is the only object the event actually reaches.
     rendererElement()?.addEventListener("view-swapped", onViewSwapped as EventListener);
+    continuous = await enableContinuousPagination(element);
+    if (destroyed) {
+      element.close();
+      return;
+    }
     // Before `init()`: see the note on `applyStyles`. Ordering, not the value, was the bug.
     applyStyles();
     toc.value = (element.book?.toc ?? []) as FoliateTocItem[];
@@ -368,7 +482,9 @@ const onViewSwapped = (event: Event) => {
 const turn = (delta: number) => {
   if (!view || loading.value || turning) return;
   const element = rendererElement();
-  const crossing = element ? isCrossingSection(element, delta) : false;
+  // In continuous mode the last content page of a section is just a page: `isCrossingSection` would
+  // still report a boundary and `goTo` would jump to the start of the book.
+  const crossing = !continuous && element ? isCrossingSection(element, delta) : false;
   animateTurn(delta);
   // `view.next()` / `view.prev()` call `#scrollNext()` / `#scrollPrev()` first, which scrolls the
   // container onto the blank buffer page (`page = pages - 1` or `page = 0`) *before* `#goTo` loads
@@ -461,6 +577,8 @@ const watchBookDocument = () => {
  * reader is still on the previous page leaves only the iframe load itself.
  */
 const warmSection = (index: number) => {
+  // Nothing to warm: continuous mode has already loaded every section into one document.
+  if (continuous) return;
   const section: FoliateSection | undefined = view?.book?.sections?.[index];
   if (!section?.id || warmedSections.has(section.id) || typeof section.load !== "function") return;
   warmedSections.add(section.id);
@@ -620,6 +738,9 @@ onBeforeUnmount(() => {
   globalThis.removeEventListener("keydown", onKeydown);
   host.value?.removeEventListener("wheel", onWheel);
   finishPendingSwap();
+  if (continuousUrl) URL.revokeObjectURL(continuousUrl);
+  continuousUrl = undefined;
+  continuous = false;
   view?.close();
   view = undefined;
   host.value?.replaceChildren();
