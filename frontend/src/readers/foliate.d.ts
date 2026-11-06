@@ -33,6 +33,7 @@ declare module "foliate-js/view.js" {
 
   export interface FoliateSection {
     id: string;
+    linear?: string;
     /** Builds and caches the section's blob URL; calling it early is what warms the next turn. */
     load?: () => Promise<string | undefined>;
     createDocument?: () => Promise<Document>;
@@ -47,6 +48,10 @@ declare module "foliate-js/view.js" {
     renderer?: {
       setStyles?: (styles: string | [string, string]) => void;
       getContents?: () => { index?: number; doc?: Document; overlayer?: unknown }[];
+      goTo?: (target: { index: number; anchor?: number | ((doc: Document) => number) }) => Promise<unknown>;
+      scrollToAnchor?: (anchor: unknown, select?: boolean) => Promise<unknown>;
+      page?: number;
+      pages?: number;
       atEnd?: boolean;
       atStart?: boolean;
       hasAttribute?: (name: string) => boolean;

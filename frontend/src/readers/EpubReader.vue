@@ -73,6 +73,7 @@ const warmedSections = new Set<string>();
 let searchGeneration = 0;
 let wheelLockedUntil = 0;
 let wheelAccumulator = 0;
+let turning = false;
 
 const hasToc = computed(() => toc.value.length > 0);
 const colors = computed(() => THEME_COLORS[readerSettings.theme]);
@@ -129,9 +130,40 @@ const flattenToc = (items: FoliateTocItem[], depth = 0): { label: string; href: 
  */
 const applyStyles = () => view?.renderer?.setStyles?.(pageStyles.value);
 
-type RendererElement = HTMLElement & { atEnd?: boolean; atStart?: boolean };
+type RendererElement = HTMLElement & {
+  atEnd?: boolean;
+  atStart?: boolean;
+  page?: number;
+  pages?: number;
+  goTo?: (target: { index: number; anchor?: number | ((doc: Document) => number) }) => Promise<unknown>;
+  scrollToAnchor?: (anchor: unknown, select?: boolean) => Promise<unknown>;
+};
 
 const rendererElement = (): RendererElement | undefined => view?.renderer as RendererElement | undefined;
+
+/**
+ * `atStart`/`atEnd` on `foliate-paginator` are true only at the start/end of the *entire book*
+ * (`#adjacentIndex(±1) == null`), so they are always `false` at an internal section boundary.
+ * `page` and `pages` (which include the two buffer pages `0` and `pages - 1`) are what actually
+ * tell us whether a turn crosses out of the current section: content pages are `1 .. pages - 2`.
+ */
+const isCrossingSection = (element: RendererElement, delta: number): boolean => {
+  if (typeof element.page === "number" && typeof element.pages === "number") {
+    return delta > 0 ? element.page >= element.pages - 2 : element.page <= 1;
+  }
+  return delta > 0 ? element.atEnd === true : element.atStart === true;
+};
+
+const adjacentSectionIndex = (delta: number): number | undefined => {
+  const sections = view?.book?.sections;
+  const current = view?.renderer?.getContents?.()[0]?.index;
+  if (!sections || typeof current !== "number") return undefined;
+  const step = delta < 0 ? -1 : 1;
+  for (let index = current + step; index >= 0 && index < sections.length; index += step) {
+    if (sections[index]?.linear !== "no") return index;
+  }
+  return undefined;
+};
 
 /**
  * Animation is chosen per turn, not globally.
@@ -139,12 +171,11 @@ const rendererElement = (): RendererElement | undefined => view?.renderer as Ren
  * Inside a section the paginator only translates the existing iframe, so a 300ms ease is free. A
  * turn that crosses into the next section replaces the iframe's document, and animating that slides
  * an empty page into view before the text arrives — the flicker that made turning feel broken.
- * `atEnd`/`atStart` tell us which kind of turn this is before it happens.
  */
 const animateTurn = (delta: number) => {
   const element = rendererElement();
   if (!element) return;
-  const crossing = delta > 0 ? element.atEnd === true : element.atStart === true;
+  const crossing = isCrossingSection(element, delta);
   if (readerSettings.animateTurns && !crossing) element.setAttribute("animated", "");
   else element.removeAttribute("animated");
 };
@@ -244,8 +275,26 @@ const open = async () => {
 };
 
 const turn = (delta: number) => {
-  if (!view || loading.value) return;
+  if (!view || loading.value || turning) return;
+  const element = rendererElement();
+  const crossing = element ? isCrossingSection(element, delta) : false;
   animateTurn(delta);
+  // `view.next()` / `view.prev()` call `#scrollNext()` / `#scrollPrev()` first, which scrolls the
+  // container onto the blank buffer page (`page = pages - 1` or `page = 0`) *before* `#goTo` loads
+  // the adjacent section — causing a visible scroll into empty space followed by content rendering.
+  // Jumping directly to the adjacent section via `renderer.goTo` bypasses that intermediate scroll.
+  if (crossing && element && typeof element.page === "number" && typeof element.pages === "number" && typeof element.goTo === "function") {
+    const nextIndex = adjacentSectionIndex(delta);
+    if (nextIndex === undefined) return;
+    // Clear any stale numeric `#anchor` (`0` or `1`) on the paginator with a detached element
+    // (empty `DOMRectList` → immediate no-op return) so `View.load` → `onExpand()` does not scroll
+    // the new section to the wrong end before `#display` scrolls to the target anchor.
+    void element.scrollToAnchor?.(document.createElement("span"));
+    turning = true;
+    void Promise.resolve(element.goTo({ index: nextIndex, anchor: delta < 0 ? () => 1 : () => 0 }))
+      .finally(() => { turning = false; });
+    return;
+  }
   if (delta < 0) void view.prev();
   else void view.next();
 };
@@ -257,20 +306,29 @@ const closeOverlays = () => {
 };
 
 /**
- * A press inside the book dismisses the floating panel — and only that.
+ * A press inside the book dismisses floating panels and blocks foliate's pointer-selection paging.
  *
- * The listener is capture-phase and swallows the event while a panel is open, because the
- * paginator acts on presses inside its own document: without this, clicking the empty area below
- * the text both closed the search box and turned the page.
+ * - Always stop `pointerdown` propagation in the capture phase so foliate's bubble-phase listener on
+ *   `doc` never sets `isPointerSelecting = true`. Otherwise `checkPointerSelection` (debounced 700ms
+ *   on `selectionchange`) runs after rapid multi-clicks and calls `this.prev()`, jumping to the
+ *   previous page. Native text selection (`mousedown`/`mousemove`) and links (`click`) are unaffected.
+ * - In column mode `<html>` (`doc.documentElement`) is sized to page 1 (`[0, size]`) while later
+ *   pages overflow to the right. Pressing on any empty area of page k > 1 (an empty right-hand
+ *   column, space below the last paragraph, or the margin) hits `<html>`, and WebKit clamps that
+ *   hit back into page 1's box — selecting text on page 1 instead of the visible page.
  */
 const onBookPointerDown = (event: Event) => {
-  if (!searchOpen.value && !settingsMenu.value?.isOpen?.()) {
-    closeOverlays();
-    return;
-  }
-  event.preventDefault();
-  event.stopPropagation();
+  const overlayOpen = searchOpen.value || Boolean(settingsMenu.value?.isOpen?.());
   closeOverlays();
+  event.stopPropagation();
+  if (overlayOpen || event.target === watchedDocument?.documentElement) {
+    event.preventDefault();
+    if (!overlayOpen) watchedDocument?.getSelection?.()?.removeAllRanges();
+  }
+};
+
+const onBookFocusIn = (event: Event) => {
+  event.stopPropagation();
 };
 
 /** Keyboard inside the book is the same contract as keyboard in the reader: ⌘F, arrows, paging. */
@@ -280,9 +338,11 @@ const watchBookDocument = () => {
   const doc = view?.renderer?.getContents?.()[0]?.doc;
   if (!doc || doc === watchedDocument) return;
   watchedDocument?.removeEventListener("pointerdown", onBookPointerDown, { capture: true });
+  watchedDocument?.removeEventListener("focusin", onBookFocusIn, { capture: true });
   watchedDocument?.removeEventListener("keydown", onBookKeydown as EventListener);
   watchedDocument = doc;
   doc.addEventListener("pointerdown", onBookPointerDown, { capture: true });
+  doc.addEventListener("focusin", onBookFocusIn, { capture: true });
   doc.addEventListener("keydown", onBookKeydown as EventListener);
 };
 
@@ -448,6 +508,7 @@ onBeforeUnmount(() => {
   destroyed = true;
   searchGeneration += 1;
   watchedDocument?.removeEventListener("pointerdown", onBookPointerDown, { capture: true });
+  watchedDocument?.removeEventListener("focusin", onBookFocusIn, { capture: true });
   watchedDocument?.removeEventListener("keydown", onBookKeydown as EventListener);
   watchedDocument = undefined;
   globalThis.removeEventListener("keydown", onKeydown);
