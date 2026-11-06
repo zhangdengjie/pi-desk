@@ -86,6 +86,23 @@ describe("EpubReader", () => {
     expect(wrapper.text()).toContain("Loading book");
   });
 
+  it("shows the concrete open error under the generic fallback", async () => {
+    globalThis.fetch = vi.fn(async () => new Response("missing", { status: 404 })) as unknown as typeof fetch;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { default: EpubReader } = await import("./EpubReader.vue");
+    const wrapper = mount(EpubReader, {
+      props: { src: "/workspace-file?path=missing.epub", name: "missing.epub" },
+    });
+    for (let attempt = 0; attempt < 40 && !wrapper.find(".pdf-reader-failure").exists(); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    expect(wrapper.find(".pdf-reader-failure").exists()).toBe(true);
+    expect(wrapper.find(".reader-failure-detail").text()).toContain("fetch failed: 404");
+    expect(consoleError).toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
   it("hands a connected element to foliate-js, and stays mounted after loading", async () => {
     const { default: EpubReader } = await import("./EpubReader.vue");
     const wrapper = mount(EpubReader, {

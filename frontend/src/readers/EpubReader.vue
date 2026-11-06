@@ -41,6 +41,9 @@ const WHEEL_COOLDOWN_MS = 320;
 
 const loading = ref(true);
 const failure = ref<"" | "unsupported" | "load">("");
+/** The concrete reason behind `failure`, shown under the generic message so a retry does not need
+ *  the dev tools (fetch status, a foliate import failure, an invalid saved CFI, ...). */
+const failureDetail = ref("");
 const fraction = ref(0);
 const tocOpen = ref(false);
 const tocButton = ref<HTMLElement | null>(null);
@@ -342,6 +345,7 @@ const enableContinuousPagination = async (element: FoliateView): Promise<boolean
 
 const open = async () => {
   failure.value = "";
+  failureDetail.value = "";
   loading.value = true;
   try {
     // Imported on first use: a few hundred KB of renderers nobody needs while the tree is on screen.
@@ -396,8 +400,10 @@ const open = async () => {
     watchBookDocument();
   } catch (error) {
     if (destroyed) return;
+    console.error(error);
     loading.value = false;
     failure.value = String((error as Error)?.name ?? "").includes("Unsupported") ? "unsupported" : "load";
+    failureDetail.value = error instanceof Error ? error.message : String(error);
   }
 };
 
@@ -824,6 +830,7 @@ onBeforeUnmount(() => {
     </div>
     <div v-else-if="failure" class="pdf-reader-state pdf-reader-failure reader-overlay">
       <p>{{ failure === 'unsupported' ? tr('files.epubUnsupported') : tr('files.epubLoadFailed') }}</p>
+      <p v-if="failureDetail" class="reader-failure-detail">{{ failureDetail }}</p>
       <slot name="fallback" />
     </div>
   </div>

@@ -4293,6 +4293,16 @@ html.is-resizing-pane .inspector {
   flex-direction: column;
 }
 
+.reader-failure-detail {
+  max-width: min(560px, 85%);
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .reader-toolbar {
   display: flex;
   align-items: center;
