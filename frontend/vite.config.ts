@@ -3,6 +3,7 @@ import vue from "@vitejs/plugin-vue";
 import tailwindcss from "@tailwindcss/vite";
 import wails from "@wailsio/runtime/plugins/vite";
 import { applySafari15Rewrites, hasRegexLookbehind } from "./src/utils/safari15Compat.ts";
+import { applyFoliateSplitView, isFoliatePaginator } from "./src/utils/foliateSplitView.ts";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -33,6 +34,10 @@ export default defineConfig({
     // cannot parse — and the worker is where every page is decoded.
     rolldownOptions: { transform: { target: "safari15" } },
   },
+  // The paginator patch below runs in `transform`, which a pre-bundled dependency never reaches.
+  // Excluding foliate-js makes dev serve its ESM sources directly, so `wails3 dev` and a production
+  // build run the same patched code.
+  optimizeDeps: { exclude: ["foliate-js"] },
   server: {
     host: "127.0.0.1",
     port: Number(process.env.WAILS_VITE_PORT) || 9245,
@@ -53,6 +58,25 @@ export default defineConfig({
         if (result.applied.length === 0) {
           this.warn(`safari15-regex-compat: lookbehind left untouched in ${id} (${result.skipped.join(", ")})`);
           return null;
+        }
+        return { code: result.code, map: null };
+      },
+    },
+    // foliate-js destroys the outgoing page before the incoming one exists, so a chapter turn can
+    // only dissolve. This rewrite parks it instead; see src/utils/foliateSplitView.ts.
+    {
+      name: "foliate-split-view",
+      enforce: "pre" as const,
+      transform(code: string, id: string) {
+        if (!id.includes("foliate-js") || !isFoliatePaginator(code)) return null;
+        const result = applyFoliateSplitView(code);
+        if (result.skipped.length > 0) {
+          // A partial match means the upstream code moved: the reader would silently fall back to
+          // destroying the old page and the chapter animation would stop working with no error.
+          this.error(
+            `foliate-split-view: ${result.skipped.length} of ${result.applied.length + result.skipped.length} `
+            + `rewrites no longer match ${id}:\n  - ${result.skipped.join("\n  - ")}`,
+          );
         }
         return { code: result.code, map: null };
       },
