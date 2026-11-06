@@ -18,12 +18,30 @@ declare module "foliate-js/view.js" {
     pageItem?: { label?: string };
   }
 
+  export interface FoliateSearchExcerpt {
+    pre?: string;
+    match?: string;
+    post?: string;
+  }
+
+  export interface FoliateSearchYield {
+    progress?: number;
+    index?: number;
+    label?: string;
+    subitems?: { cfi: string; excerpt?: FoliateSearchExcerpt }[];
+  }
+
   export class FoliateView extends HTMLElement {
     book?: { toc?: FoliateTocItem[]; metadata?: { title?: unknown; language?: unknown } };
     renderer?: { setStyles?: (styles: string | [string, string]) => void; next?: () => unknown; prev?: () => unknown };
     open(source: Blob | string): Promise<void>;
     init(options: { lastLocation?: string; showTextStart?: boolean }): Promise<void>;
     goTo(target: number | string): Promise<unknown>;
+    goLeft(): Promise<unknown>;
+    goRight(): Promise<unknown>;
+    /** Async generator: `{progress}`, then `{index, subitems}` per section, then the string "done". */
+    search(options: Record<string, unknown>): AsyncGenerator<FoliateSearchYield | "done">;
+    clearSearch(): void;
     prev(): Promise<unknown>;
     next(): Promise<unknown>;
     close(): void;

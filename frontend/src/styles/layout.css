@@ -4415,7 +4415,7 @@ html.is-resizing-pane .inspector {
   height: 100%;
 }
 
-.epub-reader-toc {
+.reader-toc {
   display: flex;
   flex-direction: column;
   flex: 0 0 34%;
@@ -4427,7 +4427,7 @@ html.is-resizing-pane .inspector {
   background: var(--bg-raised);
 }
 
-.epub-reader-toc button {
+.reader-toc button {
   padding: 5px 8px;
   border: 0;
   border-radius: 5px;
@@ -4438,7 +4438,7 @@ html.is-resizing-pane .inspector {
   cursor: pointer;
 }
 
-.epub-reader-toc button:hover {
+.reader-toc button:hover {
   background: var(--bg-hover);
   color: var(--text);
 }
@@ -4454,6 +4454,185 @@ html.is-resizing-pane .inspector {
   height: 100%;
   background: var(--accent);
   transition: width 120ms linear;
+}
+
+/* The document area plus its floating panels (search, contents): the panels position against this
+   box, not against the whole reader, so a toolbar change never moves them. */
+.reader-stage,
+.epub-reader-stage {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.epub-reader-stage {
+  flex-direction: column;
+}
+
+.reader-search {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  width: min(360px, calc(100% - 16px));
+}
+
+.reader-search-results {
+  position: absolute;
+  top: 52px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  width: min(360px, calc(100% - 16px));
+  max-height: 45%;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 22%);
+}
+
+.reader-search-results button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  text-align: start;
+  cursor: pointer;
+}
+
+.reader-search-results button:last-child {
+  border-bottom: 0;
+}
+
+.reader-search-results button:hover,
+.reader-search-results button.is-active {
+  background: var(--bg-hover);
+}
+
+.reader-search-result-label {
+  color: var(--text-muted);
+  font-size: var(--font-size-label);
+}
+
+.reader-search-result-excerpt {
+  overflow: hidden;
+  font-size: var(--font-size-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reader-toc-page {
+  display: inline-block;
+  min-width: 26px;
+  margin-inline-end: 4px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-label);
+}
+
+/* pdf.js text-layer hit marker. Colour only: the layer's own absolutely positioned runs must not
+   move, or the selection geometry stops matching the glyphs underneath. */
+.textLayer .pdf-search-hit {
+  background: rgb(250 204 21 / 45%);
+  border-radius: 2px;
+}
+
+/* Reader settings popover */
+.reader-settings {
+  position: relative;
+  display: inline-flex;
+}
+
+.reader-settings-panel {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 244px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 10px 28px rgb(0 0 0 / 26%);
+  font-size: var(--font-size-label);
+}
+
+.reader-settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
+}
+
+.reader-settings-head button {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.reader-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+}
+
+.reader-settings-row select {
+  max-width: 132px;
+}
+
+.reader-settings-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.reader-settings-inline input[type="range"] {
+  width: 96px;
+}
+
+.reader-settings-inline b {
+  min-width: 26px;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.reader-settings-swatches {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.reader-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.reader-swatch.is-light { background: #ffffff; }
+.reader-swatch.is-sepia { background: #f4ecd8; }
+.reader-swatch.is-dark { background: #16181c; }
+
+.reader-swatch.is-active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .reader-fallback-actions {

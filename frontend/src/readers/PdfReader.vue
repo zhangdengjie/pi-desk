@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight, LoaderCircle, Minus, Plus } from "lucide-vue-next";
+import { ChevronLeft, ChevronRight, List, LoaderCircle, Minus, Plus, Search } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { tr } from "../i18n";
 import { vSpin } from "../utils/spin";
+import SearchPopover from "../components/SearchPopover.vue";
+import ReaderSettingsMenu from "./ReaderSettingsMenu.vue";
 import { hasNativePdfSupport, loadPdfEngine, pdfDocumentOptions } from "./pdfEngine";
 import "../styles/pdf-text-layer.css";
 
@@ -11,9 +13,9 @@ import "../styles/pdf-text-layer.css";
  * A page-at-a-time PDF reader.
  *
  * The whole reason this exists next to the old `<object>` preview is range loading and memory: the
- * engine never receives the file as one payload, `hasUserDataToRender` is per page, and a page is
- * rendered only while it is near the viewport. Rendered pages are evicted once they leave, which
- * keeps the footprint bounded by the window rather than by the book.
+ * engine never receives the file as one payload, a page is rendered only while it is near the
+ * viewport, and rendered pages are evicted once they leave — which keeps the footprint bounded by
+ * the window rather than by the book.
  */
 const props = withDefaults(defineProps<{
   /** Either `/workspace-file?…` or a data URL for workspaces whose bytes cannot be streamed. */
@@ -38,17 +40,15 @@ const KEEP_DISTANCE = 2;
  * The window above is derived from the viewport, and a viewport is only meaningful when the reader
  * has a constrained height. If it is ever placed in an auto-height box — a mistaken layout, a
  * future host — `clientHeight` becomes the whole document and the "visible window" is the entire
- * book: 102 pages at 1800×2541 is ~1.8GB of canvas. This cap is the difference between a slow
- * reader and a crashed webview.
+ * book: 102 pages at 1800×2541 is ~1.8GB of canvas.
  */
 const MAX_CANVAS_PAGES = 8;
-/**
- * Pixel budget for a single page canvas. At 4 bytes per pixel, 4M ≈ 16MB — the ceiling the reader
- * holds per page while scrolling a dense A4 at 2× DPR.
- */
+/** Pixel budget for one page canvas. At 4 bytes per pixel, 4M ≈ 16MB. */
 const MAX_CANVAS_PIXELS = 4_000_000;
 /** Pages whose size is probed per tick, so a 600-page book does not block the first paint. */
 const SIZE_PROBE_BATCH = 24;
+/** Ceiling on collected search hits: a one-letter query in a 600-page book must not hang the panel. */
+const MAX_SEARCH_HITS = 400;
 
 const failure = ref<"" | typeof LOAD_ERROR | typeof UNSUPPORTED>("");
 const loading = ref(true);
@@ -58,10 +58,22 @@ const zoom = ref(1);
 const fitWidth = ref(0);
 /** height ÷ width of each page, in PDF units. Index 0 is page 1. */
 const aspects = ref<number[]>([]);
+const outlineOpen = ref(false);
+const outline = ref<{ title: string; page: number; depth: number }[]>([]);
+
+const searchOpen = ref(false);
+const searchQuery = ref("");
+const searchPopover = ref<{ focus: () => void } | null>(null);
+const hits = ref<{ page: number; snippet: string }[]>([]);
+const searchHit = ref(0);
+const searching = ref(false);
+const searchProgress = ref(0);
 
 const scroller = ref<HTMLElement | null>(null);
 const hosts = new Map<number, HTMLElement>();
 const rendered = new Map<number, { scale: number }>();
+/** Page text is extracted once and reused by every later query. */
+const pageText = new Map<number, string>();
 
 // Named `pdfDocument`, not `document`: the global `document` is needed all over this file to build
 // canvases, and a local binding would shadow it.
@@ -70,8 +82,10 @@ let loadingTask: PDFDocumentLoadingTask | undefined;
 let destroyed = false;
 let frame = 0;
 let sizeProbe: Promise<void> | undefined;
+let searchGeneration = 0;
 
 const pageWidth = computed(() => Math.max(0, Math.round(fitWidth.value * zoom.value)));
+const hasOutline = computed(() => outline.value.length > 0);
 
 const pageHeight = (index: number): number => {
   const aspect = aspects.value[index] ?? aspects.value[0] ?? 1.414;
@@ -85,8 +99,7 @@ const setHost = (page: number, element: Element | null) => {
 
 /** Destroying a canvas is what actually frees the backing store; dropping the reference is not enough. */
 const release = (page: number) => {
-  const host = hosts.get(page);
-  if (host) host.replaceChildren();
+  hosts.get(page)?.replaceChildren();
   rendered.delete(page);
 };
 
@@ -99,8 +112,8 @@ const visibleRange = (): { first: number; last: number } => {
   if (!element || pageCount.value === 0) return { first: 1, last: 1 };
   const top = element.scrollTop;
   const bottom = top + element.clientHeight;
-  // Every page's height is known (aspects are probed in the background), so the visible window is
-  // an arithmetic walk rather than a DOM measurement — no layout read per scroll frame.
+  // Every page's height is known, so the visible window is an arithmetic walk rather than a DOM
+  // measurement — no layout read per scroll frame.
   let offset = 0;
   let first = pageCount.value;
   for (let index = 0; index < pageCount.value; index += 1) {
@@ -121,6 +134,15 @@ const visibleRange = (): { first: number; last: number } => {
     last = index + 1;
   }
   return { first, last: Math.max(first, last) };
+};
+
+/** Marks the text-layer runs that contain the current query, so a hit is visible where it matters. */
+const markSearchHits = (container: HTMLElement) => {
+  const needle = searchQuery.value.trim().toLowerCase();
+  if (!needle) return;
+  for (const span of Array.from(container.querySelectorAll("span"))) {
+    if ((span.textContent ?? "").toLowerCase().includes(needle)) span.classList.add("pdf-search-hit");
+  }
 };
 
 const renderPage = async (pageNumber: number) => {
@@ -177,6 +199,7 @@ const renderPage = async (pageNumber: number) => {
       viewport: page.getViewport({ scale: cssScale }),
     });
     await layer.render();
+    markSearchHits(textContainer);
   } catch {
     textContainer.remove();
   }
@@ -232,6 +255,39 @@ const probePageSizes = async () => {
   }
 };
 
+const loadOutline = async () => {
+  if (!pdfDocument) return;
+  try {
+    const raw = await pdfDocument.getOutline();
+    if (!raw?.length) return;
+    const flat: { title: string; page: number; depth: number }[] = [];
+    const walk = async (items: typeof raw, depth: number) => {
+      for (const item of items) {
+        const page = await destinationPage(item.dest);
+        if (page) flat.push({ title: item.title || tr("reader.untitledChapter"), page, depth });
+        if (item.items?.length) await walk(item.items, depth + 1);
+      }
+    };
+    await walk(raw, 0);
+    if (!destroyed) outline.value = flat;
+  } catch {
+    /* A malformed outline is not a reason to refuse the document. */
+  }
+};
+
+/** `dest` is either a page reference or a named destination; both resolve to a 1-based page. */
+const destinationPage = async (dest: unknown): Promise<number | null> => {
+  if (!pdfDocument || dest == null) return null;
+  try {
+    const explicit = typeof dest === "string" ? await pdfDocument.getDestination(dest) : dest;
+    if (!Array.isArray(explicit) || !explicit.length) return null;
+    const index = await pdfDocument.getPageIndex(explicit[0]);
+    return index + 1;
+  } catch {
+    return null;
+  }
+};
+
 const measure = () => {
   const element = scroller.value;
   if (!element) return;
@@ -271,6 +327,106 @@ const applyZoom = (next: number) => {
   });
 };
 
+const resultLabel = computed(() => {
+  if (!searchQuery.value.trim()) return "";
+  if (searching.value) return tr("reader.searching", { percent: Math.round(searchProgress.value * 100) });
+  if (!hits.value.length) return tr("reader.noResults");
+  return `${searchHit.value + 1} / ${hits.value.length}`;
+});
+
+const stopSearch = () => {
+  searchGeneration += 1;
+  searching.value = false;
+  hits.value = [];
+  searchHit.value = 0;
+  for (const host of hosts.values()) {
+    for (const span of Array.from(host.querySelectorAll(".pdf-search-hit"))) span.classList.remove("pdf-search-hit");
+  }
+};
+
+const closeSearch = () => {
+  searchOpen.value = false;
+  searchQuery.value = "";
+  stopSearch();
+};
+
+const goToHit = (index: number) => {
+  const hit = hits.value[index];
+  if (!hit) return;
+  searchHit.value = index;
+  void goToPage(hit.page);
+};
+
+const textOfPage = async (page: number): Promise<string> => {
+  const cached = pageText.get(page);
+  if (cached !== undefined) return cached;
+  if (!pdfDocument) return "";
+  const loaded = await pdfDocument.getPage(page);
+  const content = await loaded.getTextContent();
+  const text = content.items
+    .map((item) => ("str" in item ? item.str : ""))
+    .join("")
+    .replace(/\s+/g, " ");
+  pageText.set(page, text);
+  return text;
+};
+
+/**
+ * Walks the document once per query. `getTextContent` is cached per page, so the second query of a
+ * session only re-scans strings; the first is the expensive one, which is why the field commits on
+ * Enter rather than on every keystroke.
+ */
+const runSearch = async (query: string) => {
+  stopSearch();
+  const needle = query.trim().toLowerCase();
+  if (!needle || !pdfDocument) return;
+  const generation = searchGeneration;
+  searching.value = true;
+  searchProgress.value = 0;
+  const found: { page: number; snippet: string }[] = [];
+  try {
+    for (let page = 1; page <= pageCount.value; page += 1) {
+      if (generation !== searchGeneration || destroyed) return;
+      const text = await textOfPage(page);
+      const haystack = text.toLowerCase();
+      let at = haystack.indexOf(needle);
+      while (at >= 0 && found.length < MAX_SEARCH_HITS) {
+        const start = Math.max(0, at - 30);
+        found.push({ page, snippet: `${start > 0 ? "…" : ""}${text.slice(start, at + needle.length + 40).trim()}` });
+        at = haystack.indexOf(needle, at + needle.length);
+      }
+      searchProgress.value = page / pageCount.value;
+      // Yield so typing stays responsive on a long document.
+      if (page % 8 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
+      if (found.length >= MAX_SEARCH_HITS) break;
+    }
+    if (generation !== searchGeneration || destroyed) return;
+    hits.value = found;
+    if (found.length) goToHit(0);
+  } finally {
+    if (generation === searchGeneration) searching.value = false;
+  }
+};
+
+const openSearch = () => {
+  searchOpen.value = true;
+  void nextTick(() => searchPopover.value?.focus());
+};
+
+/** Arrow keys page like the EPUB reader; a form control keeps its own arrow behaviour. */
+const onKeydown = (event: KeyboardEvent) => {
+  if (event.altKey || event.metaKey || event.ctrlKey) return;
+  const target = event.target as HTMLElement | null;
+  if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+  if (event.key === "ArrowLeft" || event.key === "PageUp") {
+    event.preventDefault();
+    step(-1);
+  } else if (event.key === "ArrowRight" || event.key === "PageDown") {
+    event.preventDefault();
+    step(1);
+  }
+};
+
 let resizeObserver: ResizeObserver | undefined;
 let scrollListener: (() => void) | undefined;
 
@@ -296,7 +452,8 @@ const open = async () => {
     measure();
     if (props.initialPage > 1) void goToPage(props.initialPage);
     sizeProbe = probePageSizes();
-  } catch (error) {
+    void loadOutline();
+  } catch {
     if (destroyed) return;
     loading.value = false;
     // The polyfills make an older WebKit attempt-able, so a failure there is *usually* the engine's
@@ -308,6 +465,7 @@ const open = async () => {
 
 onMounted(() => {
   void open();
+  globalThis.addEventListener("keydown", onKeydown);
   scrollListener = scheduleRender;
   scroller.value?.addEventListener("scroll", scrollListener, { passive: true });
   if (typeof ResizeObserver === "function" && scroller.value) {
@@ -318,6 +476,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   destroyed = true;
+  searchGeneration += 1;
+  globalThis.removeEventListener("keydown", onKeydown);
   if (frame) cancelAnimationFrame(frame);
   if (scrollListener) scroller.value?.removeEventListener("scroll", scrollListener);
   resizeObserver?.disconnect();
@@ -330,6 +490,7 @@ onBeforeUnmount(() => {
   pdfDocument = undefined;
 });
 
+watch(searchQuery, (query) => { void runSearch(query); });
 watch(() => props.src, () => {
   releaseAll();
   void loadingTask?.destroy();
@@ -337,6 +498,9 @@ watch(() => props.src, () => {
   pdfDocument = undefined;
   aspects.value = [];
   pageCount.value = 0;
+  outline.value = [];
+  pageText.clear();
+  stopSearch();
   void open();
 });
 </script>
@@ -359,22 +523,62 @@ watch(() => props.src, () => {
       </span>
       <button type="button" :aria-label="tr('files.pdfNextPage')" :title="tr('files.pdfNextPage')" :disabled="currentPage >= pageCount" @click="step(1)"><ChevronRight :size="15" /></button>
       <span class="reader-spacer" />
+      <button v-if="hasOutline" type="button" :class="{ 'is-active': outlineOpen }" :aria-expanded="outlineOpen" :aria-label="tr('reader.outline')" :title="tr('reader.outline')" @click="outlineOpen = !outlineOpen"><List :size="15" /></button>
+      <button type="button" :class="{ 'is-active': searchOpen }" :aria-expanded="searchOpen" :aria-label="tr('reader.search')" :title="tr('reader.search')" @click="searchOpen ? closeSearch() : openSearch()"><Search :size="15" /></button>
       <button type="button" :aria-label="tr('files.zoomOut')" :title="tr('files.zoomOut')" :disabled="zoom <= MIN_ZOOM" @click="applyZoom(zoom / ZOOM_STEP)"><Minus :size="15" /></button>
       <button type="button" class="reader-zoomlabel" :aria-label="tr('files.zoomReset')" :title="tr('files.zoomReset')" @click="applyZoom(1)">{{ Math.round(zoom * 100) }}%</button>
       <button type="button" :aria-label="tr('files.zoomIn')" :title="tr('files.zoomIn')" :disabled="zoom >= MAX_ZOOM" @click="applyZoom(zoom * ZOOM_STEP)"><Plus :size="15" /></button>
+      <ReaderSettingsMenu mode="pdf" />
     </div>
     <!-- Always mounted, never behind a `v-if`: the scroll listener and the ResizeObserver are bound
          on mount, and a ref that only exists once loading finished leaves both attached to null —
          the first window renders, then scrolling never asks for another page. -->
-    <div ref="scroller" class="pdf-reader-scroll">
-      <div class="pdf-reader-stack" :style="{ width: `${pageWidth}px` }">
-        <div
-          v-for="page in pageCount"
-          :key="page"
-          :ref="(element) => setHost(page, element as Element | null)"
-          class="pdf-reader-page"
-          :style="{ width: `${pageWidth}px`, height: `${pageHeight(page - 1)}px` }"
-        />
+    <div class="reader-stage">
+      <SearchPopover
+        v-if="searchOpen"
+        ref="searchPopover"
+        v-model:query="searchQuery"
+        class="reader-search"
+        :has-matches="hits.length > 0"
+        :result-label="resultLabel"
+        :placeholder="tr('reader.searchPlaceholder')"
+        @close="closeSearch"
+        @next="goToHit(Math.min(hits.length - 1, searchHit + 1))"
+        @previous="goToHit(Math.max(0, searchHit - 1))"
+      />
+      <nav v-if="outlineOpen && hasOutline" class="reader-toc" :aria-label="tr('reader.outline')">
+        <button
+          v-for="item in outline"
+          :key="`${item.depth}-${item.page}-${item.title}`"
+          type="button"
+          :style="{ paddingInlineStart: `${10 + item.depth * 12}px` }"
+          @click="goToPage(item.page)"
+        ><span class="reader-toc-page">{{ item.page }}</span>{{ item.title }}</button>
+      </nav>
+      <div v-if="searchOpen && hits.length" class="reader-search-results" role="listbox" :aria-label="tr('reader.searchResults')">
+        <button
+          v-for="(hit, index) in hits"
+          :key="`${hit.page}-${index}`"
+          type="button"
+          role="option"
+          :aria-selected="index === searchHit"
+          :class="{ 'is-active': index === searchHit }"
+          @click="goToHit(index)"
+        >
+          <span class="reader-search-result-label">{{ tr("files.pdfPage", { page: hit.page, total: pageCount }) }}</span>
+          <span class="reader-search-result-excerpt">{{ hit.snippet }}</span>
+        </button>
+      </div>
+      <div ref="scroller" class="pdf-reader-scroll">
+        <div class="pdf-reader-stack" :style="{ width: `${pageWidth}px` }">
+          <div
+            v-for="page in pageCount"
+            :key="page"
+            :ref="(element) => setHost(page, element as Element | null)"
+            class="pdf-reader-page"
+            :style="{ width: `${pageWidth}px`, height: `${pageHeight(page - 1)}px` }"
+          />
+        </div>
       </div>
     </div>
     <div v-if="loading" class="pdf-reader-state reader-overlay">
@@ -382,7 +586,7 @@ watch(() => props.src, () => {
       <span>{{ tr("files.pdfLoading") }}</span>
     </div>
     <div v-else-if="failure" class="pdf-reader-state pdf-reader-failure reader-overlay">
-      <p>{{ failure === UNSUPPORTED ? tr("files.pdfEngineUnsupported") : tr("files.pdfLoadFailed") }}</p>
+      <p>{{ failure === UNSUPPORTED ? tr('files.pdfEngineUnsupported') : tr('files.pdfLoadFailed') }}</p>
       <slot name="fallback" />
     </div>
   </div>

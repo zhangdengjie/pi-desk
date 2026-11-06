@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight, List, LoaderCircle, Minus, Plus } from "lucide-vue-next";
+import { ChevronLeft, ChevronRight, List, LoaderCircle, Search } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { tr } from "../i18n";
 import { vSpin } from "../utils/spin";
+import SearchPopover from "../components/SearchPopover.vue";
+import ReaderSettingsMenu from "./ReaderSettingsMenu.vue";
+import { THEME_COLORS, readerSettings } from "./readerSettings";
 import type { FoliateLocation, FoliateTocItem, FoliateView } from "foliate-js/view.js";
 
 /**
@@ -23,37 +26,64 @@ const props = withDefaults(defineProps<{
   name: string;
   /** EPUB CFI to restore when the tab is reopened. */
   initialLocation?: string;
-  /** Body font size in px, applied inside the iframe. */
-  fontSize?: number;
-}>(), { initialLocation: "", fontSize: 18 });
+}>(), { initialLocation: "" });
 
 const emit = defineEmits<{ relocate: [location: string, fraction: number] }>();
 
-const MIN_FONT = 12;
-const MAX_FONT = 30;
+const WHEEL_THRESHOLD = 60;
+/** A one-letter query in a long book must not turn the panel into a section-walking spinner. */
+const MAX_SEARCH_HITS = 300;
+const WHEEL_COOLDOWN_MS = 320;
 
 const loading = ref(true);
 const failure = ref<"" | "unsupported" | "load">("");
-const font = ref(props.fontSize);
 const fraction = ref(0);
 const tocOpen = ref(false);
 const toc = shallowRef<FoliateTocItem[]>([]);
 const activeLabel = ref("");
 const host = ref<HTMLElement | null>(null);
 
+// Search state. `searchHit` is an index into `hits`; the query is committed by Enter, the same way
+// the Markdown preview commits it, because scanning every section of a book per keystroke is not
+// something a text field should do.
+const searchOpen = ref(false);
+const searchQuery = ref("");
+const searchPopover = ref<{ focus: () => void } | null>(null);
+const hits = ref<{ cfi: string; label: string; excerpt: string }[]>([]);
+const searchHit = ref(0);
+const searching = ref(false);
+const searchProgress = ref(0);
+
 let view: FoliateView | undefined;
 let destroyed = false;
+let searchGeneration = 0;
+let wheelLockedUntil = 0;
+let wheelAccumulator = 0;
 
 const hasToc = computed(() => toc.value.length > 0);
-
-const bodyStyles = (): string => `
+const colors = computed(() => THEME_COLORS[readerSettings.theme]);
+const pageStyles = computed(() => {
+  const { page, ink, muted } = colors.value;
+  const family = readerSettings.fontFamily ? `font-family: ${readerSettings.fontFamily};` : "";
+  return `
   @namespace epub "http://www.idpf.org/2007/ops";
-  html { color-scheme: only light; }
-  body { font-size: ${font.value}px; }
+  html {
+    color-scheme: only light;
+    background: ${page};
+  }
+  body {
+    color: ${ink};
+    ${family}
+    font-size: ${readerSettings.fontSize}px;
+    line-height: ${readerSettings.lineHeight};
+    background: ${page};
+  }
+  a:link, a:visited { color: ${muted}; }
   p, li, blockquote, dd {
-    line-height: 1.6;
+    line-height: ${readerSettings.lineHeight};
     text-align: start;
     widows: 2;
+    orphans: 2;
     hyphens: manual;
   }
   [align="left"] { text-align: left; }
@@ -61,12 +91,11 @@ const bodyStyles = (): string => `
   [align="center"] { text-align: center; }
   [align="justify"] { text-align: justify; }
   pre { white-space: pre-wrap !important; }
-  img, svg { max-width: 100% !important; height: auto !important; }
+  img { max-width: 100% !important; height: auto !important; }
   aside[epub|type~="endnote"], aside[epub|type~="footnote"],
   aside[epub|type~="note"], aside[epub|type~="rearnote"] { display: none; }
 `;
-
-const applyStyles = () => view?.renderer?.setStyles?.(bodyStyles());
+});
 
 const flattenToc = (items: FoliateTocItem[], depth = 0): { label: string; href: string; depth: number }[] =>
   items.flatMap((item) => [
@@ -74,12 +103,57 @@ const flattenToc = (items: FoliateTocItem[], depth = 0): { label: string; href: 
     ...flattenToc(item.subitems ?? [], depth + 1),
   ]);
 
+/**
+ * `setStyles` only reaches documents that exist *after* it is called — the paginator stores the CSS
+ * for later views and applies it to the current one only when it has one. Calling it after `init()`
+ * therefore styled every page except the first, which is why the cover kept the book's own
+ * stretching rules. Every call site below goes through here so the order cannot drift again.
+ */
+const applyStyles = () => view?.renderer?.setStyles?.(pageStyles.value);
+const animateTurns = () => {
+  const renderer = view?.renderer as (HTMLElement & { setAttribute?: (name: string, value: string) => void }) | undefined;
+  if (!renderer) return;
+  if (readerSettings.animateTurns) renderer.setAttribute?.("animated", "");
+  else renderer.removeAttribute?.("animated");
+};
+
+/**
+ * Calibre-generated covers are a single `<image>` inside an SVG sized `100% × 100%` with
+ * `preserveAspectRatio="none"`, i.e. "stretch to whatever box the reader gives me". That is wrong in
+ * any window whose aspect differs from the book's page size. Restoring aspect preservation keeps the
+ * cover rectangular and letterboxes it, which is what every other reader shows.
+ */
+const repairStretchedCovers = (doc: Document) => {
+  for (const svg of Array.from(doc.querySelectorAll("svg"))) {
+    if (svg.getAttribute("preserveAspectRatio") !== "none") continue;
+    if (svg.querySelectorAll("image").length !== 1) continue;
+    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  }
+};
+
+const onLoad = (event: Event) => {
+  const doc = (event as CustomEvent<{ doc?: Document }>).detail?.doc;
+  if (!doc) return;
+  repairStretchedCovers(doc);
+};
+
+const onRelocate = (event: Event) => {
+  const detail = (event as CustomEvent<FoliateLocation>).detail ?? {};
+  fraction.value = detail.fraction ?? 0;
+  activeLabel.value = detail.tocItem?.label ?? "";
+  if (detail.cfi) emit("relocate", detail.cfi, fraction.value);
+};
+
+/** A book may link to the web. Cancelling keeps the reader inside the inspector. */
+const onExternalLink = (event: Event) => {
+  event.preventDefault();
+};
+
 const open = async () => {
   failure.value = "";
   loading.value = true;
   try {
-    // The engine is only imported once a book is actually opened: it is a few hundred KB of
-    // renderers nobody needs while the file tree is on screen.
+    // Imported on first use: a few hundred KB of renderers nobody needs while the tree is on screen.
     const { FoliateView } = await import("foliate-js/view.js");
     if (typeof customElements.get("foliate-view") === "undefined") {
       customElements.define("foliate-view", FoliateView);
@@ -100,6 +174,7 @@ const open = async () => {
     host.value?.replaceChildren(element);
     view = element;
     element.addEventListener("relocate", onRelocate as EventListener);
+    element.addEventListener("load", onLoad as EventListener);
     element.addEventListener("external-link", onExternalLink as unknown as EventListener);
 
     await element.open(file);
@@ -107,52 +182,52 @@ const open = async () => {
       element.close();
       return;
     }
+    // Before `init()`: see the note on `applyStyles`. Ordering, not the value, was the bug.
+    applyStyles();
+    animateTurns();
     toc.value = (element.book?.toc ?? []) as FoliateTocItem[];
-    await element.init({ lastLocation: props.initialLocation || undefined, showTextStart: !props.initialLocation });
+    // Not `init({})`: with no location it calls `next()` and lands on the *second* page of the
+    // spine, and `showTextStart` jumps to the `bodymatter` landmark, which skips the cover entirely.
+    // Without a saved position the honest start is index 0.
+    if (props.initialLocation) await element.init({ lastLocation: props.initialLocation });
+    else await element.goTo(0);
     loading.value = false;
     await nextTick();
     applyStyles();
   } catch (error) {
     if (destroyed) return;
     loading.value = false;
-    failure.value = String((error as Error)?.name ?? "").includes("Unsupported")
-      ? "unsupported"
-      : "load";
+    failure.value = String((error as Error)?.name ?? "").includes("Unsupported") ? "unsupported" : "load";
   }
-};
-
-const onRelocate = (event: Event) => {
-  const detail = (event as CustomEvent<FoliateLocation>).detail ?? {};
-  fraction.value = detail.fraction ?? 0;
-  activeLabel.value = detail.tocItem?.label ?? "";
-  if (detail.cfi) emit("relocate", detail.cfi, fraction.value);
-};
-
-/**
- * A book may link to the web. foliate-js opens it with `window.open` only when the event is not
- * cancelled; cancelling keeps the reader inside the inspector instead of spawning a window.
- */
-const onExternalLink = (event: Event) => {
-  event.preventDefault();
 };
 
 const turn = (delta: number) => {
   if (!view || loading.value) return;
+  animateTurns();
   if (delta < 0) void view.prev();
   else void view.next();
 };
 
 const goToLocation = (href: string) => {
   if (!view) return;
-  tocOpen.value = false;
+  if (readerSettings.tocAutoClose) tocOpen.value = false;
   void view.goTo(href);
 };
 
-const setFont = (next: number) => {
-  const clamped = Math.min(MAX_FONT, Math.max(MIN_FONT, Math.round(next)));
-  if (clamped === font.value) return;
-  font.value = clamped;
-  applyStyles();
+const onWheel = (event: WheelEvent) => {
+  if (!readerSettings.wheelPaging || loading.value || failure.value) return;
+  // Horizontal wheels are the book's own business; only vertical intent turns a page.
+  const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : 0;
+  if (!delta) return;
+  event.preventDefault();
+  const now = Date.now();
+  if (now < wheelLockedUntil) return;
+  wheelAccumulator += delta;
+  if (Math.abs(wheelAccumulator) < WHEEL_THRESHOLD) return;
+  const direction = wheelAccumulator > 0 ? 1 : -1;
+  wheelAccumulator = 0;
+  wheelLockedUntil = now + WHEEL_COOLDOWN_MS;
+  turn(direction);
 };
 
 const onKeydown = (event: KeyboardEvent) => {
@@ -168,46 +243,119 @@ const onKeydown = (event: KeyboardEvent) => {
   }
 };
 
-onMounted(() => {
-  void open();
-  globalThis.addEventListener("keydown", onKeydown);
+const stopSearch = () => {
+  searchGeneration += 1;
+  searching.value = false;
+  hits.value = [];
+  searchHit.value = 0;
+  view?.clearSearch?.();
+};
+
+const closeSearch = () => {
+  searchOpen.value = false;
+  searchQuery.value = "";
+  stopSearch();
+};
+
+const resultLabel = computed(() => {
+  if (!searchQuery.value.trim()) return "";
+  if (searching.value) return tr("reader.searching", { percent: Math.round(searchProgress.value * 100) });
+  if (!hits.value.length) return tr("reader.noResults");
+  return `${searchHit.value + 1} / ${hits.value.length}`;
 });
 
-onBeforeUnmount(() => {
-  destroyed = true;
-  globalThis.removeEventListener("keydown", onKeydown);
-  view?.close();
-  view = undefined;
-  host.value?.replaceChildren();
-});
+const goToHit = (index: number) => {
+  const hit = hits.value[index];
+  if (!hit || !view) return;
+  searchHit.value = index;
+  void view.goTo(hit.cfi);
+};
 
+/** `view.search` is an async generator over sections; a new query abandons the previous one. */
+const runSearch = async (query: string) => {
+  stopSearch();
+  if (!query.trim() || !view) return;
+  const generation = searchGeneration;
+  searching.value = true;
+  searchProgress.value = 0;
+  try {
+    for await (const result of view.search({ query }) as AsyncGenerator<Record<string, unknown> | "done">) {
+      if (generation !== searchGeneration || destroyed) return;
+      if (result === "done") break;
+      const progress = result.progress;
+      if (typeof progress === "number") searchProgress.value = progress;
+      const subitems = result.subitems as { cfi: string; excerpt?: { pre?: string; match?: string; post?: string } }[] | undefined;
+      if (Array.isArray(subitems) && subitems.length) {
+        const label = typeof result.label === "string" ? result.label : "";
+        hits.value = [...hits.value, ...subitems.map((item) => ({
+          cfi: item.cfi,
+          label,
+          excerpt: `${item.excerpt?.pre ?? ""}${item.excerpt?.match ?? ""}${item.excerpt?.post ?? ""}`,
+        }))].slice(0, MAX_SEARCH_HITS);
+        // Deliberately no jump here: `search()` is still walking sections, and moving the renderer
+        // underneath it makes foliate tear down the view it is currently creating ("Right side of
+        // assignment cannot be destructured"). The first hit is opened once the walk has finished.
+        if (hits.value.length >= MAX_SEARCH_HITS) break;
+      }
+    }
+    if (generation === searchGeneration && !destroyed && hits.value.length) goToHit(0);
+  } finally {
+    if (generation === searchGeneration) searching.value = false;
+  }
+};
+
+const openSearch = () => {
+  searchOpen.value = true;
+  void nextTick(() => searchPopover.value?.focus());
+};
+
+watch(searchQuery, (query) => { void runSearch(query).catch(() => { searching.value = false; }); });
+watch(() => readerSettings.theme, () => applyStyles());
+watch(() => [readerSettings.fontFamily, readerSettings.fontSize, readerSettings.lineHeight], () => applyStyles());
+watch(() => readerSettings.animateTurns, () => animateTurns());
 watch(() => props.src, () => {
   view?.close();
   view = undefined;
   toc.value = [];
   fraction.value = 0;
+  stopSearch();
   void open();
+});
+
+onMounted(() => {
+  void open();
+  globalThis.addEventListener("keydown", onKeydown);
+  host.value?.addEventListener("wheel", onWheel, { passive: false });
+});
+
+onBeforeUnmount(() => {
+  destroyed = true;
+  searchGeneration += 1;
+  globalThis.removeEventListener("keydown", onKeydown);
+  host.value?.removeEventListener("wheel", onWheel);
+  view?.close();
+  view = undefined;
+  host.value?.replaceChildren();
 });
 </script>
 
 <template>
-  <div class="epub-reader">
+  <div class="epub-reader" :style="{ background: colors.page }">
     <div v-if="!loading && !failure" class="reader-toolbar">
       <button type="button" :aria-label="tr('files.epubPreviousPage')" :title="tr('files.epubPreviousPage')" @click="turn(-1)"><ChevronLeft :size="15" /></button>
       <button type="button" :aria-label="tr('files.epubNextPage')" :title="tr('files.epubNextPage')" @click="turn(1)"><ChevronRight :size="15" /></button>
       <span class="epub-reader-label">{{ activeLabel || name }}</span>
       <span class="reader-spacer" />
       <button v-if="hasToc" type="button" :class="{ 'is-active': tocOpen }" :aria-expanded="tocOpen" :aria-label="tr('files.epubContents')" :title="tr('files.epubContents')" @click="tocOpen = !tocOpen"><List :size="15" /></button>
-      <button type="button" :aria-label="tr('files.epubSmallerText')" :title="tr('files.epubSmallerText')" :disabled="font <= MIN_FONT" @click="setFont(font - 1)"><Minus :size="15" /></button>
-      <span class="reader-zoomlabel">{{ font }}px</span>
-      <button type="button" :aria-label="tr('files.epubLargerText')" :title="tr('files.epubLargerText')" :disabled="font >= MAX_FONT" @click="setFont(font + 1)"><Plus :size="15" /></button>
+      <button type="button" :class="{ 'is-active': searchOpen }" :aria-expanded="searchOpen" :aria-label="tr('reader.search')" :title="tr('reader.search')" @click="searchOpen ? closeSearch() : openSearch()"><Search :size="15" /></button>
+      <ReaderSettingsMenu mode="epub" />
     </div>
     <!-- The host is never behind a `v-if`. foliate-js pages a book by measuring its own box, so a
          host that is absent while `loading` is true gets a detached `foliate-view`: the element
          never connects, the paginator never sees a size, `open()` never resolves, and the reader
          shows "loading" forever. The state below is an overlay for exactly that reason. -->
     <div class="epub-reader-body">
-      <nav v-if="tocOpen && hasToc" class="epub-reader-toc" :aria-label="tr('files.epubContents')">
+      <nav v-if="tocOpen && hasToc" class="reader-toc" :aria-label="tr('files.epubContents')">
         <button
           v-for="item in flattenToc(toc)"
           :key="`${item.depth}-${item.href}-${item.label}`"
@@ -216,7 +364,35 @@ watch(() => props.src, () => {
           @click="goToLocation(item.href)"
         >{{ item.label }}</button>
       </nav>
-      <div ref="host" class="epub-reader-host" />
+      <div class="epub-reader-stage">
+        <SearchPopover
+          v-if="searchOpen"
+          ref="searchPopover"
+          v-model:query="searchQuery"
+          class="reader-search"
+          :has-matches="hits.length > 0"
+          :result-label="resultLabel"
+          :placeholder="tr('reader.searchPlaceholder')"
+          @close="closeSearch"
+          @next="goToHit(Math.min(hits.length - 1, searchHit + 1))"
+          @previous="goToHit(Math.max(0, searchHit - 1))"
+        />
+        <div ref="host" class="epub-reader-host" />
+        <div v-if="searchOpen && hits.length" class="reader-search-results" role="listbox" :aria-label="tr('reader.searchResults')">
+          <button
+            v-for="(hit, index) in hits"
+            :key="hit.cfi"
+            type="button"
+            role="option"
+            :aria-selected="index === searchHit"
+            :class="{ 'is-active': index === searchHit }"
+            @click="goToHit(index)"
+          >
+            <span class="reader-search-result-label">{{ hit.label }}</span>
+            <span class="reader-search-result-excerpt">{{ hit.excerpt }}</span>
+          </button>
+        </div>
+      </div>
     </div>
     <div v-if="!loading && !failure" class="epub-reader-progress" role="progressbar" :aria-valuenow="Math.round(fraction * 100)" aria-valuemin="0" aria-valuemax="100">
       <span :style="{ width: `${Math.round(fraction * 100)}%` }" />
@@ -226,7 +402,7 @@ watch(() => props.src, () => {
       <span>{{ tr("files.epubLoading") }}</span>
     </div>
     <div v-else-if="failure" class="pdf-reader-state pdf-reader-failure reader-overlay">
-      <p>{{ failure === "unsupported" ? tr("files.epubUnsupported") : tr("files.epubLoadFailed") }}</p>
+      <p>{{ failure === 'unsupported' ? tr('files.epubUnsupported') : tr('files.epubLoadFailed') }}</p>
       <slot name="fallback" />
     </div>
   </div>

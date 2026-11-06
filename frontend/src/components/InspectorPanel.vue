@@ -58,15 +58,20 @@ const readerDocument = computed(() => {
   return { mediaType, src, name: filePreviewName.value };
 });
 const readerTab = computed(() => (currentTab.value?.kind === "file" ? currentTab.value : undefined));
+// Reading position rides on the tab, and the save is scheduled here rather than left to whichever
+// unrelated action happens to persist preferences next: without the nudge the stored position was
+// always the one from the last save, so reopening a book landed a few pages behind the reader.
 function rememberReaderPage(page: number) {
   const tab = readerTab.value;
   if (!tab || tab.reader?.page === page) return;
   tab.reader = { ...tab.reader, page };
+  appStore.scheduleDesktopStateSave();
 }
 function rememberReaderCfi(cfi: string) {
   const tab = readerTab.value;
   if (!tab || tab.reader?.cfi === cfi) return;
   tab.reader = { ...tab.reader, cfi };
+  appStore.scheduleDesktopStateSave();
 }
 const workspaceName = computed(() => workspaceLabel.value.split(/[\\/]/).filter(Boolean).pop() || tr("inspector.files"));
 function breadcrumbs(path: string) {
