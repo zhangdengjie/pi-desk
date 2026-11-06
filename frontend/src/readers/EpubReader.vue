@@ -127,6 +127,9 @@ const flattenToc = (items: FoliateTocItem[], depth = 0): { label: string; href: 
     ...flattenToc(item.subitems ?? [], depth + 1),
   ]);
 
+/** Flattened once per book, not on every render: a long book re-renders on every page turn. */
+const tocItems = computed(() => flattenToc(toc.value));
+
 /**
  * `setStyles` only reaches documents that exist *after* it is called — the paginator stores the CSS
  * for later views and applies it to the current one only when it has one. Calling it after `init()`
@@ -765,7 +768,7 @@ onBeforeUnmount(() => {
     <div class="epub-reader-body">
       <nav v-if="tocOpen && hasToc" class="reader-toc" :aria-label="tr('files.epubContents')">
         <button
-          v-for="item in flattenToc(toc)"
+          v-for="item in tocItems"
           :key="`${item.depth}-${item.href}-${item.label}`"
           type="button"
           :style="{ paddingInlineStart: `${10 + item.depth * 12}px` }"

@@ -4397,6 +4397,7 @@ html.is-resizing-pane .inspector {
 }
 
 .epub-reader-body {
+  position: relative;
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
@@ -4416,16 +4417,23 @@ html.is-resizing-pane .inspector {
   height: 100%;
 }
 
+/* Overlays the page instead of taking width from it. Squeezing the host re-pages the whole book:
+   the paginator pages by its own box, so a 34% width change re-columnizes every section. With a
+   continuous document that is the entire book, which is exactly the delay this avoids. */
 .reader-toc {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: 4;
   display: flex;
   flex-direction: column;
-  flex: 0 0 34%;
+  width: min(260px, 34%);
   min-width: 120px;
-  max-width: 260px;
   padding: 6px 4px;
   overflow: auto;
   border-right: 1px solid var(--border);
   background: var(--bg-raised);
+  box-shadow: 2px 0 12px rgb(0 0 0 / 12%);
 }
 
 .reader-toc button {
