@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight, List, LoaderCircle, Search } from "lucide-vue-next";
+import { ChevronLeft, ChevronRight, List, Search } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { tr } from "../i18n";
-import { vSpin } from "../utils/spin";
+import LoadingRing from "../components/LoadingRing.vue";
 import SearchPopover from "../components/SearchPopover.vue";
 import ReaderSettingsMenu from "./ReaderSettingsMenu.vue";
 import type { FoliateSection } from "foliate-js/view.js";
@@ -825,7 +825,7 @@ onBeforeUnmount(() => {
       <span :style="{ width: `${Math.round(fraction * 100)}%` }" />
     </div>
     <div v-if="loading" class="pdf-reader-state reader-overlay">
-      <LoaderCircle v-spin :size="18" class="is-spinning" />
+      <LoadingRing :size="18" />
       <span>{{ tr("files.epubLoading") }}</span>
     </div>
     <div v-else-if="failure" class="pdf-reader-state pdf-reader-failure reader-overlay">

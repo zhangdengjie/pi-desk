@@ -24,6 +24,8 @@ describe("PdfReader", () => {
     expect(wrapper.find(".pdf-reader-scroll").exists()).toBe(true);
     expect(wrapper.find(".pdf-reader-stack").exists()).toBe(true);
     expect(wrapper.find(".reader-overlay").exists()).toBe(true);
+    // The shared ring, not lucide's 288° arc: the open arc's centre of mass orbits the centre.
+    expect(wrapper.find(".reader-overlay .loading-ring").exists()).toBe(true);
     wrapper.unmount();
   });
 });

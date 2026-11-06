@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight, List, LoaderCircle, Minus, Plus, Search } from "lucide-vue-next";
+import { ChevronLeft, ChevronRight, List, Minus, Plus, Search } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { tr } from "../i18n";
-import { vSpin } from "../utils/spin";
+import LoadingRing from "../components/LoadingRing.vue";
 import SearchPopover from "../components/SearchPopover.vue";
 import ReaderSettingsMenu from "./ReaderSettingsMenu.vue";
 import { readPosition, usePositionFlush, writePosition } from "./readingPositions";
@@ -607,7 +607,7 @@ watch(() => props.src, () => {
       </div>
     </div>
     <div v-if="loading" class="pdf-reader-state reader-overlay">
-      <LoaderCircle v-spin :size="18" class="is-spinning" />
+      <LoadingRing :size="18" />
       <span>{{ tr("files.pdfLoading") }}</span>
     </div>
     <div v-else-if="failure" class="pdf-reader-state pdf-reader-failure reader-overlay">

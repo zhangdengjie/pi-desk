@@ -478,7 +478,7 @@ describe("InspectorPanel", () => {
 
     store.openPanelTab({ id: "binary", kind: "diff", title: "new.png", path: "new.png", loading: true });
     await wrapper.vm.$nextTick();
-    expect(wrapper.find(".repository-diff .is-spinning").exists()).toBe(true);
+    expect(wrapper.find(".repository-diff .loading-ring").exists()).toBe(true);
 
     store.activePanelTab!.loading = false;
     store.activePanelTab!.error = "diff unavailable";

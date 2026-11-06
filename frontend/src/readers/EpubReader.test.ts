@@ -84,6 +84,7 @@ describe("EpubReader", () => {
     // host would be missing here, which is the bug this test exists for.
     expect(wrapper.find(".epub-reader-host").exists()).toBe(true);
     expect(wrapper.text()).toContain("Loading book");
+    expect(wrapper.find(".loading-ring").exists()).toBe(true);
   });
 
   it("shows the concrete open error under the generic fallback", async () => {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ui } from "../ui/classes";
-import { Binary, ChevronRight, FileCode2, FileDiff, LoaderCircle, PanelRightClose, FolderOpen, Globe, Terminal, Plus, X, Maximize2, Minimize2, Search, ChevronDown, ChevronsDownUp, ChevronsUpDown, ExternalLink, List, ArrowLeft } from "lucide-vue-next";
+import { Binary, ChevronRight, FileCode2, FileDiff, PanelRightClose, FolderOpen, Globe, Terminal, Plus, X, Maximize2, Minimize2, Search, ChevronDown, ChevronsDownUp, ChevronsUpDown, ExternalLink, List, ArrowLeft } from "lucide-vue-next";
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { pruneTerminalIds, promoteTerminalId } from "../utils/terminalPool";
 import { type PanelTab, useAppStore } from "../stores/app";
@@ -8,6 +8,7 @@ import { buildRepositoryTree, type RepositoryTreeEntry, type RepositoryTreeNode 
 import { fuzzyScore } from "../utils/fuzzySearch";
 import { highlightCodeLines, type CodeSegment } from "../utils/codeHighlight";
 import CodePreview from "./CodePreview.vue";
+import LoadingRing from "./LoadingRing.vue";
 import FileTreeNode from "./FileTreeNode.vue";
 import MarkdownBody from "./MarkdownBody.vue";
 import MarkdownOutlineNav from "./MarkdownOutlineNav.vue";
@@ -15,7 +16,6 @@ import ZoomableImage from "./ZoomableImage.vue";
 import SearchPopover from "./SearchPopover.vue";
 import { collectMarkdownOutline, markdownHasHeadings, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import { tr } from "../i18n";
-import { vSpin } from "../utils/spin";
 import ReaderFallback from "../readers/ReaderFallback.vue";
 import { workspaceFileUrl } from "../readers/documentSource";
 import { readerPositionKey as documentPositionKey } from "../readers/readingPositions";
@@ -985,7 +985,7 @@ watch(() => currentTab.value?.id, async () => {
     <p v-if="currentTab?.error && (currentTab.kind === 'browser' || currentTab.kind === 'terminal')" class="diff-notice error-text" role="alert">{{ currentTab.error }}</p>
     <div class="panel-body" :class="{ 'has-tree': (currentTab?.kind === 'file' || currentTab?.kind === 'diff') && currentTab.treeOpen }">
     <div v-if="currentTab?.kind === 'file'" :key="currentTab.id" class="inspector-content file-preview-panel">
-      <div v-if="appStore.activeRepositoryFilePreviewLoading && !filePreview" class="repository-state" :class="ui.empty"><LoaderCircle v-spin :size="18" class="is-spinning" /></div>
+      <div v-if="appStore.activeRepositoryFilePreviewLoading && !filePreview" class="repository-state" :class="ui.empty"><LoadingRing :size="18" /></div>
       <div v-else-if="appStore.activeRepositoryFilePreviewError" class="repository-state error-text" :class="ui.empty">{{ appStore.activeRepositoryFilePreviewError }}</div>
       <template v-else-if="filePreview">
         <ZoomableImage v-if="filePreview.mediaType?.startsWith('image/') && filePreview.dataUrl" class="file-media-preview" :src="filePreview.dataUrl" :alt="filePreviewName" />
@@ -1066,7 +1066,7 @@ watch(() => currentTab.value?.id, async () => {
 
     <div v-else-if="currentTab?.kind === 'diff'" :key="currentTab.id" class="inspector-content repository-panel flex min-h-0 flex-col overflow-hidden p-0 text-[var(--font-size-body)]">
       <div class="repository-diff">
-        <div v-if="appStore.activeRepositoryDiffLoading" class="repository-state" :class="ui.empty"><LoaderCircle v-spin :size="18" class="is-spinning" /></div>
+        <div v-if="appStore.activeRepositoryDiffLoading" class="repository-state" :class="ui.empty"><LoadingRing :size="18" /></div>
         <div v-else-if="appStore.activeRepositoryDiffError && !activeDiff" class="repository-state error-text" :class="ui.empty">{{ appStore.activeRepositoryDiffError }}</div>
         <template v-else-if="activeDiff">
           <div v-if="appStore.activeRepositoryDiffError" class="diff-notice error-text">{{ appStore.activeRepositoryDiffError }}</div>
@@ -1122,7 +1122,7 @@ watch(() => currentTab.value?.id, async () => {
         ><ChevronsDownUp :size="15" /></button>
       </div>
       <div class="panel-file-tree">
-        <div v-if="appStore.activeRepositoryLoading && !repository" class="repository-state"><LoaderCircle v-spin :size="18" class="is-spinning" /></div>
+        <div v-if="appStore.activeRepositoryLoading && !repository" class="repository-state"><LoadingRing :size="18" /></div>
         <p v-else-if="appStore.activeRepositoryError" class="error-text" role="alert">{{ appStore.activeRepositoryError }}</p>
         <template v-else>
           <p v-if="sessionChangesError" class="error-text">{{ sessionChangesError }}</p>
