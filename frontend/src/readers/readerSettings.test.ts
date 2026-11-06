@@ -13,10 +13,9 @@ describe("normalizeReaderSettings", () => {
   });
 
   it("keeps known values and drops unknown ones", () => {
-    const settings = normalizeReaderSettings({ theme: "sepia", fontSize: 22, tocAutoClose: false, theme2: "x" });
+    const settings = normalizeReaderSettings({ theme: "sepia", fontSize: 22, theme2: "x" });
     expect(settings.theme).toBe("sepia");
     expect(settings.fontSize).toBe(22);
-    expect(settings.tocAutoClose).toBe(false);
     expect(settings).not.toHaveProperty("theme2");
   });
 

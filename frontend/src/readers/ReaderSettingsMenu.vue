@@ -107,11 +107,6 @@ const themeLabels: Record<ReaderTheme, string> = {
           <input type="checkbox" :checked="readerSettings.animateTurns" @change="updateReaderSettings({ animateTurns: ($event.target as HTMLInputElement).checked })" />
         </label>
       </template>
-
-      <label class="reader-settings-row">
-        <span>{{ tr("reader.tocAutoClose") }}</span>
-        <input type="checkbox" :checked="readerSettings.tocAutoClose" @change="updateReaderSettings({ tocAutoClose: ($event.target as HTMLInputElement).checked })" />
-      </label>
     </div>
   </div>
 </template>

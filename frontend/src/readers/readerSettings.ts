@@ -18,8 +18,6 @@ export interface ReaderSettings {
   fontFamily: string;
   fontSize: number;
   lineHeight: number;
-  /** Whether picking a chapter closes the table of contents. */
-  tocAutoClose: boolean;
   /** EPUB: wheel turns a page instead of scrolling a column. */
   wheelPaging: boolean;
   /** EPUB: slide between pages instead of jumping. */
@@ -42,7 +40,6 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   fontFamily: "",
   fontSize: 18,
   lineHeight: 1.6,
-  tocAutoClose: true,
   wheelPaging: true,
   animateTurns: true,
 };
@@ -65,7 +62,6 @@ export function normalizeReaderSettings(input: unknown): ReaderSettings {
     fontFamily: typeof source.fontFamily === "string" ? source.fontFamily : DEFAULT_READER_SETTINGS.fontFamily,
     fontSize: clamp(Number(source.fontSize) || DEFAULT_READER_SETTINGS.fontSize, BOUNDS.fontSize),
     lineHeight: clamp(Number(source.lineHeight) || DEFAULT_READER_SETTINGS.lineHeight, BOUNDS.lineHeight),
-    tocAutoClose: typeof source.tocAutoClose === "boolean" ? source.tocAutoClose : DEFAULT_READER_SETTINGS.tocAutoClose,
     wheelPaging: typeof source.wheelPaging === "boolean" ? source.wheelPaging : DEFAULT_READER_SETTINGS.wheelPaging,
     animateTurns: typeof source.animateTurns === "boolean" ? source.animateTurns : DEFAULT_READER_SETTINGS.animateTurns,
   };

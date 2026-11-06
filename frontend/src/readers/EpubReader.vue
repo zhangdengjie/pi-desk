@@ -43,6 +43,8 @@ const loading = ref(true);
 const failure = ref<"" | "unsupported" | "load">("");
 const fraction = ref(0);
 const tocOpen = ref(false);
+const tocButton = ref<HTMLElement | null>(null);
+const tocPanel = ref<HTMLElement | null>(null);
 const toc = shallowRef<FoliateTocItem[]>([]);
 const activeLabel = ref("");
 const host = ref<HTMLElement | null>(null);
@@ -526,6 +528,7 @@ const turn = (delta: number) => {
 
 /** Both floating panels, closed from either document. */
 const closeOverlays = () => {
+  if (tocOpen.value) tocOpen.value = false;
   if (searchOpen.value) closeSearch();
   settingsMenu.value?.close();
 };
@@ -543,7 +546,9 @@ const closeOverlays = () => {
  *   hit back into page 1's box — selecting text on page 1 instead of the visible page.
  */
 const onBookPointerDown = (event: Event) => {
-  const overlayOpen = searchOpen.value || Boolean(settingsMenu.value?.isOpen?.());
+  // The book lives in an iframe, so a press inside it never reaches the `useDismiss` listener on
+  // our own document: this is the only place a press on the page can close the panels.
+  const overlayOpen = tocOpen.value || searchOpen.value || Boolean(settingsMenu.value?.isOpen?.());
   closeOverlays();
   event.stopPropagation();
   if (overlayOpen || event.target === watchedDocument?.documentElement) {
@@ -591,9 +596,9 @@ const warmSection = (index: number) => {
   }, 0);
 };
 
+/** Picking a chapter keeps the contents open: the panel is a browser, not a one-shot menu. */
 const goToLocation = (href: string) => {
   if (!view) return;
-  if (readerSettings.tocAutoClose) tocOpen.value = false;
   void view.goTo(href);
 };
 
@@ -716,6 +721,11 @@ watch(() => props.src, () => {
 
 usePositionFlush();
 useDismiss(
+  () => tocOpen.value,
+  () => [tocButton.value, tocPanel.value],
+  () => { tocOpen.value = false; },
+);
+useDismiss(
   () => searchOpen.value,
   () => [
     searchButton.value,
@@ -757,7 +767,7 @@ onBeforeUnmount(() => {
       <button type="button" :aria-label="tr('files.epubNextPage')" :title="tr('files.epubNextPage')" @click="turn(1)"><ChevronRight :size="15" /></button>
       <span class="epub-reader-label">{{ activeLabel || name }}</span>
       <span class="reader-spacer" />
-      <button v-if="hasToc" type="button" :class="{ 'is-active': tocOpen }" :aria-expanded="tocOpen" :aria-label="tr('files.epubContents')" :title="tr('files.epubContents')" @click="tocOpen = !tocOpen"><List :size="15" /></button>
+      <button v-if="hasToc" ref="tocButton" type="button" :class="{ 'is-active': tocOpen }" :aria-expanded="tocOpen" :aria-label="tr('files.epubContents')" :title="tr('files.epubContents')" @click="tocOpen = !tocOpen"><List :size="15" /></button>
       <button ref="searchButton" type="button" :class="{ 'is-active': searchOpen }" :aria-expanded="searchOpen" :aria-label="tr('reader.search')" :title="tr('reader.search')" @click="searchOpen ? closeSearch() : openSearch()"><Search :size="15" /></button>
       <ReaderSettingsMenu ref="settingsMenu" mode="epub" />
     </div>
@@ -766,7 +776,7 @@ onBeforeUnmount(() => {
          never connects, the paginator never sees a size, `open()` never resolves, and the reader
          shows "loading" forever. The state below is an overlay for exactly that reason. -->
     <div class="epub-reader-body">
-      <nav v-if="tocOpen && hasToc" class="reader-toc" :aria-label="tr('files.epubContents')">
+      <nav v-if="tocOpen && hasToc" ref="tocPanel" class="reader-toc" :aria-label="tr('files.epubContents')">
         <button
           v-for="item in tocItems"
           :key="`${item.depth}-${item.href}-${item.label}`"
