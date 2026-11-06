@@ -4402,11 +4402,12 @@ html.is-resizing-pane .inspector {
   min-height: 0;
 }
 
+/* No background here: the reader paints the page colour inline, because the paginator only tiles
+   its background inside its own grid tracks — everything outside them shows this element. */
 .epub-reader-host {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  background: white;
 }
 
 .epub-reader-host foliate-view {

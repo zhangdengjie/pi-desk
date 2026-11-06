@@ -47,7 +47,7 @@ const activeLabel = ref("");
 const host = ref<HTMLElement | null>(null);
 const searchButton = ref<HTMLElement | null>(null);
 const root = ref<HTMLElement | null>(null);
-const settingsMenu = ref<{ close: () => void } | null>(null);
+const settingsMenu = ref<{ close: () => void; isOpen: () => boolean } | null>(null);
 
 // Search state. `searchHit` is an index into `hits`; the query is committed by Enter, the same way
 // the Markdown preview commits it, because scanning every section of a book per keystroke is not
@@ -256,7 +256,22 @@ const closeOverlays = () => {
   settingsMenu.value?.close();
 };
 
-const onBookPointerDown = () => { closeOverlays(); };
+/**
+ * A press inside the book dismisses the floating panel — and only that.
+ *
+ * The listener is capture-phase and swallows the event while a panel is open, because the
+ * paginator acts on presses inside its own document: without this, clicking the empty area below
+ * the text both closed the search box and turned the page.
+ */
+const onBookPointerDown = (event: Event) => {
+  if (!searchOpen.value && !settingsMenu.value?.isOpen?.()) {
+    closeOverlays();
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  closeOverlays();
+};
 
 /** Keyboard inside the book is the same contract as keyboard in the reader: ⌘F, arrows, paging. */
 const onBookKeydown = (event: KeyboardEvent) => onKeydown(event);
@@ -264,10 +279,10 @@ const onBookKeydown = (event: KeyboardEvent) => onKeydown(event);
 const watchBookDocument = () => {
   const doc = view?.renderer?.getContents?.()[0]?.doc;
   if (!doc || doc === watchedDocument) return;
-  watchedDocument?.removeEventListener("pointerdown", onBookPointerDown);
+  watchedDocument?.removeEventListener("pointerdown", onBookPointerDown, { capture: true });
   watchedDocument?.removeEventListener("keydown", onBookKeydown as EventListener);
   watchedDocument = doc;
-  doc.addEventListener("pointerdown", onBookPointerDown);
+  doc.addEventListener("pointerdown", onBookPointerDown, { capture: true });
   doc.addEventListener("keydown", onBookKeydown as EventListener);
 };
 
@@ -432,7 +447,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   destroyed = true;
   searchGeneration += 1;
-  watchedDocument?.removeEventListener("pointerdown", onBookPointerDown);
+  watchedDocument?.removeEventListener("pointerdown", onBookPointerDown, { capture: true });
   watchedDocument?.removeEventListener("keydown", onBookKeydown as EventListener);
   watchedDocument = undefined;
   globalThis.removeEventListener("keydown", onKeydown);
@@ -481,7 +496,7 @@ onBeforeUnmount(() => {
           @next="goToHit(Math.min(hits.length - 1, searchHit + 1))"
           @previous="goToHit(Math.max(0, searchHit - 1))"
         />
-        <div ref="host" class="epub-reader-host" />
+        <div ref="host" class="epub-reader-host" :style="{ background: colors.page }" />
         <div v-if="searchOpen && hits.length" class="reader-search-results" role="listbox" :aria-label="tr('reader.searchResults')">
           <button
             v-for="(hit, index) in hits"
