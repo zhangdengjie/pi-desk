@@ -30,7 +30,10 @@ const props = withDefaults(defineProps<{
   name: string;
   /** Stable per document (workspace + path), never the tab id: the position outlives the tab. */
   positionKey?: string;
-}>(), { positionKey: "" });
+  /** False while another inspector tab is in front. The pane stays mounted (that is what keeps the
+   *  book, its layout and the page), so the global keyboard shortcuts must stand down. */
+  active?: boolean;
+}>(), { positionKey: "", active: true });
 
 const emit = defineEmits<{ relocate: [location: string, fraction: number] }>();
 
@@ -625,6 +628,8 @@ const onWheel = (event: WheelEvent) => {
 };
 
 const onKeydown = (event: KeyboardEvent) => {
+  // Another tab is in front: a mounted-but-hidden book must not answer for it.
+  if (!props.active) return;
   // ⌘F belongs to the reader while a book is on screen. ConversationPane and the Markdown preview
   // both step aside for `activeDocumentReaderVisible`, so exactly one of them opens a search box.
   if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "f") {

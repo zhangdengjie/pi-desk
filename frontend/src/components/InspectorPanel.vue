@@ -3,6 +3,7 @@ import { ui } from "../ui/classes";
 import { Binary, ChevronRight, FileCode2, FileDiff, PanelRightClose, FolderOpen, Globe, Terminal, Plus, X, Maximize2, Minimize2, Search, ChevronDown, ChevronsDownUp, ChevronsUpDown, ExternalLink, List, ArrowLeft } from "lucide-vue-next";
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { pruneTerminalIds, promoteTerminalId } from "../utils/terminalPool";
+import { pruneDocumentIds, promoteDocumentId } from "../utils/documentPool";
 import { type PanelTab, useAppStore } from "../stores/app";
 import { buildRepositoryTree, type RepositoryTreeEntry, type RepositoryTreeNode } from "../utils/fileMentions";
 import { fuzzyScore } from "../utils/fuzzySearch";
@@ -39,37 +40,39 @@ const filePreview = computed(() => appStore.activeRepositoryFilePreview);
 const filePreviewName = computed(() => appStore.activeRepositoryFilePreviewPath.split(/[\\/]/).pop() || appStore.activeRepositoryFilePreviewPath);
 
 /**
- * The one document the reader views can open, or `undefined` for every ordinary file.
+ * The one document a file tab views, or `undefined` for every ordinary file.
  *
  * The bytes come from `/workspace-file` (Range, no RPC payload) whenever the workspace is local.
  * A remote workspace keeps the data URL the preview RPC already produced: its bytes exist only on
  * the other machine, and `absolutePath` is the field that says so (`RepositoryService.PreviewFile`
  * clears it for SSH).
+ *
+ * Read from the tab, not from the active one: a reader stays mounted while another tab is in front,
+ * so its source must keep describing its own document.
  */
-const readerDocument = computed(() => {
-  const preview = filePreview.value;
+const documentFor = (tab: PanelTab | undefined) => {
+  if (!tab || tab.kind !== "file") return undefined;
+  const preview = tab.preview;
   const mediaType = preview?.mediaType ?? "";
   if (mediaType !== "application/pdf" && mediaType !== "application/epub+zip") return undefined;
   const thread = appStore.activeThread;
-  const path = appStore.activeRepositoryFilePreviewPath;
+  const path = tab.path ?? preview?.path ?? "";
   if (!thread || !path) return undefined;
   const src = preview?.absolutePath
     ? workspaceFileUrl({ workspaceId: thread.workspaceId, workspacePath: thread.workspacePath, path })
     : preview?.dataUrl ?? "";
-  return { mediaType, src, name: filePreviewName.value };
-});
-/**
- * Where this document was left, keyed by workspace + path.
- *
- * Not the tab: the tab is transient and the panel-state blob is a bulk snapshot taken when some
- * unrelated action asks for one, so a position stored there was both short-lived and stale.
- */
-const readerPositionKey = computed(() => {
-  const thread = appStore.activeThread;
-  const path = appStore.activeRepositoryFilePreviewPath;
-  if (!thread || !path) return "";
-  return documentPositionKey(thread.workspaceId || thread.workspacePath, path);
-});
+  if (!src) return undefined;
+  return {
+    mediaType,
+    src,
+    name: tab.title || path.split(/[\\/]/).pop() || path,
+    /** Where the document was left, keyed by workspace + path.
+     *
+     * Not the tab: the tab is transient and the panel-state blob is a bulk snapshot taken when some
+     * unrelated action asks for one, so a position stored there was both short-lived and stale. */
+    positionKey: documentPositionKey(thread.workspaceId || thread.workspacePath, path),
+  };
+};
 const workspaceName = computed(() => workspaceLabel.value.split(/[\\/]/).filter(Boolean).pop() || tr("inspector.files"));
 function breadcrumbs(path: string) {
   const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
@@ -96,6 +99,33 @@ const mountedTerminalTabs = computed(() => {
   if (currentTab.value?.kind === "terminal") ids.add(currentTab.value.id);
   return terminalTabs.value.filter((tab) => ids.has(tab.id));
 });
+
+// Document readers follow the same rule for the same reason, and one more: a re-created reader
+// re-fetches and re-parses the book (the loading overlay the user sees on every tab switch).
+// Closing or switching threads drops the ids so the readers are actually released.
+const documentTabs = computed(() =>
+  (appStore.activePanel?.tabs ?? []).flatMap((tab) => {
+    const document = documentFor(tab);
+    return document ? [{ tab, document }] : [];
+  }),
+);
+const keptDocumentIds = ref<string[]>([]);
+watch(
+  () => [currentTab.value?.id ?? "", documentTabs.value.map((entry) => entry.tab.id).join("\n")],
+  () => {
+    const active = currentTab.value;
+    if (active && documentFor(active)) keptDocumentIds.value = promoteDocumentId(keptDocumentIds.value, active.id);
+    keptDocumentIds.value = pruneDocumentIds(keptDocumentIds.value, documentTabs.value.map((entry) => entry.tab.id));
+  },
+  { immediate: true },
+);
+const mountedDocumentTabs = computed(() => {
+  const ids = new Set(keptDocumentIds.value);
+  if (currentTab.value) ids.add(currentTab.value.id);
+  return documentTabs.value.filter((entry) => ids.has(entry.tab.id));
+});
+/** The active tab is a document, so its reader (not the file panel) owns the content area. */
+const activeDocument = computed(() => Boolean(documentFor(currentTab.value)));
 const markdownRendered = computed({ get: () => currentTab.value?.markdownRendered !== false, set: (value) => { if (currentTab.value) currentTab.value.markdownRendered = value; appStore.scheduleDesktopStateSave(); } });
 const activeSpreadsheetSheet = computed({ get: () => currentTab.value?.sheet ?? 0, set: (value) => { if (currentTab.value) currentTab.value.sheet = value; appStore.scheduleDesktopStateSave(); } });
 const filter = computed({ get: () => currentTab.value?.filter ?? "", set: (value) => { if (currentTab.value) currentTab.value.filter = value; appStore.scheduleDesktopStateSave(); } });
@@ -984,36 +1014,12 @@ watch(() => currentTab.value?.id, async () => {
     <div v-if="panelMenu === 'open'" id="panel-open-menu" ref="openMenu" class="panel-menu" role="menu" :aria-label="tr('inspector.openOptions')" @click="panelMenu = undefined"><button type="button" role="menuitem" @click="void appStore.openActiveRepositoryFile(true)"><FolderOpen :size="17" />{{ tr('inspector.showInExplorer') }}</button></div>
     <p v-if="currentTab?.error && (currentTab.kind === 'browser' || currentTab.kind === 'terminal')" class="diff-notice error-text" role="alert">{{ currentTab.error }}</p>
     <div class="panel-body" :class="{ 'has-tree': (currentTab?.kind === 'file' || currentTab?.kind === 'diff') && currentTab.treeOpen }">
-    <div v-if="currentTab?.kind === 'file'" :key="currentTab.id" class="inspector-content file-preview-panel">
+    <div v-if="currentTab?.kind === 'file' && !activeDocument" :key="currentTab.id" class="inspector-content file-preview-panel">
       <div v-if="appStore.activeRepositoryFilePreviewLoading && !filePreview" class="repository-state" :class="ui.empty"><LoadingRing :size="18" /></div>
       <div v-else-if="appStore.activeRepositoryFilePreviewError" class="repository-state error-text" :class="ui.empty">{{ appStore.activeRepositoryFilePreviewError }}</div>
       <template v-else-if="filePreview">
         <ZoomableImage v-if="filePreview.mediaType?.startsWith('image/') && filePreview.dataUrl" class="file-media-preview" :src="filePreview.dataUrl" :alt="filePreviewName" />
         <audio v-else-if="filePreview.mediaType?.startsWith('audio/') && filePreview.dataUrl" class="file-audio-preview" :src="filePreview.dataUrl" controls />
-        <PdfReader
-          v-else-if="readerDocument?.mediaType === 'application/pdf' && readerDocument.src"
-          :key="`pdf:${currentTab?.id ?? ''}`"
-          class="file-document-preview"
-          :src="readerDocument.src"
-          :name="readerDocument.name"
-          :position-key="readerPositionKey"
-        >
-          <template #fallback>
-            <ReaderFallback @open="void appStore.openActiveRepositoryFile()" @open-with="void appStore.openActiveRepositoryFileWith()" @reveal="void appStore.openActiveRepositoryFile(true)" />
-          </template>
-        </PdfReader>
-        <EpubReader
-          v-else-if="readerDocument?.mediaType === 'application/epub+zip' && readerDocument.src"
-          :key="`epub:${currentTab?.id ?? ''}`"
-          class="file-document-preview"
-          :src="readerDocument.src"
-          :name="readerDocument.name"
-          :position-key="readerPositionKey"
-        >
-          <template #fallback>
-            <ReaderFallback @open="void appStore.openActiveRepositoryFile()" @open-with="void appStore.openActiveRepositoryFileWith()" @reveal="void appStore.openActiveRepositoryFile(true)" />
-          </template>
-        </EpubReader>
         <div v-else-if="spreadsheet" class="file-spreadsheet-preview">
           <div class="spreadsheet-scroll" role="region" :aria-label="tr('files.spreadsheetPreview')" tabindex="0">
             <table v-if="activeSheet?.rows.length" class="spreadsheet-grid">
@@ -1092,6 +1098,40 @@ watch(() => currentTab.value?.id, async () => {
 
     <BrowserPane v-else-if="currentTab?.kind === 'browser'" :key="currentTab.id" :tab="currentTab" />
     <TerminalPane v-for="tab in mountedTerminalTabs" v-show="tab.id === currentTab?.id" :key="tab.id" :session-id="tab.terminalId" :active="tab.id === currentTab?.id" />
+    <!-- A reader stays mounted for every warm document tab; switching tabs only hides its pane.
+         `visibility`, not `v-show`: foliate-js pages a book from its container's measured width
+         and pdf.js sizes canvases from it, so a `display:none` box would re-flow/re-render the
+         book at 0×0 the moment the reader looked away. The panes share the first grid cell, which
+         is why `.panel-body` pins its content children in workbench.css. -->
+    <div
+      v-for="entry in mountedDocumentTabs"
+      :key="entry.tab.id"
+      class="file-document-preview document-reader-pane"
+      :class="{ 'is-active': entry.tab.id === currentTab?.id }"
+    >
+      <PdfReader
+        v-if="entry.document.mediaType === 'application/pdf'"
+        :src="entry.document.src"
+        :name="entry.document.name"
+        :position-key="entry.document.positionKey"
+        :active="entry.tab.id === currentTab?.id"
+      >
+        <template #fallback>
+          <ReaderFallback @open="void appStore.openActiveRepositoryFile()" @open-with="void appStore.openActiveRepositoryFileWith()" @reveal="void appStore.openActiveRepositoryFile(true)" />
+        </template>
+      </PdfReader>
+      <EpubReader
+        v-else
+        :src="entry.document.src"
+        :name="entry.document.name"
+        :position-key="entry.document.positionKey"
+        :active="entry.tab.id === currentTab?.id"
+      >
+        <template #fallback>
+          <ReaderFallback @open="void appStore.openActiveRepositoryFile()" @open-with="void appStore.openActiveRepositoryFileWith()" @reveal="void appStore.openActiveRepositoryFile(true)" />
+        </template>
+      </EpubReader>
+    </div>
     <div v-if="currentTab?.kind === 'files' || ((currentTab?.kind === 'file' || currentTab?.kind === 'diff') && currentTab.treeOpen)" key="directory" class="panel-directory">
       <label class="panel-file-filter"><Search :size="16" /><input v-model="filter" type="search" :placeholder="tr('inspector.filterFiles')" :aria-label="tr('inspector.filterFiles')" /></label>
       <div v-if="fileEntries.length" class="panel-file-tools">

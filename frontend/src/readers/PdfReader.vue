@@ -25,7 +25,10 @@ const props = withDefaults(defineProps<{
   name: string;
   /** Stable per document (workspace + path), never the tab id: the position outlives the tab. */
   positionKey?: string;
-}>(), { positionKey: "" });
+  /** False while another inspector tab is in front. The pane stays mounted (that is what keeps the
+   *  document, zoom and scroll offset), so the global keyboard shortcuts must stand down. */
+  active?: boolean;
+}>(), { positionKey: "", active: true });
 
 const emit = defineEmits<{ relocate: [page: number] }>();
 
@@ -421,6 +424,8 @@ const openSearch = () => {
 
 /** Arrow keys page like the EPUB reader; a form control keeps its own arrow behaviour. */
 const onKeydown = (event: KeyboardEvent) => {
+  // Another tab is in front: a mounted-but-hidden reader must not answer for it.
+  if (!props.active) return;
   // ⌘F belongs to the reader while a document is on screen; ConversationPane and the Markdown
   // preview both step aside for `activeDocumentReaderVisible`.
   if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "f") {

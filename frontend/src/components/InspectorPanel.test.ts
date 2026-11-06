@@ -18,6 +18,13 @@ const repositoryMocks = vi.hoisted(() => ({
 }));
 vi.mock("../services/repository", () => ({ repositoryService: repositoryMocks }));
 vi.mock("../services/terminal", () => ({ terminalService: {}, onTerminalEvent: () => () => undefined }));
+// The reader's engine is a worker + a large dynamic import; the tests below only care that the
+// reader element survives a tab switch, so keep the engine pending like PdfReader.test.ts does.
+vi.mock("../readers/pdfEngine", () => ({
+  hasNativePdfSupport: () => true,
+  pdfDocumentOptions: () => ({}),
+  loadPdfEngine: () => new Promise(() => {}),
+}));
 function panelState(threadId: string, tab: Partial<PanelTab> & Pick<PanelTab, "kind" | "path">) {
   const id = threadId + ":" + tab.path;
   return { inspectorByThread: { [threadId]: { tabs: [{ id, title: tab.path || "", ...tab }], activeId: id, open: true, width: 600, expanded: false } } };
@@ -511,6 +518,54 @@ describe("InspectorPanel", () => {
     expect(wrapper.find('button[title="Open file"]').exists()).toBe(false);
     expect(wrapper.find('button[title="Show in file manager"]').exists()).toBe(false);
     expect(wrapper.find(".panel-open-split").exists()).toBe(false);
+  });
+
+  it("keeps a document reader mounted while another tab is in front", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    const thread = { id: "thread-doc", title: "Docs", workspace: "repo", workspacePath: "/repo", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
+    store.$patch({
+      threads: [thread],
+      activeThreadId: "thread-doc",
+      inspectorByThread: {
+        "thread-doc": {
+          open: true, width: 600, expanded: false, activeId: "doc",
+          tabs: [
+            { id: "doc", kind: "file", title: "book.pdf", path: "book.pdf", pinned: true, preview: {
+              path: "book.pdf", absolutePath: "/repo/book.pdf", mediaType: "application/pdf", size: 10, binary: true, truncated: false,
+            } },
+            { id: "notes", kind: "file", title: "notes.md", path: "notes.md", pinned: true, preview: {
+              path: "notes.md", absolutePath: "/repo/notes.md", content: "# Notes", size: 7, binary: false, truncated: false,
+            } },
+          ],
+        },
+      },
+    });
+    store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
+    store.scheduleDesktopStateSave = vi.fn();
+    const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
+    // The reader is an async component; wait for the chunk instead of counting microtasks.
+    for (let attempt = 0; attempt < 40 && !wrapper.find(".document-reader-pane .pdf-reader").exists(); attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const reader = wrapper.find(".document-reader-pane .pdf-reader");
+    expect(reader.exists()).toBe(true);
+    const element = reader.element;
+
+    store.selectPanelTab("notes");
+    await flushPromises();
+    // Mounted, hidden, and not re-created: same DOM node (Vue reuses it), which is what keeps the
+    // parsed document, zoom and scroll offset. The pane only loses `is-active`.
+    expect(wrapper.find(".document-reader-pane").classes()).not.toContain("is-active");
+    expect(wrapper.find(".document-reader-pane .pdf-reader").element).toBe(element);
+    expect(wrapper.find(".file-preview-panel").text()).toContain("# Notes");
+
+    store.selectPanelTab("doc");
+    await flushPromises();
+    expect(wrapper.find(".document-reader-pane").classes()).toContain("is-active");
+    expect(wrapper.find(".document-reader-pane .pdf-reader").element).toBe(element);
+    wrapper.unmount();
   });
 
   it("renders a linked file in the right inspector preview", async () => {

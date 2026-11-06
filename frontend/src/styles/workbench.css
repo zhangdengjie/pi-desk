@@ -68,7 +68,19 @@
 .panel-open-split img { width: 20px; height: 20px; object-fit: contain; }
 .panel-body { display: grid; flex: 1; min-height: 0; min-width: 0; overflow: hidden; grid-template-columns: minmax(0, 1fr); }
 .panel-body.has-tree { grid-template-columns: minmax(0, 1fr) minmax(160px, 32%); }
-.panel-body > .inspector-content { min-width: 0; min-height: 0; }
+/* Every content pane lives in the first cell, whether the file preview, a diff, a browser, a
+   terminal or a document reader: the inspector shows one at a time, but a reader for a warm
+   document tab is still in the DOM (see `.document-reader-pane` below) and must not push the
+   visible pane into a second row. The tree keeps its own column when the body is split. */
+.panel-body > .inspector-content,
+.panel-body > .document-reader-pane,
+.panel-body > .panel-directory { grid-area: 1 / 1; min-width: 0; min-height: 0; }
+.panel-body.has-tree > .panel-directory { grid-area: 1 / 2; }
+/* A document reader keeps its box while another tab is in front, so `visibility` hides it and
+   `display: none` is not an option: foliate-js pages a book from the measured container width and
+   pdf.js derives canvas sizes from it - a 0×0 box re-flows the book and drops every canvas. */
+.document-reader-pane { visibility: hidden; }
+.document-reader-pane.is-active { visibility: visible; }
 .panel-directory { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--panel-surface); color: var(--text); }
 .has-tree > .panel-directory { border-left: 1px solid var(--panel-rule); }
 .panel-file-filter { display: flex; align-items: center; flex: 0 0 32px; gap: 6px; margin: 8px; padding: 0 10px; border: 1px solid var(--panel-rule); border-radius: 11px; color: var(--panel-muted); }
