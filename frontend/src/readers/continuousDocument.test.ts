@@ -66,6 +66,17 @@ describe("buildContinuousDocument", () => {
     expect(wrappers[2].textContent).toBe("c");
   });
 
+  it("pins the book CSP in the shared head, before any section stylesheet", async () => {
+    const html = await buildContinuousDocument(stubSections([
+      sectionHtml("<p>a</p>", '<link rel="stylesheet" href="blob:css-a"/>'),
+    ]));
+    const doc = new DOMParser().parseFromString(html, "application/xhtml+xml");
+    const csp = doc.querySelector('meta[http-equiv="Content-Security-Policy"]');
+    expect(csp?.getAttribute("content")).toContain("script-src 'none'");
+    expect(csp?.getAttribute("content")).toContain("img-src blob: data:");
+    expect(html.indexOf("Content-Security-Policy")).toBeLessThan(html.indexOf("blob:css-a"));
+  });
+
   it("starts with an uppercase DOCTYPE so the XML parser accepts it", async () => {
     // A lowercase `<!doctype` is a parse error in XML: the whole merged document degrades to a
     // single `parsererror` node and the reader shows an empty page (found in the WKWebView probe;

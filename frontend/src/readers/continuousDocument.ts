@@ -18,6 +18,8 @@
  *   section. Nothing has to be rewritten — see `sectionIndexAt`.
  */
 
+import { EPUB_CSP } from "../utils/foliateCsp";
+
 /** Attribute that maps a node back to the spine item it came from. */
 export const SPINE_ATTR = "data-spine";
 
@@ -85,6 +87,7 @@ export async function buildContinuousDocument(
     "<!DOCTYPE html>",
     '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">',
     '<head><meta charset="utf-8"/>',
+    `<meta http-equiv="Content-Security-Policy" content="${escapeAttribute(EPUB_CSP)}"/>`,
     // A chapter starts a new page, not a new line: without this the part title page and the first
     // chapter title run on in the same column. The paginator's columns are the page boxes here, so
     // a forced column break is exactly a page break.

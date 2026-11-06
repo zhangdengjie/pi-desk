@@ -5,6 +5,7 @@ import wails from "@wailsio/runtime/plugins/vite";
 import { applySafari15Rewrites, hasRegexLookbehind } from "./src/utils/safari15Compat.ts";
 import { applyFoliateSplitView, isFoliatePaginator } from "./src/utils/foliateSplitView.ts";
 import { applyContinuousPagination } from "./src/utils/foliateContinuous.ts";
+import { applyFoliateCsp, isFoliateEpub } from "./src/utils/foliateCsp.ts";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -61,6 +62,24 @@ export default defineConfig({
           return null;
         }
         return { code: result.code, map: null };
+      },
+    },
+    // Book markup is untrusted: strip scripts/handlers and pin a CSP before foliate turns a
+    // section into a blob URL. See src/utils/foliateCsp.ts.
+    {
+      name: "foliate-csp",
+      enforce: "pre" as const,
+      transform(code: string, id: string) {
+        if (!isFoliateEpub(id)) return null;
+        const csp = applyFoliateCsp(code);
+        if (csp.skipped.length > 0) {
+          // A partial match means the upstream loader moved: shipping the reader without the CSP
+          // would silently reopen the same-origin script path, so fail the build instead.
+          this.error(
+            `foliate CSP patch: ${csp.skipped.length} rewrite(s) no longer match ${id}:\n  - ${csp.skipped.join("\n  - ")}`,
+          );
+        }
+        return { code: csp.code, map: null };
       },
     },
     // foliate-js destroys the outgoing page before the incoming one exists, so a chapter turn can
