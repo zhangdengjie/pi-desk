@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readPosition, readerPositionKey, writePosition } from "./readingPositions";
 
 /**
@@ -33,7 +33,10 @@ describe("readingPositions", () => {
 
   it("survives a corrupt blob", async () => {
     localStorage.setItem("pidesk.reader.positions", "{not json");
-    const { readPosition: readFresh } = await import("./readingPositions?corrupt");
-    expect(readFresh("ws\0a.pdf")).toBeUndefined();
+    // The module keeps the parsed map in memory, so reading it again means loading it again —
+    // `vi.resetModules()` (a `?query` import would not survive `vue-tsc`, which checks this file).
+    vi.resetModules();
+    const fresh = await import("./readingPositions");
+    expect(fresh.readPosition("ws\0a.pdf")).toBeUndefined();
   });
 });
