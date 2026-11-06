@@ -5,6 +5,7 @@ import { tr } from "../i18n";
 import {
   FONT_CHOICES, THEMES, readerSettings, updateReaderSettings, type ReaderTheme,
 } from "./readerSettings";
+import { useDismiss } from "./useDismiss";
 
 /**
  * One settings surface for both reader views.
@@ -16,6 +17,11 @@ import {
 const props = defineProps<{ mode: "pdf" | "epub" }>();
 
 const open = ref(false);
+const panel = ref<HTMLElement | null>(null);
+const root = ref<HTMLElement | null>(null);
+// A settings sheet that only closes when you find its own ✕ feels stuck; a press anywhere else
+// dismisses it, and so does Escape.
+useDismiss(() => open.value, () => [root.value, panel.value], () => { open.value = false; });
 const themeLabels: Record<ReaderTheme, string> = {
   light: tr("reader.themeLight"),
   sepia: tr("reader.themeSepia"),
@@ -24,7 +30,7 @@ const themeLabels: Record<ReaderTheme, string> = {
 </script>
 
 <template>
-  <div class="reader-settings">
+  <div ref="root" class="reader-settings">
     <button
       type="button"
       :class="{ 'is-active': open }"
@@ -33,7 +39,7 @@ const themeLabels: Record<ReaderTheme, string> = {
       :title="tr('reader.settings')"
       @click="open = !open"
     ><Settings2 :size="15" /></button>
-    <div v-if="open" class="reader-settings-panel" role="dialog" :aria-label="tr('reader.settings')">
+    <div v-if="open" ref="panel" class="reader-settings-panel" role="dialog" :aria-label="tr('reader.settings')">
       <div class="reader-settings-head">
         <span>{{ tr("reader.settings") }}</span>
         <button type="button" :aria-label="tr('common.close')" @click="open = false"><X :size="13" /></button>

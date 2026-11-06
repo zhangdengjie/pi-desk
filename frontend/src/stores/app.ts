@@ -64,9 +64,6 @@ export interface PanelTab {
    *  source tab is already preserved per tab in `scroll`, so going back lands where the reader left. */
   returnToTabId?: string;
   preview?: RepositoryFilePreview;
-  /** Where the reader view was left. Rides along with the tab in `panelState` (an opaque string the
-   *  Go side only forwards), so reopening a book resumes instead of starting over. */
-  reader?: { page?: number; cfi?: string };
   diff?: RepositoryDiffView;
   loading?: boolean;
   closing?: boolean;
@@ -1467,6 +1464,15 @@ export const useAppStore = defineStore("app", {
         && tab?.kind === "file"
         && tab.markdownRendered !== false
         && this.activeRepositoryFilePreview?.mediaType === "text/markdown";
+    },
+    /** A PDF or EPUB is on screen in the inspector. `Cmd-F` belongs to that reader, so the
+     *  transcript and the Markdown preview both defer to it — same contract as the flag above. */
+    activeDocumentReaderVisible(): boolean {
+      const tab = this.activePanelTab;
+      const mediaType = this.activeRepositoryFilePreview?.mediaType ?? "";
+      return this.inspectorOpen
+        && tab?.kind === "file"
+        && (mediaType === "application/pdf" || mediaType === "application/epub+zip");
     },
     activeSessionChanges(state): SessionFileChange[] {
       return state.sessionChangesByThread[state.activeThreadId] ?? [];

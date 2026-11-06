@@ -18,6 +18,7 @@ import { tr } from "../i18n";
 import { vSpin } from "../utils/spin";
 import ReaderFallback from "../readers/ReaderFallback.vue";
 import { workspaceFileUrl } from "../readers/documentSource";
+import { readerPositionKey as documentPositionKey } from "../readers/readingPositions";
 
 const TerminalPane = defineAsyncComponent(() => import("./TerminalPane.vue"));
 const BrowserPane = defineAsyncComponent(() => import("./BrowserPane.vue"));
@@ -57,22 +58,18 @@ const readerDocument = computed(() => {
     : preview?.dataUrl ?? "";
   return { mediaType, src, name: filePreviewName.value };
 });
-const readerTab = computed(() => (currentTab.value?.kind === "file" ? currentTab.value : undefined));
-// Reading position rides on the tab, and the save is scheduled here rather than left to whichever
-// unrelated action happens to persist preferences next: without the nudge the stored position was
-// always the one from the last save, so reopening a book landed a few pages behind the reader.
-function rememberReaderPage(page: number) {
-  const tab = readerTab.value;
-  if (!tab || tab.reader?.page === page) return;
-  tab.reader = { ...tab.reader, page };
-  appStore.scheduleDesktopStateSave();
-}
-function rememberReaderCfi(cfi: string) {
-  const tab = readerTab.value;
-  if (!tab || tab.reader?.cfi === cfi) return;
-  tab.reader = { ...tab.reader, cfi };
-  appStore.scheduleDesktopStateSave();
-}
+/**
+ * Where this document was left, keyed by workspace + path.
+ *
+ * Not the tab: the tab is transient and the panel-state blob is a bulk snapshot taken when some
+ * unrelated action asks for one, so a position stored there was both short-lived and stale.
+ */
+const readerPositionKey = computed(() => {
+  const thread = appStore.activeThread;
+  const path = appStore.activeRepositoryFilePreviewPath;
+  if (!thread || !path) return "";
+  return documentPositionKey(thread.workspaceId || thread.workspacePath, path);
+});
 const workspaceName = computed(() => workspaceLabel.value.split(/[\\/]/).filter(Boolean).pop() || tr("inspector.files"));
 function breadcrumbs(path: string) {
   const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
@@ -999,8 +996,7 @@ watch(() => currentTab.value?.id, async () => {
           class="file-document-preview"
           :src="readerDocument.src"
           :name="readerDocument.name"
-          :initial-page="readerTab?.reader?.page ?? 1"
-          @relocate="rememberReaderPage"
+          :position-key="readerPositionKey"
         >
           <template #fallback>
             <ReaderFallback @open="void appStore.openActiveRepositoryFile()" @open-with="void appStore.openActiveRepositoryFileWith()" @reveal="void appStore.openActiveRepositoryFile(true)" />
@@ -1012,8 +1008,7 @@ watch(() => currentTab.value?.id, async () => {
           class="file-document-preview"
           :src="readerDocument.src"
           :name="readerDocument.name"
-          :initial-location="readerTab?.reader?.cfi ?? ''"
-          @relocate="rememberReaderCfi"
+          :position-key="readerPositionKey"
         >
           <template #fallback>
             <ReaderFallback @open="void appStore.openActiveRepositoryFile()" @open-with="void appStore.openActiveRepositoryFileWith()" @reveal="void appStore.openActiveRepositoryFile(true)" />

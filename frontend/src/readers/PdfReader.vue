@@ -6,6 +6,8 @@ import { tr } from "../i18n";
 import { vSpin } from "../utils/spin";
 import SearchPopover from "../components/SearchPopover.vue";
 import ReaderSettingsMenu from "./ReaderSettingsMenu.vue";
+import { readPosition, usePositionFlush, writePosition } from "./readingPositions";
+import { useDismiss } from "./useDismiss";
 import { hasNativePdfSupport, loadPdfEngine, pdfDocumentOptions } from "./pdfEngine";
 import "../styles/pdf-text-layer.css";
 
@@ -21,9 +23,9 @@ const props = withDefaults(defineProps<{
   /** Either `/workspace-file?…` or a data URL for workspaces whose bytes cannot be streamed. */
   src: string;
   name: string;
-  /** Page to restore when the tab is reopened. */
-  initialPage?: number;
-}>(), { initialPage: 1 });
+  /** Stable per document (workspace + path), never the tab id: the position outlives the tab. */
+  positionKey?: string;
+}>(), { positionKey: "" });
 
 const emit = defineEmits<{ relocate: [page: number] }>();
 
@@ -69,6 +71,8 @@ const searchHit = ref(0);
 const searching = ref(false);
 const searchProgress = ref(0);
 
+const root = ref<HTMLElement | null>(null);
+const searchButton = ref<HTMLElement | null>(null);
 const scroller = ref<HTMLElement | null>(null);
 const hosts = new Map<number, HTMLElement>();
 const rendered = new Map<number, { scale: number }>();
@@ -218,6 +222,7 @@ const renderWindow = () => {
   const next = Math.min(pageCount.value, last);
   if (next !== currentPage.value) {
     currentPage.value = next;
+    writePosition(props.positionKey, { page: next });
     emit("relocate", next);
   }
 };
@@ -308,6 +313,7 @@ const goToPage = async (page: number) => {
   for (let index = 0; index < target - 1; index += 1) offset += pageHeight(index);
   element.scrollTop = offset;
   currentPage.value = target;
+  writePosition(props.positionKey, { page: target });
   emit("relocate", target);
   scheduleRender();
 };
@@ -415,6 +421,13 @@ const openSearch = () => {
 
 /** Arrow keys page like the EPUB reader; a form control keeps its own arrow behaviour. */
 const onKeydown = (event: KeyboardEvent) => {
+  // ⌘F belongs to the reader while a document is on screen; ConversationPane and the Markdown
+  // preview both step aside for `activeDocumentReaderVisible`.
+  if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "f") {
+    event.preventDefault();
+    openSearch();
+    return;
+  }
   if (event.altKey || event.metaKey || event.ctrlKey) return;
   const target = event.target as HTMLElement | null;
   if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
@@ -450,7 +463,8 @@ const open = async () => {
     loading.value = false;
     await nextTick();
     measure();
-    if (props.initialPage > 1) void goToPage(props.initialPage);
+    const savedPage = readPosition(props.positionKey)?.page ?? 1;
+    if (savedPage > 1) void goToPage(savedPage);
     sizeProbe = probePageSizes();
     void loadOutline();
   } catch {
@@ -462,6 +476,17 @@ const open = async () => {
     failure.value = hasNativePdfSupport() ? LOAD_ERROR : UNSUPPORTED;
   }
 };
+
+usePositionFlush();
+useDismiss(
+  () => searchOpen.value,
+  () => [
+    searchButton.value,
+    root.value?.querySelector(".reader-search") ?? null,
+    root.value?.querySelector(".reader-search-results") ?? null,
+  ],
+  () => { closeSearch(); },
+);
 
 onMounted(() => {
   void open();
@@ -506,7 +531,7 @@ watch(() => props.src, () => {
 </script>
 
 <template>
-  <div class="pdf-reader">
+  <div ref="root" class="pdf-reader">
     <div v-if="!loading && !failure" class="reader-toolbar">
       <button type="button" :aria-label="tr('files.pdfPreviousPage')" :title="tr('files.pdfPreviousPage')" :disabled="currentPage <= 1" @click="step(-1)"><ChevronLeft :size="15" /></button>
       <span class="reader-pagecount">
@@ -524,7 +549,7 @@ watch(() => props.src, () => {
       <button type="button" :aria-label="tr('files.pdfNextPage')" :title="tr('files.pdfNextPage')" :disabled="currentPage >= pageCount" @click="step(1)"><ChevronRight :size="15" /></button>
       <span class="reader-spacer" />
       <button v-if="hasOutline" type="button" :class="{ 'is-active': outlineOpen }" :aria-expanded="outlineOpen" :aria-label="tr('reader.outline')" :title="tr('reader.outline')" @click="outlineOpen = !outlineOpen"><List :size="15" /></button>
-      <button type="button" :class="{ 'is-active': searchOpen }" :aria-expanded="searchOpen" :aria-label="tr('reader.search')" :title="tr('reader.search')" @click="searchOpen ? closeSearch() : openSearch()"><Search :size="15" /></button>
+      <button ref="searchButton" type="button" :class="{ 'is-active': searchOpen }" :aria-expanded="searchOpen" :aria-label="tr('reader.search')" :title="tr('reader.search')" @click="searchOpen ? closeSearch() : openSearch()"><Search :size="15" /></button>
       <button type="button" :aria-label="tr('files.zoomOut')" :title="tr('files.zoomOut')" :disabled="zoom <= MIN_ZOOM" @click="applyZoom(zoom / ZOOM_STEP)"><Minus :size="15" /></button>
       <button type="button" class="reader-zoomlabel" :aria-label="tr('files.zoomReset')" :title="tr('files.zoomReset')" @click="applyZoom(1)">{{ Math.round(zoom * 100) }}%</button>
       <button type="button" :aria-label="tr('files.zoomIn')" :title="tr('files.zoomIn')" :disabled="zoom >= MAX_ZOOM" @click="applyZoom(zoom * ZOOM_STEP)"><Plus :size="15" /></button>

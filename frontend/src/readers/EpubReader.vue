@@ -6,6 +6,8 @@ import { vSpin } from "../utils/spin";
 import SearchPopover from "../components/SearchPopover.vue";
 import ReaderSettingsMenu from "./ReaderSettingsMenu.vue";
 import { THEME_COLORS, readerSettings } from "./readerSettings";
+import { readPosition, usePositionFlush, writePosition } from "./readingPositions";
+import { useDismiss } from "./useDismiss";
 import type { FoliateLocation, FoliateTocItem, FoliateView } from "foliate-js/view.js";
 
 /**
@@ -24,9 +26,9 @@ const props = withDefaults(defineProps<{
   /** Either `/workspace-file?…` or a data URL for workspaces whose bytes cannot be streamed. */
   src: string;
   name: string;
-  /** EPUB CFI to restore when the tab is reopened. */
-  initialLocation?: string;
-}>(), { initialLocation: "" });
+  /** Stable per document (workspace + path), never the tab id: the position outlives the tab. */
+  positionKey?: string;
+}>(), { positionKey: "" });
 
 const emit = defineEmits<{ relocate: [location: string, fraction: number] }>();
 
@@ -42,6 +44,8 @@ const tocOpen = ref(false);
 const toc = shallowRef<FoliateTocItem[]>([]);
 const activeLabel = ref("");
 const host = ref<HTMLElement | null>(null);
+const searchButton = ref<HTMLElement | null>(null);
+const root = ref<HTMLElement | null>(null);
 
 // Search state. `searchHit` is an index into `hits`; the query is committed by Enter, the same way
 // the Markdown preview commits it, because scanning every section of a book per keystroke is not
@@ -70,6 +74,10 @@ const pageStyles = computed(() => {
   html {
     color-scheme: only light;
     background: ${page};
+    /* foliate reads this when it repaints the area around the page. Without it the repaint uses
+       the background captured when the view was created, so a theme change left the first page
+       half-painted until the next turn rebuilt the view. */
+    --theme-bg-color: ${page};
   }
   body {
     color: ${ink};
@@ -110,11 +118,25 @@ const flattenToc = (items: FoliateTocItem[], depth = 0): { label: string; href: 
  * stretching rules. Every call site below goes through here so the order cannot drift again.
  */
 const applyStyles = () => view?.renderer?.setStyles?.(pageStyles.value);
-const animateTurns = () => {
-  const renderer = view?.renderer as (HTMLElement & { setAttribute?: (name: string, value: string) => void }) | undefined;
-  if (!renderer) return;
-  if (readerSettings.animateTurns) renderer.setAttribute?.("animated", "");
-  else renderer.removeAttribute?.("animated");
+
+type RendererElement = HTMLElement & { atEnd?: boolean; atStart?: boolean };
+
+const rendererElement = (): RendererElement | undefined => view?.renderer as RendererElement | undefined;
+
+/**
+ * Animation is chosen per turn, not globally.
+ *
+ * Inside a section the paginator only translates the existing iframe, so a 300ms ease is free. A
+ * turn that crosses into the next section replaces the iframe's document, and animating that slides
+ * an empty page into view before the text arrives — the flicker that made turning feel broken.
+ * `atEnd`/`atStart` tell us which kind of turn this is before it happens.
+ */
+const animateTurn = (delta: number) => {
+  const element = rendererElement();
+  if (!element) return;
+  const crossing = delta > 0 ? element.atEnd === true : element.atStart === true;
+  if (readerSettings.animateTurns && !crossing) element.setAttribute("animated", "");
+  else element.removeAttribute("animated");
 };
 
 /**
@@ -141,7 +163,10 @@ const onRelocate = (event: Event) => {
   const detail = (event as CustomEvent<FoliateLocation>).detail ?? {};
   fraction.value = detail.fraction ?? 0;
   activeLabel.value = detail.tocItem?.label ?? "";
-  if (detail.cfi) emit("relocate", detail.cfi, fraction.value);
+  if (detail.cfi) {
+    writePosition(props.positionKey, { cfi: detail.cfi });
+    emit("relocate", detail.cfi, fraction.value);
+  }
 };
 
 /** A book may link to the web. Cancelling keeps the reader inside the inspector. */
@@ -184,12 +209,11 @@ const open = async () => {
     }
     // Before `init()`: see the note on `applyStyles`. Ordering, not the value, was the bug.
     applyStyles();
-    animateTurns();
     toc.value = (element.book?.toc ?? []) as FoliateTocItem[];
     // Not `init({})`: with no location it calls `next()` and lands on the *second* page of the
     // spine, and `showTextStart` jumps to the `bodymatter` landmark, which skips the cover entirely.
-    // Without a saved position the honest start is index 0.
-    if (props.initialLocation) await element.init({ lastLocation: props.initialLocation });
+    const saved = readPosition(props.positionKey);
+    if (saved?.cfi) await element.init({ lastLocation: saved.cfi });
     else await element.goTo(0);
     loading.value = false;
     await nextTick();
@@ -203,7 +227,7 @@ const open = async () => {
 
 const turn = (delta: number) => {
   if (!view || loading.value) return;
-  animateTurns();
+  animateTurn(delta);
   if (delta < 0) void view.prev();
   else void view.next();
 };
@@ -231,6 +255,13 @@ const onWheel = (event: WheelEvent) => {
 };
 
 const onKeydown = (event: KeyboardEvent) => {
+  // ⌘F belongs to the reader while a book is on screen. ConversationPane and the Markdown preview
+  // both step aside for `activeDocumentReaderVisible`, so exactly one of them opens a search box.
+  if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "f") {
+    event.preventDefault();
+    openSearch();
+    return;
+  }
   if (event.altKey || event.metaKey || event.ctrlKey) return;
   const target = event.target as HTMLElement | null;
   if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
@@ -312,7 +343,9 @@ const openSearch = () => {
 watch(searchQuery, (query) => { void runSearch(query).catch(() => { searching.value = false; }); });
 watch(() => readerSettings.theme, () => applyStyles());
 watch(() => [readerSettings.fontFamily, readerSettings.fontSize, readerSettings.lineHeight], () => applyStyles());
-watch(() => readerSettings.animateTurns, () => animateTurns());
+watch(() => readerSettings.animateTurns, () => {
+  if (!readerSettings.animateTurns) rendererElement()?.removeAttribute("animated");
+});
 watch(() => props.src, () => {
   view?.close();
   view = undefined;
@@ -321,6 +354,17 @@ watch(() => props.src, () => {
   stopSearch();
   void open();
 });
+
+usePositionFlush();
+useDismiss(
+  () => searchOpen.value,
+  () => [
+    searchButton.value,
+    root.value?.querySelector(".reader-search") ?? null,
+    root.value?.querySelector(".reader-search-results") ?? null,
+  ],
+  () => { closeSearch(); },
+);
 
 onMounted(() => {
   void open();
@@ -340,14 +384,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="epub-reader" :style="{ background: colors.page }">
+  <div ref="root" class="epub-reader" :style="{ background: colors.page }">
     <div v-if="!loading && !failure" class="reader-toolbar">
       <button type="button" :aria-label="tr('files.epubPreviousPage')" :title="tr('files.epubPreviousPage')" @click="turn(-1)"><ChevronLeft :size="15" /></button>
       <button type="button" :aria-label="tr('files.epubNextPage')" :title="tr('files.epubNextPage')" @click="turn(1)"><ChevronRight :size="15" /></button>
       <span class="epub-reader-label">{{ activeLabel || name }}</span>
       <span class="reader-spacer" />
       <button v-if="hasToc" type="button" :class="{ 'is-active': tocOpen }" :aria-expanded="tocOpen" :aria-label="tr('files.epubContents')" :title="tr('files.epubContents')" @click="tocOpen = !tocOpen"><List :size="15" /></button>
-      <button type="button" :class="{ 'is-active': searchOpen }" :aria-expanded="searchOpen" :aria-label="tr('reader.search')" :title="tr('reader.search')" @click="searchOpen ? closeSearch() : openSearch()"><Search :size="15" /></button>
+      <button ref="searchButton" type="button" :class="{ 'is-active': searchOpen }" :aria-expanded="searchOpen" :aria-label="tr('reader.search')" :title="tr('reader.search')" @click="searchOpen ? closeSearch() : openSearch()"><Search :size="15" /></button>
       <ReaderSettingsMenu mode="epub" />
     </div>
     <!-- The host is never behind a `v-if`. foliate-js pages a book by measuring its own box, so a

@@ -778,7 +778,7 @@ function onDocumentKeydown(event: KeyboardEvent) {
     if (!appStore.activeThread) return;
     // A rendered Markdown document in the inspector owns the shortcut: the reader is looking at that
     // document, and InspectorPanel's own handler is waiting for exactly this case.
-    if (appStore.activeMarkdownPreviewVisible) return;
+    if (appStore.activeMarkdownPreviewVisible || appStore.activeDocumentReaderVisible) return;
     event.preventDefault();
     void openSearch();
     return;
