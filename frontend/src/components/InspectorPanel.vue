@@ -16,9 +16,16 @@ import SearchPopover from "./SearchPopover.vue";
 import { collectMarkdownOutline, markdownHasHeadings, type MarkdownOutlineEntry } from "../utils/markdownOutline";
 import { tr } from "../i18n";
 import { vSpin } from "../utils/spin";
+import ReaderFallback from "../readers/ReaderFallback.vue";
+import { workspaceFileUrl } from "../readers/documentSource";
 
 const TerminalPane = defineAsyncComponent(() => import("./TerminalPane.vue"));
 const BrowserPane = defineAsyncComponent(() => import("./BrowserPane.vue"));
+// The readers stay behind a dynamic import on purpose. pdf.js 6.x contains `static {}` blocks, and
+// a macOS 12 webview cannot even parse that module — importing it statically would take the whole
+// panel down, including the notice that says the machine is too old.
+const PdfReader = defineAsyncComponent(() => import("../readers/PdfReader.vue"));
+const EpubReader = defineAsyncComponent(() => import("../readers/EpubReader.vue"));
 
 const appStore = useAppStore();
 const repository = computed(() => appStore.activeRepository);
@@ -29,6 +36,38 @@ const remoteWorkspace = computed(() => appStore.activeThread ? appStore.remoteWo
 const workspaceLabel = computed(() => remoteWorkspace.value?.remoteRoot || appStore.activeThread?.workspacePath || "");
 const filePreview = computed(() => appStore.activeRepositoryFilePreview);
 const filePreviewName = computed(() => appStore.activeRepositoryFilePreviewPath.split(/[\\/]/).pop() || appStore.activeRepositoryFilePreviewPath);
+
+/**
+ * The one document the reader views can open, or `undefined` for every ordinary file.
+ *
+ * The bytes come from `/workspace-file` (Range, no RPC payload) whenever the workspace is local.
+ * A remote workspace keeps the data URL the preview RPC already produced: its bytes exist only on
+ * the other machine, and `absolutePath` is the field that says so (`RepositoryService.PreviewFile`
+ * clears it for SSH).
+ */
+const readerDocument = computed(() => {
+  const preview = filePreview.value;
+  const mediaType = preview?.mediaType ?? "";
+  if (mediaType !== "application/pdf" && mediaType !== "application/epub+zip") return undefined;
+  const thread = appStore.activeThread;
+  const path = appStore.activeRepositoryFilePreviewPath;
+  if (!thread || !path) return undefined;
+  const src = preview?.absolutePath
+    ? workspaceFileUrl({ workspaceId: thread.workspaceId, workspacePath: thread.workspacePath, path })
+    : preview?.dataUrl ?? "";
+  return { mediaType, src, name: filePreviewName.value };
+});
+const readerTab = computed(() => (currentTab.value?.kind === "file" ? currentTab.value : undefined));
+function rememberReaderPage(page: number) {
+  const tab = readerTab.value;
+  if (!tab || tab.reader?.page === page) return;
+  tab.reader = { ...tab.reader, page };
+}
+function rememberReaderCfi(cfi: string) {
+  const tab = readerTab.value;
+  if (!tab || tab.reader?.cfi === cfi) return;
+  tab.reader = { ...tab.reader, cfi };
+}
 const workspaceName = computed(() => workspaceLabel.value.split(/[\\/]/).filter(Boolean).pop() || tr("inspector.files"));
 function breadcrumbs(path: string) {
   const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
@@ -949,7 +988,32 @@ watch(() => currentTab.value?.id, async () => {
       <template v-else-if="filePreview">
         <ZoomableImage v-if="filePreview.mediaType?.startsWith('image/') && filePreview.dataUrl" class="file-media-preview" :src="filePreview.dataUrl" :alt="filePreviewName" />
         <audio v-else-if="filePreview.mediaType?.startsWith('audio/') && filePreview.dataUrl" class="file-audio-preview" :src="filePreview.dataUrl" controls />
-        <object v-else-if="filePreview.mediaType === 'application/pdf' && filePreview.dataUrl" class="file-pdf-preview" :data="filePreview.dataUrl" type="application/pdf"><span>{{ tr("files.pdfUnavailable") }}</span></object>
+        <PdfReader
+          v-else-if="readerDocument?.mediaType === 'application/pdf' && readerDocument.src"
+          :key="`pdf:${currentTab?.id ?? ''}`"
+          class="file-document-preview"
+          :src="readerDocument.src"
+          :name="readerDocument.name"
+          :initial-page="readerTab?.reader?.page ?? 1"
+          @relocate="rememberReaderPage"
+        >
+          <template #fallback>
+            <ReaderFallback @open="void appStore.openActiveRepositoryFile()" @open-with="void appStore.openActiveRepositoryFileWith()" @reveal="void appStore.openActiveRepositoryFile(true)" />
+          </template>
+        </PdfReader>
+        <EpubReader
+          v-else-if="readerDocument?.mediaType === 'application/epub+zip' && readerDocument.src"
+          :key="`epub:${currentTab?.id ?? ''}`"
+          class="file-document-preview"
+          :src="readerDocument.src"
+          :name="readerDocument.name"
+          :initial-location="readerTab?.reader?.cfi ?? ''"
+          @relocate="rememberReaderCfi"
+        >
+          <template #fallback>
+            <ReaderFallback @open="void appStore.openActiveRepositoryFile()" @open-with="void appStore.openActiveRepositoryFileWith()" @reveal="void appStore.openActiveRepositoryFile(true)" />
+          </template>
+        </EpubReader>
         <div v-else-if="spreadsheet" class="file-spreadsheet-preview">
           <div class="spreadsheet-scroll" role="region" :aria-label="tr('files.spreadsheetPreview')" tabindex="0">
             <table v-if="activeSheet?.rows.length" class="spreadsheet-grid">

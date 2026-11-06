@@ -4245,6 +4245,230 @@ html.is-resizing-pane .inspector {
   background: white;
 }
 
+/* Reader views (src/readers). The panel gives them the remaining height; inside, the toolbar is a
+   fixed row and the document area takes the rest, because a scrolling reader must own its own
+   scroll container — the panel itself cannot be the scroller without dragging the toolbar along. */
+.file-document-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.pdf-reader,
+.epub-reader {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg-app);
+}
+
+.pdf-reader-state {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+  text-align: center;
+}
+
+.pdf-reader-failure {
+  flex-direction: column;
+}
+
+.pdf-reader-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  flex: 0 0 auto;
+}
+
+.pdf-reader-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.pdf-reader-toolbar button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.pdf-reader-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.pdf-reader-toolbar button.is-active {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.pdf-reader-pagecount {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: var(--font-size-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.pdf-reader-pageinput {
+  width: 44px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-app);
+  color: var(--text);
+  font-size: var(--font-size-label);
+  text-align: center;
+}
+
+.pdf-reader-zoomlabel {
+  min-width: 46px;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-size-label);
+}
+
+.pdf-reader-spacer {
+  flex: 1 1 auto;
+}
+
+.pdf-reader-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  overscroll-behavior: contain;
+}
+
+.pdf-reader-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 auto;
+}
+
+/* Positioned for the text layer, which is absolutely placed over the canvas. */
+.pdf-reader-page {
+  position: relative;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+}
+
+.pdf-reader-page canvas {
+  display: block;
+}
+
+.epub-reader-label {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-size-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.epub-reader-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.epub-reader-host {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  background: white;
+}
+
+.epub-reader-host foliate-view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.epub-reader-toc {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 34%;
+  min-width: 120px;
+  max-width: 260px;
+  padding: 6px 4px;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.epub-reader-toc button {
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-size-label);
+  text-align: start;
+  cursor: pointer;
+}
+
+.epub-reader-toc button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.epub-reader-progress {
+  flex: 0 0 auto;
+  height: 2px;
+  background: var(--border);
+}
+
+.epub-reader-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+.reader-fallback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+.reader-fallback-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font-size: var(--font-size-label);
+  cursor: pointer;
+}
+
+.reader-fallback-actions button:hover {
+  background: var(--bg-hover);
+}
+
 .file-markdown-preview {
   padding: 14px;
   overflow: auto;

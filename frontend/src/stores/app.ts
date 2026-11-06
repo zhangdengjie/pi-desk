@@ -64,6 +64,9 @@ export interface PanelTab {
    *  source tab is already preserved per tab in `scroll`, so going back lands where the reader left. */
   returnToTabId?: string;
   preview?: RepositoryFilePreview;
+  /** Where the reader view was left. Rides along with the tab in `panelState` (an opaque string the
+   *  Go side only forwards), so reopening a book resumes instead of starting over. */
+  reader?: { page?: number; cfi?: string };
   diff?: RepositoryDiffView;
   loading?: boolean;
   closing?: boolean;
@@ -2364,6 +2367,12 @@ export const useAppStore = defineStore("app", {
       if (this.activePanelTab?.kind === "diff") void this.closePanelTab(this.activePanelTab.id);
     },
     async openPreviewedRepositoryFile(reveal = false) { await this.openActiveRepositoryFile(reveal); },
+    async openActiveRepositoryFileWith() {
+      const thread = this.activeThread, tab = this.activePanelTab;
+      if (!thread || !tab?.path || thread.trust !== "approve" || this.remoteWorkspaceForThread(thread)) return;
+      try { await repositoryService.openFileWith(thread.workspacePath, tab.path); }
+      catch (error) { tab.error = errorMessage(error); }
+    },
     async openActiveRepositoryFile(reveal = false) {
       const thread = this.activeThread, tab = this.activePanelTab;
       if (!thread || !tab?.path || thread.trust !== "approve" || this.remoteWorkspaceForThread(thread)) return;
