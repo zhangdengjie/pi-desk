@@ -214,6 +214,11 @@ const renderPage = async (pageNumber: number) => {
 
 const renderWindow = () => {
   if (destroyed || !pdfDocument) return;
+  // A parked reader keeps its parsed document but must not lay out canvases: every inspector tab
+  // switch can resize the pane (the file-tree column comes and goes), and rebuilding the window
+  // for a book nobody is looking at made each switch pay for up to `MAX_CANVAS_PAGES` pages of
+  // canvas and text twice. The `active` watcher runs the pass that was skipped on the way back in.
+  if (!props.active) return;
   const { first, last } = visibleRange();
   const from = Math.max(1, first - KEEP_DISTANCE);
   // Never more than the budget, even if the viewport claims to see everything.
@@ -303,9 +308,15 @@ const measure = () => {
   const horizontal = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
   const width = Math.max(160, element.clientWidth - horizontal);
   if (Math.abs(width - fitWidth.value) <= 1) return;
+  // Do not `releaseAll()`: pages already in the window keep their canvases, and `renderPage`
+  // replaces only the ones whose scale no longer matches. A switch that restores the previous
+  // width then re-renders nothing at all.
+  //
+  // The width is still written while parked: the page grid is what scroll offsets and the saved
+  // reading position are expressed in, and a zero-width grid would clamp a restored page back to
+  // the top. What waits for `active` is the canvas/text-layer work, not the geometry.
   fitWidth.value = width;
-  releaseAll();
-  scheduleRender();
+  if (props.active) scheduleRender();
 };
 
 const goToPage = async (page: number) => {
@@ -521,6 +532,17 @@ onBeforeUnmount(() => {
 });
 
 watch(searchQuery, (query) => { void runSearch(query); });
+// The deferred half of the `active` gates in `renderWindow` / `measure`: the pane is visible and
+// laid out again, so read its real width after the switch's DOM patch and render the window that
+// was skipped while it was parked. If the width came back unchanged, `renderPage` sees matching
+// scales and does nothing.
+watch(() => props.active, (active) => {
+  if (!active) return;
+  void nextTick(() => {
+    measure();
+    scheduleRender();
+  });
+});
 watch(() => props.src, () => {
   releaseAll();
   void loadingTask?.destroy();

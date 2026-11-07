@@ -161,6 +161,34 @@ type RendererElement = HTMLElement & {
 const rendererElement = (): RendererElement | undefined => view?.renderer as RendererElement | undefined;
 
 /**
+ * The paginator re-flows every section when its own box changes size, and one inspector tab
+ * switch can resize all warm readers at once (the file-tree column comes and goes). A parked book
+ * has nobody looking at it, so freeze its box while it is hidden: the paginator's ResizeObserver
+ * then sees no change. Clearing the pin before the parent applies the switch's layout means a
+ * switch that restores the previous width needs no re-flow at all, and one that genuinely resizes
+ * re-flows only the book coming back on screen.
+ */
+let hostPinned = false;
+const pinHost = () => {
+  const element = host.value;
+  if (!element || hostPinned) return;
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  hostPinned = true;
+  element.style.flex = "0 0 auto";
+  element.style.width = `${rect.width}px`;
+  element.style.height = `${rect.height}px`;
+};
+const unpinHost = () => {
+  const element = host.value;
+  if (!element || !hostPinned) return;
+  hostPinned = false;
+  element.style.flex = "";
+  element.style.width = "";
+  element.style.height = "";
+};
+
+/**
  * Whether the whole book is rendered as one document (see `enableContinuousPagination`).
  *
  * It changes three things: chapter boundaries stop being page-turn boundaries, so the cross-section
@@ -401,6 +429,9 @@ const open = async () => {
     await nextTick();
     applyStyles();
     watchBookDocument();
+    // The first mount may have been too early to measure (hidden pane, zero box); the book is
+    // open now, so pin the box the paginator actually got before any later resize reaches it.
+    if (!destroyed && !props.active) pinHost();
   } catch (error) {
     if (destroyed) return;
     console.error(error);
@@ -721,6 +752,10 @@ watch(() => [readerSettings.fontFamily, readerSettings.fontSize, readerSettings.
 watch(() => readerSettings.animateTurns, () => {
   if (!readerSettings.animateTurns) rendererElement()?.removeAttribute("animated");
 });
+watch(() => props.active, (active) => {
+  if (active) unpinHost();
+  else pinHost();
+});
 watch(() => props.src, () => {
   view?.close();
   view = undefined;
@@ -750,6 +785,9 @@ onMounted(() => {
   void open();
   globalThis.addEventListener("keydown", onKeydown);
   host.value?.addEventListener("wheel", onWheel, { passive: false });
+  // First mounted behind another tab: the box is already laid out, so pin it before the first
+  // resize can reach the paginator.
+  if (!props.active) void nextTick(pinHost);
 });
 
 onBeforeUnmount(() => {

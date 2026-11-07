@@ -181,6 +181,42 @@ describe("EpubReader", () => {
     wrapper.unmount();
   });
 
+  it("pins the paginator's box while the book is parked and releases it on the way back", async () => {
+    const { default: EpubReader } = await import("./EpubReader.vue");
+    const wrapper = mount(EpubReader, {
+      props: { src: "/workspace-file?path=a.epub", name: "a.epub" },
+      attachTo: document.body,
+    });
+    const host = wrapper.find(".epub-reader-host").element as HTMLElement;
+    // jsdom has no layout; the pin reads the measured box, so give it one.
+    vi.spyOn(host, "getBoundingClientRect").mockReturnValue({
+      width: 640,
+      height: 480,
+      top: 0,
+      left: 0,
+      right: 640,
+      bottom: 480,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    // Parked: the box must stop following the tree column, or the paginator re-flows the whole
+    // book in the background on every tab switch.
+    await wrapper.setProps({ active: false });
+    expect(host.style.width).toBe("640px");
+    expect(host.style.height).toBe("480px");
+    expect(host.style.flex).toBe("0 0 auto");
+
+    // Back in front: the pin is cleared before the parent applies the new layout, so a switch
+    // that restores the old width produces no resize at all.
+    await wrapper.setProps({ active: true });
+    expect(host.style.width).toBe("");
+    expect(host.style.height).toBe("");
+    expect(host.style.flex).toBe("");
+    wrapper.unmount();
+  });
+
   it("stops pointerdown propagation inside the book document and prevents empty-area presses on <html>", async () => {
     const { default: EpubReader } = await import("./EpubReader.vue");
     const wrapper = mount(EpubReader, {
