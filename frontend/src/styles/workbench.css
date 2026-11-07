@@ -51,6 +51,14 @@
 .panel-expand { margin-left: auto; }
 .panel-workbench button:hover, .panel-menu button:hover { background: var(--panel-selected, var(--bg-hover)); }
 .panel-workbench button:active { background: var(--bg-active); }
+/* The tab's 12px pill is the hover/press surface, not the buttons inside it. The generic `button:hover`
+ * above paints the text button (and the close button) on their own square boxes, which reads as a
+ * straight-edged rectangle inside the rounded tab. Keep the children transparent and paint the pill. */
+.panel-tab:hover { background: var(--panel-selected, var(--bg-hover)); }
+.panel-tab:active { background: var(--bg-active); }
+.panel-workbench .panel-tab > button:hover,
+.panel-workbench .panel-tab > button:active { background: transparent; }
+.panel-workbench .panel-tab > .panel-tab-close:hover { border-radius: 8px; background: var(--bg-active); }
 .panel-workbench button:focus-visible, .panel-menu button:focus-visible, .thread-context-button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 /* Both menus hang off a button in the tab bar / path bar. They used to be native `popover`s placed with
  * CSS anchor positioning (`anchor-name` + `position-anchor` + `anchor()`), but a popover lives in the top
