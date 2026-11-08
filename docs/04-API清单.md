@@ -1,12 +1,12 @@
 # 04 · API 清单
 
 > 基准：`feat/r1a-go-data-plane` @ `abc2726`
-> **一句话**：Pi Desk 没有 HTTP 层。对前端的暴露面 = **15 个 Wails service 的 157 个绑定函数（169 methods）** + **`pi:event` 与 R1a `agent:event`**；对下游 = **`pi --mode rpc` 的 26 个命令帧** + **remote-helper 帧协议**。
+> **一句话**：Pi Desk 没有 HTTP 层。对前端的暴露面 = **15 个 Wails service 的 158 个绑定函数（170 methods）** + **`pi:event` 与 R1a `agent:event`**；对下游 = **`pi --mode rpc` 的 26 个命令帧** + **remote-helper 帧协议**。
 
 ## 0. 怎么重算这份清单
 
 ```bash
-# 方法总数（应为 157）
+# 方法总数（应为 158）
 grep -h 'export function' frontend/bindings/pi-desk/internal/appservice/*.ts | wc -l
 # 单个 service 的方法名
 grep -n 'export function' frontend/bindings/pi-desk/internal/appservice/agentservice.ts
@@ -32,16 +32,16 @@ python3 docs/snippets/gen_api_index.py . > /tmp/api.md   # 脚本副本已存进
 | `ManagedSkillService` | `internal/appservice/skillconfig.go` | 5 | `services/skills.ts` |
 | `OrphanSessionService` | `internal/appservice/orphansession.go` | 5 | `services/orphanSessions.ts` |
 | `TerminalService` | `internal/appservice/terminal.go` | 5 | `services/terminal.ts` |
-| `TaskService` | `internal/appservice/taskservice.go` | 10 | `services/tasks.ts` |
+| `TaskService` | `internal/appservice/taskservice.go` | 11 | `services/tasks.ts` |
 | `PromptTemplateService` | `internal/appservice/promptconfig.go` | 4 | `services/prompts.ts` |
 | `PiMaintenanceService` | `internal/appservice/pimaintenance.go` | 1 | `services/desktop.ts` |
-| **合计** | 15 个 service | **157** | 另有 Wails 自带 `notifications` service（`main.go:190`） |
+| **合计** | 15 个 service | **158** | 另有 Wails 自带 `notifications` service（`main.go:190`） |
 
 > 复算方法数分组：`for f in frontend/bindings/pi-desk/internal/appservice/*.ts; do echo "$(grep -c 'export function' $f) $(basename $f)"; done | sort -rn`
 
 ---
 
-## 2. 方法全表（脚本生成：TS 绑定 × Go 方法定义交叉定位，157 条）
+## 2. 方法全表（脚本生成：TS 绑定 × Go 方法定义交叉定位，158 条）
 
 列含义：`入参`/`返回` 取自生成绑定的 TS 签名；`Go 实现` 是真实方法所在 `文件:行号`。
 
@@ -281,22 +281,23 @@ python3 docs/snippets/gen_api_index.py . > /tmp/api.md   # 脚本副本已存进
 | `SessionFileChanges` | request: domain.SessionFileChangesRequest | domain.SessionFileChanges | `internal/appservice/repository.go:353` |
 | `Snapshot` | request: domain.RepositoryRequest | domain.RepositorySnapshot | `internal/appservice/repository.go:111` |
 
-### TaskService — 10 个方法
+### TaskService — 11 个方法
 
 绑定：`frontend/bindings/pi-desk/internal/appservice/taskservice.ts`
 
 | 方法 | 入参 | 返回 | Go 实现 |
 |---|---|---|---|
-| `ArchiveTask` | request: domain.TaskRequest | domain.TaskDetail | `internal/appservice/taskservice.go:226` |
-| `CancelTask` | request: domain.TaskRequest | domain.TaskDetail | `internal/appservice/taskservice.go:180` |
+| `AdoptThread` | request: domain.AdoptThreadRequest | domain.TaskDetail | `internal/appservice/taskservice.go:92` |
+| `ArchiveTask` | request: domain.TaskRequest | domain.TaskDetail | `internal/appservice/taskservice.go:286` |
+| `CancelTask` | request: domain.TaskRequest | domain.TaskDetail | `internal/appservice/taskservice.go:240` |
 | `Enabled` | — | boolean | `internal/appservice/taskservice.go:57` |
-| `GetRunUsage` | request: domain.TaskRunRequest | domain.TaskUsageSummary | `internal/appservice/taskservice.go:160` |
-| `GetTask` | request: domain.TaskRequest | domain.TaskDetail | `internal/appservice/taskservice.go:92` |
+| `GetRunUsage` | request: domain.TaskRunRequest | domain.TaskUsageSummary | `internal/appservice/taskservice.go:220` |
+| `GetTask` | request: domain.TaskRequest | domain.TaskDetail | `internal/appservice/taskservice.go:152` |
 | `ListArchivedTasks` | — | domain.TaskSummary[] | null | `internal/appservice/taskservice.go:65` |
-| `ListRunEvents` | request: domain.TaskEventsRequest | domain.TaskEventView[] | null | `internal/appservice/taskservice.go:125` |
+| `ListRunEvents` | request: domain.TaskEventsRequest | domain.TaskEventView[] | null | `internal/appservice/taskservice.go:185` |
 | `ListTasks` | — | domain.TaskSummary[] | null | `internal/appservice/taskservice.go:61` |
-| `RetryTask` | request: domain.TaskRequest | domain.TaskDetail | `internal/appservice/taskservice.go:253` |
-| `UnarchiveTask` | request: domain.TaskRequest | domain.TaskDetail | `internal/appservice/taskservice.go:230` |
+| `RetryTask` | request: domain.TaskRequest | domain.TaskDetail | `internal/appservice/taskservice.go:313` |
+| `UnarchiveTask` | request: domain.TaskRequest | domain.TaskDetail | `internal/appservice/taskservice.go:290` |
 
 ### TerminalService — 5 个方法
 
@@ -310,7 +311,7 @@ python3 docs/snippets/gen_api_index.py . > /tmp/api.md   # 脚本副本已存进
 | `Stop` | request: domain.TerminalRequest | — | `internal/appservice/terminal.go:158` |
 | `Write` | request: domain.TerminalWriteRequest | — | `internal/appservice/terminal.go:136` |
 
-<!-- TOTAL_METHODS=157 -->
+<!-- TOTAL_METHODS=158 -->
 
 ## 3. 唯一的事件通道：`pi:event`
 

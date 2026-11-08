@@ -220,3 +220,33 @@ harness off         → raw
 normalized display payload 上限 256KB；SQLite 仍存 16KB 摘要。
 队列 8192；message.delta / run / tool 终态在满队列时最多等待 100ms。
 ```
+
+## 第十刀：R1b 收尾
+
+```text
+completed Run → Task completed
+  FinishRun(completed) 同步 Task completed + completedAt
+  completed Task 允许开新 Run（completed → queued），仍走状态机
+
+手动收养
+  TaskService.AdoptThread(threadId)
+  已有 Task 直接返回；已归档自动取消归档
+  未导入的 thread 复用 ImportLegacy 建 Task + 历史 Run
+  AppSidebar 会话右键新增 "Open in Tasks"
+
+app.ts facade
+  5,134 → 4,691 行
+  定时任务实现抽到 stores/scheduledTaskActions.ts（239 行）
+  消息历史纯函数抽到 stores/transcriptHistory.ts（315 行）
+  app.ts 保留同名 action facade，现有调用不变
+```
+
+验证：
+
+```text
+TMPDIR=/tmp go test ./...                 ✅
+go vet ./...                              ✅
+frontend typecheck                        ✅
+frontend test 109 files / 1290 tests      ✅
+frontend build                            ✅
+```

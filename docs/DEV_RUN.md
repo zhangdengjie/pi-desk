@@ -616,7 +616,7 @@ Vue -> Wails service -> Go host -> pi --mode rpc
   走的是 `panelState` 同款路子：**opaque JSON string**，Go 三层只透传不解析
   （`domain/catalog.go` + `workspace/catalog.go` 各一个 `TreeExpanded string \`json:"treeExpanded,omitempty"\``，
   `appservice/catalog.go` 两处逐字段映射），所以坏 blob 由读侧降级成「全收起」，不会让加载失败。
-  存盘 payload 在 `frontend/src/stores/app.ts:4700-4730`（`packTreeExpanded` 在 `:635`，回填在 `:4395-4410`）
+  存盘 payload 在 `frontend/src/stores/app.ts:4640-4650`（`packTreeExpanded` 在 `:730`，回填在 `:4315-4325`）
   → 想知道持不持久化，查那张表而不是猜。
   ⚠️ 只写 open 的目录：`false` 与「无记录」等价，别把它写回去撑大文件。
   ⚠️ 改完 Go 侧字段必须 `wails3 generate bindings -f '' -clean=true -ts -i`，

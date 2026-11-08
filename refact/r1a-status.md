@@ -42,7 +42,7 @@ raw binary 因没有 bundle identifier，notifications 服务报错退出；这�
 ```text
 1. 只 Tap 本地 Supervisor；远程 Pi 走独立 broker，R2 接入同一 Handle。
 2. Runtime 接口已实现但 AgentService 仍用内部 agentRuntime；R1b 再切换。
-3. Task 完成态未自动收敛（Run 完成只更新 Run）；R1b 定义 Task 生命周期。
+3. Task 完成态未自动收敛（Run 完成只更新 Run）；R1b 已补 completed → Task completed。
 4. agent:event 已发出但前端未消费；R1b 做 reducer 拆分与 Task Center。
 5. task_schedules / worktree / tool_executions 表未建；R2。
 6. R0 已收口：docs 入库、P0-1/P0-3、bindings 门禁、基线截图均完成，见 `refact/r0-status.md`。
