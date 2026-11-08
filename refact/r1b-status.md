@@ -155,8 +155,19 @@ state stores
 ✅ normalized tool + run + message 事件（flag 默认 false）
 ✅ Task Center cancel / retry（remote 暂不支持）
 ✅ 历史导入 Task 的 Run 关联
-⏳ useNormalizedEvents 真机灰度（flag 仍默认 false）
+✅ 真机 A/B：PI_DESK_HARNESS=1 vs +PI_DESK_NORMALIZED_EVENTS=1，工具卡/消息/run 无异常
 ⏳ Task Center archive
 ```
 
 > 先做加法（Task Center），再做可测试的纯函数（message/tool/retry）；下一刀才是 5k 行 store 的结构拆分。
+
+## 真机 A/B（2026-11-08）
+
+```text
+A: PI_DESK_HARNESS=1
+B: PI_DESK_HARNESS=1 PI_DESK_NORMALIZED_EVENTS=1
+同一条带 bash 工具的 prompt，各新建一个任务
+
+结果：工具卡、流式消息、run 状态无异常；B 未出现重复/缺失
+开关：BootstrapState.NormalizedEvents，启动时读取，reload 不够
+```
