@@ -12,7 +12,7 @@ import {
   X,
   XCircle,
 } from "lucide-vue-next";
-import { computed, nextTick, onBeforeUnmount, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { tr } from "../i18n";
 import { useAppStore, type PiModel } from "../stores/app";
 import { ui } from "../ui/classes";
@@ -33,6 +33,7 @@ const editorID = ref("");
 const editorError = ref("");
 const draft = ref<ScheduledTaskDraft>(newScheduledTaskDraft());
 const deletedTask = ref<ScheduledTask>();
+const actionError = ref("");
 let undoTimer: ReturnType<typeof setTimeout> | undefined;
 
 const trustedLocalWorkspaces = computed(() => appStore.workspaces.filter((workspace) => workspace.kind !== "ssh" && workspace.trust === "approve" && !workspace.discovered));
@@ -159,22 +160,52 @@ function closeEditor() {
   editorError.value = "";
 }
 
-function saveTask() {
+async function saveTask() {
   try {
-    appStore.saveScheduledTask(draft.value, editorID.value);
+    if (appStore.bootstrap?.r2Scheduler) await appStore.saveScheduledTaskGo(draft.value, editorID.value);
+    else appStore.saveScheduledTask(draft.value, editorID.value);
     closeEditor();
   } catch (error) {
     editorError.value = error instanceof Error ? error.message : String(error);
   }
 }
 
-function removeTask(taskID: string) {
+async function removeTask(taskID: string) {
+  actionError.value = "";
+  if (appStore.bootstrap?.r2Scheduler) {
+    try {
+      await appStore.deleteScheduledTaskGo(taskID);
+    } catch (error) {
+      actionError.value = error instanceof Error ? error.message : String(error);
+    }
+    return;
+  }
   if (undoTimer) clearTimeout(undoTimer);
   deletedTask.value = appStore.deleteScheduledTask(taskID);
   undoTimer = setTimeout(() => {
     deletedTask.value = undefined;
     undoTimer = undefined;
   }, 8_000);
+}
+
+async function toggleTask(task: ScheduledTask) {
+  actionError.value = "";
+  try {
+    if (appStore.bootstrap?.r2Scheduler) await appStore.toggleScheduledTaskGo(task.id);
+    else appStore.toggleScheduledTask(task.id);
+  } catch (error) {
+    actionError.value = error instanceof Error ? error.message : String(error);
+  }
+}
+
+async function runTask(task: ScheduledTask) {
+  actionError.value = "";
+  try {
+    if (appStore.bootstrap?.r2Scheduler) await appStore.runScheduledTaskGo(task.id);
+    else await appStore.runScheduledTask(task.id);
+  } catch (error) {
+    actionError.value = error instanceof Error ? error.message : String(error);
+  }
 }
 
 function undoDelete() {
@@ -192,6 +223,12 @@ function openLatestRun(task: ScheduledTask) {
 function onDialogBackdrop(event: MouseEvent) {
   if (event.target === editorDialog.value) closeEditor();
 }
+
+onMounted(() => {
+  void appStore.refreshScheduledTasks().catch((error) => {
+    actionError.value = error instanceof Error ? error.message : String(error);
+  });
+});
 
 onBeforeUnmount(() => {
   if (undoTimer) clearTimeout(undoTimer);
@@ -215,6 +252,8 @@ onBeforeUnmount(() => {
       <XCircle :size="16" />
       <span>{{ tr("scheduledTasks.noWorkspace") }}</span>
     </p>
+
+    <p v-if="actionError" class="scheduled-task-error" role="alert">{{ actionError }}</p>
 
     <div class="scheduled-tasks-toolbar" role="tablist" :aria-label="tr('scheduledTasks.title')">
       <button v-for="item in (['active', 'paused', 'all'] as const)" :key="item" :class="ui.tab" type="button" role="tab" :aria-selected="filter === item" @click="filter = item">
@@ -268,10 +307,10 @@ onBeforeUnmount(() => {
         </div>
         <div class="scheduled-task-actions">
           <label class="scheduled-task-switch">
-            <input type="checkbox" :checked="task.enabled" :disabled="!task.modelProvider || !task.modelId || !task.thinkingLevel" :aria-label="tr('scheduledTasks.enable', { name: task.name })" @change="appStore.toggleScheduledTask(task.id)" />
+            <input type="checkbox" :checked="task.enabled" :disabled="!task.modelProvider || !task.modelId || !task.thinkingLevel" :aria-label="tr('scheduledTasks.enable', { name: task.name })" @change="void toggleTask(task)" />
             <span aria-hidden="true" />
           </label>
-          <button :class="ui.iconButton" type="button" :title="tr('scheduledTasks.runNow')" :aria-label="tr('scheduledTasks.runNow')" :disabled="appStore.scheduledTaskRunningByID[task.id] || task.lastStatus === 'started' || !task.modelProvider || !task.modelId || !task.thinkingLevel" @click="void appStore.runScheduledTask(task.id)">
+          <button :class="ui.iconButton" type="button" :title="tr('scheduledTasks.runNow')" :aria-label="tr('scheduledTasks.runNow')" :disabled="appStore.scheduledTaskRunningByID[task.id] || task.lastStatus === 'started' || !task.modelProvider || !task.modelId || !task.thinkingLevel" @click="void runTask(task)">
             <RotateCcw v-spin v-if="appStore.scheduledTaskRunningByID[task.id]" class="is-spinning" :size="16" />
             <Play v-else :size="16" />
           </button>
@@ -281,7 +320,7 @@ onBeforeUnmount(() => {
           <button :class="ui.iconButton" type="button" :title="tr('scheduledTasks.editNamed', { name: task.name })" :aria-label="tr('scheduledTasks.editNamed', { name: task.name })" @click="void openEditor(task)">
             <Pencil :size="16" />
           </button>
-          <button :class="[ui.iconButton, 'scheduled-task-delete']" type="button" :title="tr('scheduledTasks.deleteNamed', { name: task.name })" :aria-label="tr('scheduledTasks.deleteNamed', { name: task.name })" @click="removeTask(task.id)">
+          <button :class="[ui.iconButton, 'scheduled-task-delete']" type="button" :title="tr('scheduledTasks.deleteNamed', { name: task.name })" :aria-label="tr('scheduledTasks.deleteNamed', { name: task.name })" @click="void removeTask(task.id)">
             <Trash2 :size="16" />
           </button>
         </div>

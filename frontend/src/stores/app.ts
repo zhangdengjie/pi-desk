@@ -43,15 +43,20 @@ import {
   checkScheduledTasks,
   clearScheduledTaskStopping,
   deleteScheduledTask,
+  deleteScheduledTaskGo as deleteScheduledTaskGoAction,
   finishScheduledRun,
   isScheduledTaskStopping,
+  loadGoSchedules,
   markScheduledTaskStopping,
   restoreScheduledTask,
   runScheduledTask,
+  runScheduledTaskGo as runScheduledTaskGoAction,
   saveScheduledTask,
+  saveScheduledTaskGo as saveScheduledTaskGoAction,
   startScheduledTaskScheduler,
   stopScheduledTaskScheduler,
   toggleScheduledTask,
+  toggleScheduledTaskGo as toggleScheduledTaskGoAction,
 } from "./scheduledTaskActions";
 
 import {
@@ -2907,6 +2912,21 @@ export const useAppStore = defineStore("app", {
     saveScheduledTask(draft: ScheduledTaskDraft, taskID = "") {
       return saveScheduledTask(this, draft, taskID);
     },
+    async refreshScheduledTasks() {
+      await loadGoSchedules(this);
+    },
+    async saveScheduledTaskGo(draft: ScheduledTaskDraft, taskID = "") {
+      return saveScheduledTaskGoAction(this, draft, taskID);
+    },
+    async deleteScheduledTaskGo(taskID: string) {
+      return deleteScheduledTaskGoAction(this, taskID);
+    },
+    async toggleScheduledTaskGo(taskID: string) {
+      await toggleScheduledTaskGoAction(this, taskID);
+    },
+    async runScheduledTaskGo(taskID: string) {
+      return runScheduledTaskGoAction(this, taskID);
+    },
     deleteScheduledTask(taskID: string): ScheduledTask | undefined {
       return deleteScheduledTask(this, taskID);
     },
@@ -3823,6 +3843,7 @@ export const useAppStore = defineStore("app", {
       }
       this.finishAssistant(thread.id);
       this.finishScheduledRun(thread.id, cancelled ? "cancelled" : messages.findLast(message => message.role === "assistant")?.error ? "failed" : "completed");
+      if (this.bootstrap?.r2Scheduler) void this.refreshScheduledTasks();
       if (thread.id !== this.activeThreadId || appIsInBackground()) thread.unread = true;
       {
         const reload = (async () => {
@@ -3853,6 +3874,7 @@ export const useAppStore = defineStore("app", {
       thread.status = "attention";
       thread.error = error;
       this.finishScheduledRun(thread.id, isScheduledTaskStopping(thread.id) ? "cancelled" : "failed", thread.error);
+      if (this.bootstrap?.r2Scheduler) void this.refreshScheduledTasks();
       this.finishAssistant(thread.id);
       if (thread.id !== this.activeThreadId || appIsInBackground()) thread.unread = true;
       this.queueByThread[thread.id] = { steering: [], followUp: [] };
@@ -3870,6 +3892,9 @@ export const useAppStore = defineStore("app", {
       if (!thread || !this.useNormalizedForThread(thread)) return;
       const payload = agentPayload(event.payload);
       if (event.type === "run.started") {
+        thread.started = true;
+        if (event.sessionPath) thread.sessionFile = event.sessionPath;
+        if (event.generation) thread.generation = event.generation;
         this.applyRunStarted(thread);
         return;
       }

@@ -1,13 +1,17 @@
 import { agentService } from "../services/agent";
+import { scheduleService } from "../services/schedules";
+import { tasksService } from "../services/tasks";
 import { tr } from "../i18n";
 import { createID } from "../utils/ids";
 import {
   localDateTimeToISO,
   nextScheduledRun,
   scheduledTaskThinkingLevels,
+  toLocalDateTimeInput,
   type ScheduledTask,
   type ScheduledTaskDraft,
 } from "../utils/scheduledTasks";
+import type { ScheduleSaveRequest, ScheduleSummary } from "../../bindings/pi-desk/internal/domain";
 import type { useAppStore } from "./app";
 import type { PiModel, ThreadSummary } from "./app";
 
@@ -42,7 +46,7 @@ function errorMessage(error: unknown): string {
 }
 
 export function startScheduledTaskScheduler(store: AppStore) {
-  if (scheduledTaskTimer) return;
+  if (store.bootstrap?.r2Scheduler || scheduledTaskTimer) return;
   scheduledTaskTimer = setInterval(() => void checkScheduledTasks(store), 30_000);
 }
 
@@ -130,6 +134,7 @@ export function toggleScheduledTask(store: AppStore, taskID: string) {
 }
 
 export function finishScheduledRun(store: AppStore, threadId: string, status: "completed" | "failed" | "cancelled", error = "") {
+  if (store.bootstrap?.r2Scheduler) return;
   for (const task of store.scheduledTasks) {
     if (task.lastThreadId !== threadId || task.lastStatus !== "started") continue;
     task.lastStatus = status;
@@ -227,8 +232,209 @@ export async function runScheduledTask(store: AppStore, taskID: string, manual =
   }
 }
 
+
+function taskFromGo(value: ScheduleSummary): ScheduledTask {
+  return {
+    id: value.id,
+    taskId: value.taskId,
+    name: value.name,
+    prompt: value.prompt,
+    workspaceId: value.workspaceId,
+    modelProvider: value.modelProvider || undefined,
+    modelId: value.modelId || undefined,
+    modelName: value.modelName || undefined,
+    thinkingLevel: value.thinkingLevel || undefined,
+    frequency: value.frequency as ScheduledTask["frequency"],
+    time: value.time || undefined,
+    weekday: value.weekday,
+    runAt: value.runAt || undefined,
+    enabled: value.enabled,
+    nextRunAt: value.nextRunAt || undefined,
+    lastRunAt: value.lastRunAt || undefined,
+    lastThreadId: value.lastThreadId || undefined,
+    lastStatus: value.lastStatus as ScheduledTask["lastStatus"],
+    lastError: value.lastError || undefined,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+  };
+}
+
+function taskToDraft(task: ScheduledTask): ScheduledTaskDraft {
+  return {
+    name: task.name,
+    prompt: task.prompt,
+    workspaceId: task.workspaceId,
+    modelProvider: task.modelProvider || "",
+    modelId: task.modelId || "",
+    modelName: task.modelName || "",
+    thinkingLevel: task.thinkingLevel || "",
+    frequency: task.frequency,
+    time: task.time || "09:00",
+    weekday: task.weekday ?? 1,
+    runAt: toLocalDateTimeInput(task.runAt || new Date()),
+  };
+}
+
+export async function loadGoSchedules(store: AppStore) {
+  if (!store.bootstrap?.r2Scheduler) return;
+  const values = await scheduleService.list();
+  store.scheduledTasks = (values ?? []).map(taskFromGo);
+}
+
+async function createScheduleThread(store: AppStore, workspace: AppStore["workspaces"][number], title: string) {
+  const threadID = createID("thread");
+  const now = nowISO();
+  const thread: ThreadSummary = {
+    id: threadID,
+    title,
+    workspace: workspace.name,
+    workspaceId: workspace.id,
+    workspacePath: workspace.path,
+    trust: "approve",
+    status: "idle",
+    started: false,
+    generation: 0,
+    createdAt: now,
+    modifiedAt: now,
+    unread: false,
+  };
+  store.threads.unshift(thread);
+  store.messagesByThread[threadID] = [];
+  store.draftsByThread[threadID] = "";
+  store.transcriptEntriesByThread[threadID] = [];
+  store.transcriptStateByThread[threadID] = "loaded";
+  store.applyWorkspaceDefaultModel(thread);
+  await store.persistDesktopState();
+  const detail = await tasksService.adoptThread(threadID);
+  return { taskID: detail.id, threadID };
+}
+
+async function ensureScheduleBinding(
+  store: AppStore,
+  existing: ScheduledTask | undefined,
+  workspace: AppStore["workspaces"][number],
+  title: string,
+) {
+  if (existing?.taskId && existing.lastThreadId) {
+    const thread = store.threads.find((candidate) => candidate.id === existing.lastThreadId);
+    if (thread && thread.workspaceId === workspace.id && thread.workspacePath === workspace.path) {
+      return { taskID: existing.taskId, threadID: existing.lastThreadId };
+    }
+  }
+  if (existing?.lastThreadId) {
+    const thread = store.threads.find((candidate) => candidate.id === existing.lastThreadId);
+    if (thread && thread.workspaceId === workspace.id && thread.workspacePath === workspace.path) {
+      const detail = await tasksService.adoptThread(existing.lastThreadId);
+      return { taskID: existing.taskId || detail.id, threadID: existing.lastThreadId };
+    }
+  }
+  return createScheduleThread(store, workspace, title);
+}
+
+export async function saveScheduledTaskGo(
+  store: AppStore,
+  draft: ScheduledTaskDraft,
+  taskID = "",
+  enabledOverride?: boolean,
+): Promise<string> {
+  const workspace = store.workspaces.find((item) => item.id === draft.workspaceId);
+  if (!workspace || workspace.kind === "ssh" || workspace.trust !== "approve") {
+    throw new Error(tr("scheduledTasks.errors.workspace"));
+  }
+  const name = draft.name.trim();
+  const prompt = draft.prompt.trim();
+  if (!name || !prompt) throw new Error(tr("scheduledTasks.errors.required"));
+  const modelProvider = draft.modelProvider.trim();
+  const modelId = draft.modelId.trim();
+  if (!modelProvider || !modelId) throw new Error(tr("scheduledTasks.errors.model"));
+  const thinkingLevel = draft.thinkingLevel.trim();
+  if (!scheduledTaskThinkingLevels.includes(thinkingLevel as (typeof scheduledTaskThinkingLevels)[number])) {
+    throw new Error(tr("scheduledTasks.errors.thinkingLevel"));
+  }
+  const existing = store.scheduledTasks.find((task) => task.id === taskID);
+  const enabled = enabledOverride ?? existing?.enabled ?? true;
+  const schedule = {
+    frequency: draft.frequency,
+    time: draft.frequency === "once" ? undefined : draft.time,
+    weekday: draft.frequency === "weekly" ? draft.weekday : undefined,
+    runAt: draft.frequency === "once" ? localDateTimeToISO(draft.runAt) : undefined,
+  } as const;
+  const nextRunAt = nextScheduledRun(schedule);
+  if (enabled && !nextRunAt) throw new Error(tr("scheduledTasks.errors.future"));
+  const binding = await ensureScheduleBinding(store, existing, workspace, name);
+  const request: ScheduleSaveRequest = {
+    id: existing?.id,
+    taskId: binding.taskID,
+    name,
+    prompt,
+    workspaceId: workspace.id,
+    modelProvider,
+    modelId,
+    modelName: draft.modelName.trim() || undefined,
+    thinkingLevel,
+    frequency: draft.frequency,
+    time: draft.frequency === "once" ? undefined : draft.time,
+    weekday: draft.frequency === "weekly" ? draft.weekday : undefined,
+    runAt: draft.frequency === "once" ? localDateTimeToISO(draft.runAt) : undefined,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "local",
+    enabled,
+    catchUp: true,
+    nextRunAt: enabled ? nextRunAt : undefined,
+    lastThreadId: binding.threadID,
+  };
+  const saved = await scheduleService.save(request);
+  await loadGoSchedules(store);
+  store.scheduleDesktopStateSave();
+  return saved.id;
+}
+
+export async function deleteScheduledTaskGo(store: AppStore, taskID: string): Promise<ScheduledTask | undefined> {
+  const existing = store.scheduledTasks.find((task) => task.id === taskID);
+  if (!existing) return undefined;
+  await scheduleService.delete({ scheduleId: taskID });
+  await loadGoSchedules(store);
+  if (existing.lastThreadId) {
+    const thread = store.threads.find((candidate) => candidate.id === existing.lastThreadId);
+    if (thread && !thread.sessionFile) store.removeThreadState(thread.id);
+  }
+  store.scheduleDesktopStateSave();
+  return existing;
+}
+
+export async function toggleScheduledTaskGo(store: AppStore, taskID: string): Promise<void> {
+  const task = store.scheduledTasks.find((item) => item.id === taskID);
+  if (!task) return;
+  if (!task.enabled && (!task.modelProvider || !task.modelId || !task.thinkingLevel)) return;
+  await saveScheduledTaskGo(store, taskToDraft(task), task.id, !task.enabled);
+}
+
+export async function runScheduledTaskGo(store: AppStore, taskID: string): Promise<string | undefined> {
+  if (store.scheduledTaskRunningByID[taskID]) return undefined;
+  store.scheduledTaskRunningByID[taskID] = true;
+  try {
+    const result = await scheduleService.runNow({ scheduleId: taskID });
+    if (result.threadId) {
+      const thread = store.threads.find((candidate) => candidate.id === result.threadId);
+      if (thread) {
+        thread.started = true;
+        thread.status = "running";
+        if (result.sessionPath) thread.sessionFile = result.sessionPath;
+        thread.modifiedAt = nowISO();
+      }
+    }
+    await loadGoSchedules(store);
+    store.scheduleDesktopStateSave();
+    return result.threadId || undefined;
+  } catch (error) {
+    await loadGoSchedules(store).catch(() => undefined);
+    throw error;
+  } finally {
+    store.scheduledTaskRunningByID[taskID] = false;
+  }
+}
+
 export async function checkScheduledTasks(store: AppStore, now = new Date()) {
-  if (scheduledTaskTicking || !store.catalogReady) return;
+  if (store.bootstrap?.r2Scheduler || scheduledTaskTicking || !store.catalogReady) return;
   scheduledTaskTicking = true;
   try {
     const due = store.scheduledTasks.filter((task) => task.enabled && task.nextRunAt && Date.parse(task.nextRunAt) <= now.getTime());

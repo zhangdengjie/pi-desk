@@ -1,9 +1,11 @@
 export type ScheduledTaskFrequency = "once" | "hourly" | "daily" | "weekdays" | "weekly";
-export type ScheduledTaskRunStatus = "started" | "completed" | "failed" | "cancelled";
+export type ScheduledTaskRunStatus = "started" | "completed" | "failed" | "cancelled" | "missed" | "skipped";
 export const scheduledTaskThinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 export interface ScheduledTask {
   id: string;
+  /** Go scheduler Task id; present when the schedule is backed by SQLite. */
+  taskId?: string;
   name: string;
   prompt: string;
   workspaceId: string;
