@@ -129,14 +129,14 @@ func TestImportLegacyIdempotentAndDryRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first import: %v", err)
 	}
-	if first.Created != 2 || first.Skipped != 0 {
+	if first.Created != 2 || first.Skipped != 0 || first.Runs != 1 {
 		t.Fatalf("first import report = %+v", first)
 	}
 	second, err := task.ImportLegacy(ctx, service, source, false)
 	if err != nil {
 		t.Fatalf("second import: %v", err)
 	}
-	if second.Created != 0 || second.Skipped != 2 {
+	if second.Created != 0 || second.Skipped != 2 || second.Runs != 0 {
 		t.Fatalf("second import report = %+v", second)
 	}
 	found, err := service.FindTaskByLegacyThreadID(ctx, "thread_a")
@@ -145,6 +145,10 @@ func TestImportLegacyIdempotentAndDryRun(t *testing.T) {
 	}
 	if found.Title != "A" || found.Origin != task.OriginLegacy {
 		t.Fatalf("imported task = %+v", found)
+	}
+	runs, err := service.ListRuns(ctx, found.ID)
+	if err != nil || len(runs) != 1 || runs[0].SessionPath != "/tmp/a.jsonl" {
+		t.Fatalf("imported runs = %+v, %v", runs, err)
 	}
 	fallback, err := service.FindTaskByLegacyThreadID(ctx, "thread_b")
 	if err != nil || fallback.Title != "thread_b" {
