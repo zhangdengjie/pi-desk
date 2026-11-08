@@ -82,6 +82,21 @@ frontend/src/stores/app.ts
 
 `app.ts` 5,028 → 5,038 行；108 个测试文件全绿。
 
+## 第五刀：normalized tool cards（灰度脚手架）
+
+```text
+frontend/src/services/agentEvents.ts
+  onAgentEvent + AgentEvent
+frontend/src/stores/app.ts
+  useNormalizedEvents：默认 false；localStorage 键 `pidesk.useNormalizedEvents=1` 可开启
+  handleAgentEvent：只接管 tool.started / tool.updated / tool.completed / tool.failed
+  flag on 时 raw tool_execution_* 分支直接跳过
+```
+
+前提：Go 侧 `PI_DESK_HARNESS=1` 才会发 `agent:event`。当前只迁移工具卡，message/run 仍走 `pi:event`。
+
+验证：109 个前端测试文件 / 1282 tests 通过；`useNormalizedEvents` 默认 false。
+
 ## 本刀边界（下一刀）
 
 ```text
@@ -89,6 +104,8 @@ frontend/src/stores/app.ts
 ✅ message/tool/retry 的纯 reducer 与测试
 ✅ session live 状态拆出（messages / active assistant / waiting）
 ✅ workspace / threads / workspaceApplications 拆出
+✅ normalized tool cards（flag 默认 false）
+⏳ normalized message/run 事件
 ⏳ repository 引用、usage / composer 状态继续从 app.ts 拆出
 ⏳ useNormalizedEvents 灰度：工具卡 → 运行态 → 消息
 ⏳ 写操作：cancel / retry / archive
