@@ -36,6 +36,27 @@ func (store *Store) GetRun(ctx context.Context, id string) (task.Run, error) {
 	return value, nil
 }
 
+func (store *Store) ListActiveRuns(ctx context.Context) ([]task.Run, error) {
+	rows, err := store.read.QueryContext(ctx, `SELECT `+runColumns+` FROM task_runs WHERE status IN (?, ?, ?, ?) ORDER BY created_at`,
+		string(task.StatusQueued), string(task.StatusRunning), string(task.StatusWaitingApproval), string(task.StatusWaitingInput))
+	if err != nil {
+		return nil, fmt.Errorf("list active runs: %w", err)
+	}
+	defer rows.Close()
+	result := make([]task.Run, 0)
+	for rows.Next() {
+		value, err := scanRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan active run: %w", err)
+		}
+		result = append(result, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list active runs: %w", err)
+	}
+	return result, nil
+}
+
 func (store *Store) ListRuns(ctx context.Context, taskID string) ([]task.Run, error) {
 	rows, err := store.write.QueryContext(ctx, `SELECT `+runColumns+` FROM task_runs WHERE task_id = ? ORDER BY created_at ASC`, taskID)
 	if err != nil {

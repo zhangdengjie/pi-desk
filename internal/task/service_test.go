@@ -203,6 +203,40 @@ func TestTaskArchiveVisibility(t *testing.T) {
 	}
 }
 
+func TestReconcileInterruptedRuns(t *testing.T) {
+	service, closeStore := newService(t)
+	defer closeStore()
+	ctx := context.Background()
+
+	taskValue, err := service.CreateTask(ctx, task.CreateTaskInput{Title: "Interrupted"})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	run, err := service.CreateRun(ctx, taskValue.ID, "pi")
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if _, err := service.StartRun(ctx, run.ID); err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	repaired, err := service.ReconcileInterruptedRuns(ctx, "interrupted before restart")
+	if err != nil || repaired != 1 {
+		t.Fatalf("reconcile = %d, %v", repaired, err)
+	}
+	loadedRun, err := service.GetRun(ctx, run.ID)
+	if err != nil || loadedRun.Status != task.StatusFailed || loadedRun.Error != "interrupted before restart" {
+		t.Fatalf("run = %+v, %v", loadedRun, err)
+	}
+	loadedTask, err := service.GetTask(ctx, taskValue.ID)
+	if err != nil || loadedTask.Status != task.StatusFailed {
+		t.Fatalf("task = %+v, %v", loadedTask, err)
+	}
+	repaired, err = service.ReconcileInterruptedRuns(ctx, "again")
+	if err != nil || repaired != 0 {
+		t.Fatalf("second reconcile = %d, %v", repaired, err)
+	}
+}
+
 func TestStateMachineRejectsTerminalTransitions(t *testing.T) {
 	if !task.CanTransitionTask(task.StatusCreated, task.StatusRunning) {
 		t.Fatal("created -> running should be allowed")

@@ -198,6 +198,26 @@ func (s *Service) FinishRun(ctx context.Context, runID string, status Status, me
 	return run, nil
 }
 
+// ReconcileInterruptedRuns closes Runs left active by a previous process. It
+// is called once at startup, before any new Pi session can start.
+func (s *Service) ReconcileInterruptedRuns(ctx context.Context, message string) (int, error) {
+	runs, err := s.store.ListActiveRuns(ctx)
+	if err != nil {
+		return 0, err
+	}
+	repaired := 0
+	for _, run := range runs {
+		if _, err := s.FinishRun(ctx, run.ID, StatusFailed, message); err != nil {
+			if errors.Is(err, ErrInvalidTransition) {
+				continue
+			}
+			return repaired, err
+		}
+		repaired++
+	}
+	return repaired, nil
+}
+
 func (s *Service) TransitionTask(ctx context.Context, id string, status Status) (Task, error) {
 	task, err := s.store.GetTask(ctx, id)
 	if err != nil {

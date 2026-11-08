@@ -62,6 +62,11 @@ func StartHarness(ctx context.Context, dataDir string, catalog *workspace.Catalo
 	} else {
 		log.Printf("harness: imported %d/%d legacy threads", report.Created, report.Scanned)
 	}
+	if repaired, repairErr := service.ReconcileInterruptedRuns(ctx, "interrupted before Pi Desk restarted"); repairErr != nil {
+		log.Printf("harness: reconcile interrupted runs: %v", repairErr)
+	} else if repaired > 0 {
+		log.Printf("harness: marked %d interrupted run(s) failed", repaired)
+	}
 	tap := eventbus.NewTap(service, store)
 	tap.Start(ctx)
 	return &Harness{store: store, tap: tap, service: service}, nil

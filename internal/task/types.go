@@ -116,6 +116,7 @@ type Store interface {
 	CreateRun(ctx context.Context, run Run) error
 	GetRun(ctx context.Context, id string) (Run, error)
 	ListRuns(ctx context.Context, taskID string) ([]Run, error)
+	ListActiveRuns(ctx context.Context) ([]Run, error)
 	UpdateRun(ctx context.Context, run Run) error
 	MaxEventSeq(ctx context.Context, runID string) (uint64, error)
 

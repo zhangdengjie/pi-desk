@@ -147,7 +147,10 @@ func (tap *Tap) handle(parent context.Context, sessionEvent piruntime.SessionEve
 
 	run, taskID, ok := tap.currentRun(threadID)
 	if !ok {
-		if rawType == "agent_settled" || rawType == "runtime_exit" {
+		// Only a real turn start opens a Run. Status events such as the session-clock
+		// extension's setStatus arrive between turns; opening a Run for them leaves a
+		// permanently "running" Task with no agent_start behind it.
+		if rawType != "agent_start" {
 			return
 		}
 		taskValue, started, err := tap.service.StartRunForThread(ctx, threadID, threadID, "pi")

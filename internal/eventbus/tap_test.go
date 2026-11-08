@@ -153,6 +153,39 @@ func TestTapPersistsRunEventsAndUsage(t *testing.T) {
 	}
 }
 
+func TestTapIgnoresStatusEventsBetweenRuns(t *testing.T) {
+	tap, store := newTapFixture(t)
+	ctx := context.Background()
+
+	handle(tap, "thread_status", "extension_ui_request", `{"type":"extension_ui_request","method":"setStatus","statusKey":"session-clock","statusText":"21:32"}`, 1)
+	tasks, err := store.ListTasks(ctx, 10)
+	if err != nil || len(tasks) != 0 {
+		t.Fatalf("status before a turn created tasks: %+v, %v", tasks, err)
+	}
+
+	handle(tap, "thread_status", "agent_start", `{}`, 1)
+	tasks, err = store.ListTasks(ctx, 10)
+	if err != nil || len(tasks) != 1 {
+		t.Fatalf("agent_start should create one task: %+v, %v", tasks, err)
+	}
+	runs, err := store.ListRuns(ctx, tasks[0].ID)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("agent_start should create one run: %+v, %v", runs, err)
+	}
+	handle(tap, "thread_status", "extension_ui_request", `{"type":"extension_ui_request","method":"setStatus","statusKey":"session-clock","statusText":"21:33"}`, 1)
+	events, err := store.ListEvents(ctx, runs[0].ID, 0)
+	if err != nil || len(events) != 2 || events[1].Type != "extension_ui.requested" {
+		t.Fatalf("in-run status event was not persisted: %+v, %v", events, err)
+	}
+
+	handle(tap, "thread_status", "agent_settled", `{}`, 1)
+	handle(tap, "thread_status", "extension_ui_request", `{"type":"extension_ui_request","method":"setStatus","statusKey":"session-clock","statusText":"21:34"}`, 1)
+	runs, err = store.ListRuns(ctx, tasks[0].ID)
+	if err != nil || len(runs) != 1 || runs[0].Status != task.StatusCompleted {
+		t.Fatalf("post-settle status created another run: %+v, %v", runs, err)
+	}
+}
+
 func TestTapMarksRuntimeExitFailed(t *testing.T) {
 	tap, store := newTapFixture(t)
 	ctx := context.Background()
