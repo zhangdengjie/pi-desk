@@ -97,6 +97,20 @@ frontend/src/stores/app.ts
 
 验证：109 个前端测试文件 / 1282 tests 通过；`useNormalizedEvents` 默认 false。
 
+## 第六刀：normalized run.* + 清理 patchApp
+
+```text
+normalized run.started / run.updated / run.completed / run.cancelled / run.failed
+  Go eventbus 信封增加 error 字段
+  app.ts 抽出 applyRunStarted / applyRunUpdated / applyRunSettled / applyRuntimeExit
+  flag on 时 raw agent_start/agent_end/agent_settled/runtime_exit 跳过
+测试：
+  删除全部 patchApp() 过渡函数（171 个调用点）
+  直接使用 useWorkspaceStore().threads/workspaces = ...
+```
+
+`app.ts` 5,107 行；109 个测试文件 / 1283 tests 全绿。
+
 ## 本刀边界（下一刀）
 
 ```text
@@ -104,8 +118,8 @@ frontend/src/stores/app.ts
 ✅ message/tool/retry 的纯 reducer 与测试
 ✅ session live 状态拆出（messages / active assistant / waiting）
 ✅ workspace / threads / workspaceApplications 拆出
-✅ normalized tool cards（flag 默认 false）
-⏳ normalized message/run 事件
+✅ normalized tool + run 事件（flag 默认 false）
+⏳ normalized message 事件
 ⏳ repository 引用、usage / composer 状态继续从 app.ts 拆出
 ⏳ useNormalizedEvents 灰度：工具卡 → 运行态 → 消息
 ⏳ 写操作：cancel / retry / archive
