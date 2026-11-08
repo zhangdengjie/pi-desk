@@ -1,3 +1,4 @@
+import { useComposerStore } from "./composer";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RuntimeState } from "../../bindings/pi-desk/internal/domain";
@@ -170,13 +171,15 @@ vi.mock("../services/terminal", () => ({
   },
 }));
 import { consumeMentionInsert, useAppStore } from "./app";
+import { useWorkspaceStore } from "./workspace";
 import { DEFAULT_DOCUMENT_POOL, MAX_DOCUMENT_POOL } from "../utils/documentPool";
+
 
 describe("app store", () => {
   it("reveals created and selected browser tabs while keeping state updates in their owning conversation", async () => {
     const store = useAppStore();
     store.scheduleDesktopStateSave = vi.fn();
-    store.threads = ["a", "b"].map(id => ({ id, title: id, workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }));
+    useWorkspaceStore().threads = ["a", "b"].map(id => ({ id, title: id, workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }));
     store.activateThread("a");
     store.openPanelTab({ id: "file", kind: "file", title: "file.ts", pinned: true });
     const status = { tabId: "browser-a", threadId: "a", attached: true, human: false, temporary: true, loading: false, canGoBack: false, canGoForward: false, url: "https://example.com", title: "Example" };
@@ -210,7 +213,7 @@ describe("app store", () => {
   it("isolates panel tabs, preview slots, historical diffs and view state per conversation", async () => {
     const store = useAppStore();
     store.scheduleDesktopStateSave = vi.fn();
-    store.threads = ["a", "b"].map(id => ({ id, title: id, workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }));
+    useWorkspaceStore().threads = ["a", "b"].map(id => ({ id, title: id, workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }));
     store.activateThread("a");
     await store.openRepositoryFilePreview("one.ts", undefined, false);
     await store.openRepositoryFilePreview("two.ts", undefined, false);
@@ -247,7 +250,7 @@ describe("app store", () => {
   it("persists panel metadata without cached file contents and collapses the last tab", async () => {
     const store = useAppStore();
     store.scheduleDesktopStateSave = vi.fn();
-    store.threads = [{ id: "a", title: "a", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];
+    useWorkspaceStore().threads = [{ id: "a", title: "a", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];
     store.activateThread("a");
     store.catalogReady = true;
     await store.openRepositoryFilePreview("main.go");
@@ -276,7 +279,7 @@ describe("app store", () => {
   it("packs only the open directories of the file tree, and restores them per workspace", async () => {
     const store = useAppStore();
     store.scheduleDesktopStateSave = vi.fn();
-    store.threads = [{ id: "a", title: "a", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];
+    useWorkspaceStore().threads = [{ id: "a", title: "a", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];
     store.activateThread("a");
     store.catalogReady = true;
     store.setRepositoryTreeExpanded("src", true);
@@ -312,7 +315,7 @@ describe("app store", () => {
     mocks.getBootstrapState.mockResolvedValue({
       productName: "Pi Desk",
       appVersion: "0.1.0",
-      wailsVersion: "v3.0.0-beta.16",
+      wailsVersion: "v3.1.0",
       workingDirectory: "D:\\work\\repo",
       runtime: { state: "checking", message: "Pi runtime check is pending" },
     });
@@ -393,16 +396,31 @@ describe("app store", () => {
     expect(store.inspectorOpen).toBe(false);
   });
 
+  it("auto-enables normalized events only when the harness is enabled", async () => {
+    const store = useAppStore();
+    localStorage.removeItem("pidesk.useNormalizedEvents");
+    const bootstrap = {
+      productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3.1.0",
+      workingDirectory: "D:\\work\\repo", runtime: { state: "checking", message: "" },
+      harnessEnabled: true, normalizedEventsDisabled: false,
+    };
+    mocks.getBootstrapState.mockResolvedValueOnce(bootstrap);
+    await store.loadBootstrapState();
+    expect(store.useNormalizedEvents).toBe(true);
+
+    mocks.getBootstrapState.mockResolvedValueOnce({ ...bootstrap, harnessEnabled: false });
+    await store.loadBootstrapState();
+    expect(store.useNormalizedEvents).toBe(false);
+  });
+
   it("searches unopened session bodies and caches their text", async () => {
     const store = useAppStore();
-    store.$patch({
-      searchQuery: "hidden semaphore",
-      threads: [{
+    store.$patch({searchQuery: "hidden semaphore"});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Runtime audit", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0, sessionFile: "C:\\sessions\\one.jsonl",
         modifiedAt: "2026-08-10T09:00:00Z",
-      }],
-    });
+      }];;
     mocks.searchSessionText.mockResolvedValueOnce({ messageCount: 2, text: "Inspect the worker\nThe hidden semaphore is released here." });
 
     expect(store.filteredThreads).toEqual([]);
@@ -449,7 +467,7 @@ describe("app store", () => {
   it("blocks archiving busy or queued tasks and selects a remaining task when archiving", () => {
     const store = useAppStore();
     store.scheduleDesktopStateSave = vi.fn();
-    store.threads = ["a", "b"].map(id => ({ id, title: id, workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "idle", started: false, generation: 0 }));
+    useWorkspaceStore().threads = ["a", "b"].map(id => ({ id, title: id, workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "idle", started: false, generation: 0 }));
     store.activeThreadId = "a";
     const thread = store.threads[0];
     for (const status of ["running", "starting"] as const) {
@@ -522,7 +540,7 @@ describe("app store", () => {
   it("does not replace a live runtime with a stale failed probe", async () => {
     const store = useAppStore();
     store.bootstrap = {
-      productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3.0.0-beta.16",
+      productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3.1.0",
       workingDirectory: "D:\\work\\repo", runtime: { state: RuntimeState.RuntimeReady, version: "0.83.0", command: "pi.cmd" },
       window: { x: 0, y: 0, width: 0, height: 0, maximized: false, valid: false },
     };
@@ -538,7 +556,7 @@ describe("app store", () => {
   it("names the environment variable behind an invisible provider", () => {
     const store = useAppStore();
     store.bootstrap = {
-      productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3.0.0-beta.16",
+      productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3.1.0",
       workingDirectory: "D:\\work\\repo", runtime: { state: RuntimeState.RuntimeChecking },
       window: { x: 0, y: 0, width: 0, height: 0, maximized: false, valid: false },
       providerEnvIssues: [{ provider: "bailian", variable: "DASHSCOPE_API_KEY" }],
@@ -751,7 +769,7 @@ describe("app store", () => {
   it("starts Pi asynchronously when a catalog task is selected and closes the oldest idle process above ten", async () => {
     const store = useAppStore();
     store.catalogReady = true;
-    store.threads = Array.from({ length: 11 }, (_, index) => ({
+    useWorkspaceStore().threads = Array.from({ length: 11 }, (_, index) => ({
       id: `thread-${index + 1}`,
       title: `Task ${index + 1}`,
       workspace: "repo",
@@ -816,7 +834,7 @@ describe("app store", () => {
       id: "workspace-review", name: "Remote", path: "", kind: "ssh", targetId: "target-review",
       remoteRoot: "/srv/repo", trust: "approve" as const, addedAt: "", lastOpenedAt: "",
     };
-    store.workspaces = [remote];
+    useWorkspaceStore().workspaces = [remote];
     let finish!: (workspace: typeof remote) => void;
     mocks.resumeRemoteWorkspace.mockReturnValueOnce(new Promise<typeof remote>((resolve) => { finish = resolve; }));
     const operation = action === "connect" ? store.connectRemoteWorkspace(remote.id) : store.createRemoteTaskInWorkspace(remote.id);
@@ -824,7 +842,7 @@ describe("app store", () => {
     await vi.waitFor(() => expect(mocks.resumeRemoteWorkspace).toHaveBeenCalled());
 
     if (reason === "remove") await store.removeWorkspace(remote.id);
-    else if (reason === "forgotten") store.workspaces = [];
+    else if (reason === "forgotten") useWorkspaceStore().workspaces = [];
     else await store.disconnectRemoteTarget(remote.targetId);
     if (reason === "reconnected") store.recordRemoteWorkspace(remote, true);
     finish(remote);
@@ -840,11 +858,11 @@ describe("app store", () => {
   it("selecting a persisted remote thread stays offline until explicit reconnect", async () => {
     const store = useAppStore();
     store.catalogReady = true;
-    store.workspaces = [{
+    useWorkspaceStore().workspaces = [{
       id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote",
       remoteRoot: "/srv/repo", trust: "approve",
     }];
-    store.threads = [{
+    useWorkspaceStore().threads = [{
       id: "thread-remote", title: "Remote task", workspace: "remote", workspaceId: "workspace-remote",
       workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0,
       sessionFile: "C:\\sessions\\remote.jsonl",
@@ -888,11 +906,11 @@ describe("app store", () => {
 
   it("resumes the requested remote thread even if active selection changes", async () => {
     const store = useAppStore();
-    store.workspaces = [{
+    useWorkspaceStore().workspaces = [{
       id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote",
       remoteRoot: "/srv/repo", trust: "approve",
     }];
-    store.threads = [
+    useWorkspaceStore().threads = [
       { id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 },
       { id: "thread-local", title: "Local", workspace: "local", workspacePath: "D:\\work\\local", trust: "approve", status: "idle", started: false, generation: 0 },
     ];
@@ -913,8 +931,8 @@ describe("app store", () => {
 
   it("rejects a reconnect completion after the target is concurrently disconnected", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
     store.activeThreadId = "thread-remote";
     store.messagesByThread["thread-remote"] = [];
     store.draftsByThread["thread-remote"] = "Do not resume";
@@ -939,11 +957,11 @@ describe("app store", () => {
 
   it("keeps a remote prompt draft until reconnect succeeds and then resumes it", async () => {
     const store = useAppStore();
-    store.workspaces = [{
+    useWorkspaceStore().workspaces = [{
       id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote",
       remoteRoot: "/srv/repo", trust: "approve",
     }];
-    store.threads = [{
+    useWorkspaceStore().threads = [{
       id: "thread-remote", title: "Remote task", workspace: "remote", workspaceId: "workspace-remote",
       workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0,
     }];
@@ -964,8 +982,8 @@ describe("app store", () => {
 
   it("stops a stale started Pi session before reconnecting", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
     store.activeThreadId = "thread-remote";
     store.messagesByThread["thread-remote"] = [];
     expect(store.requestRemoteReconnect(store.threads[0], "start")).toBe(true);
@@ -979,8 +997,8 @@ describe("app store", () => {
 
   it("does not dispatch to a started remote Pi after readiness is revoked", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
     store.activeThreadId = "thread-remote";
     store.messagesByThread["thread-remote"] = [];
     store.draftsByThread["thread-remote"] = "Do not dispatch yet";
@@ -995,8 +1013,8 @@ describe("app store", () => {
 
   it("reopens reconnect when resumed prompt startup immediately loses its generation", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
     store.activeThreadId = "thread-remote";
     store.messagesByThread["thread-remote"] = [];
     store.transcriptStateByThread["thread-remote"] = "loaded";
@@ -1014,11 +1032,11 @@ describe("app store", () => {
 
   it("restores a remote prompt when startup loses its generation", async () => {
     const store = useAppStore();
-    store.workspaces = [{
+    useWorkspaceStore().workspaces = [{
       id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote",
       remoteRoot: "/srv/repo", trust: "approve",
     }];
-    store.threads = [{
+    useWorkspaceStore().threads = [{
       id: "thread-remote", title: "Remote task", workspace: "remote", workspaceId: "workspace-remote",
       workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0,
     }];
@@ -1039,11 +1057,11 @@ describe("app store", () => {
 
   it("disconnects every task on a shared remote target and keeps workspace history", async () => {
     const store = useAppStore();
-    store.workspaces = [
+    useWorkspaceStore().workspaces = [
       { id: "workspace-a", name: "remote A", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/a", trust: "approve" },
       { id: "workspace-b", name: "remote B", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/b", trust: "approve" },
     ];
-    store.threads = [
+    useWorkspaceStore().threads = [
       { id: "thread-a", title: "Task A", workspace: "remote A", workspaceId: "workspace-a", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 },
       { id: "thread-b", title: "Task B", workspace: "remote B", workspaceId: "workspace-b", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 },
     ];
@@ -1064,8 +1082,8 @@ describe("app store", () => {
 
   it("waits for an in-flight Pi start before disconnecting its remote target", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
     store.remoteReadyByWorkspace["workspace-remote"] = true;
     let finish!: (value: { threadId: string; generation: number; stateJson: string }) => void;
     mocks.startSession.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
@@ -1086,7 +1104,7 @@ describe("app store", () => {
 
   it("reloads Pi resources by rebuilding the process and keeps the transcript", async () => {
     const store = useAppStore();
-    store.threads = [{ id: "thread-reload", title: "Reload", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 4, sessionFile: "keep.jsonl" }];
+    useWorkspaceStore().threads = [{ id: "thread-reload", title: "Reload", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 4, sessionFile: "keep.jsonl" }];
     store.messagesByThread["thread-reload"] = [];
     const started: string[] = [];
     store.startThreadInBackground = vi.fn((threadId: string) => { started.push(threadId); });
@@ -1100,7 +1118,7 @@ describe("app store", () => {
 
   it("settles the in-flight turn the moment a running thread is closed", async () => {
     const store = useAppStore();
-    store.threads = [{ id: "thread-stop", title: "Stop", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "running", started: true, generation: 7 }];
+    useWorkspaceStore().threads = [{ id: "thread-stop", title: "Stop", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "running", started: true, generation: 7 }];
     store.messagesByThread["thread-stop"] = [{
       id: "a-1", role: "assistant", text: "half", thinking: "hm", timestamp: "10:00",
       streaming: true, activeExecution: "thinking", tools: [],
@@ -1123,7 +1141,7 @@ describe("app store", () => {
 
   it("keeps the transcript settled when a reload restarts the process before the exit event lands", async () => {
     const store = useAppStore();
-    store.threads = [{ id: "thread-reload", title: "Reload", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "running", started: true, generation: 7 }];
+    useWorkspaceStore().threads = [{ id: "thread-reload", title: "Reload", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "running", started: true, generation: 7 }];
     store.messagesByThread["thread-reload"] = [{
       id: "a-1", role: "assistant", text: "half", thinking: "hm", timestamp: "10:00",
       streaming: true, activeExecution: "tool", tools: [],
@@ -1143,7 +1161,7 @@ describe("app store", () => {
 
   it("does not start a fresh Pi process when the old one refuses to close", async () => {
     const store = useAppStore();
-    store.threads = [{ id: "thread-reload", title: "Reload", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 4 }];
+    useWorkspaceStore().threads = [{ id: "thread-reload", title: "Reload", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 4 }];
     store.messagesByThread["thread-reload"] = [];
     mocks.stopSession.mockRejectedValueOnce(new Error("Pi did not stop cleanly"));
     const started = vi.fn();
@@ -1155,8 +1173,8 @@ describe("app store", () => {
 
   it("marks a remote target stale when Pi stop reports revoked capability", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
     store.messagesByThread["thread-remote"] = [];
     store.remoteReadyByWorkspace["workspace-remote"] = true;
     mocks.stopSession.mockRejectedValueOnce(new Error("REMOTE_DISCONNECTED: remote task was revoked because Pi did not stop cleanly"));
@@ -1168,8 +1186,8 @@ describe("app store", () => {
 
   it("revokes a remote target even when its local Pi stop reports failure", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
     store.messagesByThread["thread-remote"] = [];
     store.remoteReadyByWorkspace["workspace-remote"] = true;
     mocks.stopSession.mockRejectedValueOnce(new Error("REMOTE_DISCONNECTED: task revoked"));
@@ -1181,8 +1199,8 @@ describe("app store", () => {
 
   it("does not remove a remote workspace while its local Pi may still be running", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
     store.messagesByThread["thread-remote"] = [];
     store.remoteReadyByWorkspace["workspace-remote"] = true;
     mocks.stopSession.mockRejectedValueOnce(new Error("REMOTE_DISCONNECTED: task revoked"));
@@ -1195,8 +1213,8 @@ describe("app store", () => {
 
   it("drops an in-flight remote Repository refresh when the target disconnects", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
     store.activeThreadId = "thread-remote";
     let finish!: (value: { files: never[]; git: { isRepository: boolean; files: never[] } }) => void;
     mocks.snapshotRepository.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
@@ -1214,11 +1232,11 @@ describe("app store", () => {
 
   it("revokes sibling tasks when removing one workspace from a shared remote target", async () => {
     const store = useAppStore();
-    store.workspaces = [
+    useWorkspaceStore().workspaces = [
       { id: "workspace-a", name: "remote A", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/a", trust: "approve" },
       { id: "workspace-b", name: "remote B", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/b", trust: "approve" },
     ];
-    store.threads = [
+    useWorkspaceStore().threads = [
       { id: "thread-a", title: "Task A", workspace: "remote A", workspaceId: "workspace-a", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 },
       { id: "thread-b", title: "Task B", workspace: "remote B", workspaceId: "workspace-b", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 },
     ];
@@ -1240,11 +1258,11 @@ describe("app store", () => {
 
   it("keeps a shared remote target disconnected when workspace removal fails", async () => {
     const store = useAppStore();
-    store.workspaces = [
+    useWorkspaceStore().workspaces = [
       { id: "workspace-a", name: "remote A", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/a", trust: "approve" },
       { id: "workspace-b", name: "remote B", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/b", trust: "approve" },
     ];
-    store.threads = [{ id: "thread-b", title: "Task B", workspace: "remote B", workspaceId: "workspace-b", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
+    useWorkspaceStore().threads = [{ id: "thread-b", title: "Task B", workspace: "remote B", workspaceId: "workspace-b", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
     store.remoteReadyByWorkspace = { "workspace-a": true, "workspace-b": true };
     mocks.removeWorkspace.mockRejectedValueOnce(new Error("state write failed after revoke"));
 
@@ -1257,8 +1275,8 @@ describe("app store", () => {
 
   it("only clears remote readiness for errors that require reconnect", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{
       id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote",
       workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1,
     }];
@@ -1283,8 +1301,8 @@ describe("app store", () => {
 
   it("does not reconnect for business errors that merely mention a remote code", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
     store.activeThreadId = "thread-remote";
     store.messagesByThread["thread-remote"] = [];
     store.remoteReadyByWorkspace["workspace-remote"] = true;
@@ -1299,13 +1317,13 @@ describe("app store", () => {
 
   it("keeps the first reconnect request while its dialog is open", () => {
     const store = useAppStore();
-    store.workspaces = [
+    useWorkspaceStore().workspaces = [
       { id: "workspace-a", name: "A", path: "", kind: "ssh", targetId: "target-a", remoteRoot: "/a", trust: "approve" },
       { id: "workspace-b", name: "B", path: "", kind: "ssh", targetId: "target-b", remoteRoot: "/b", trust: "approve" },
     ];
     const first = { id: "thread-a", title: "A", workspace: "A", workspaceId: "workspace-a", workspacePath: "", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
     const second = { id: "thread-b", title: "B", workspace: "B", workspaceId: "workspace-b", workspacePath: "", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
-    store.threads = [first, second];
+    useWorkspaceStore().threads = [first, second];
 
     expect(store.requestRemoteReconnect(first, "prompt")).toBe(true);
     expect(store.requestRemoteReconnect(second, "bash")).toBe(true);
@@ -1316,7 +1334,7 @@ describe("app store", () => {
 
   it("seeds a new task with the workspace's remembered model", async () => {
     const store = useAppStore();
-    store.workspaces = [{
+    useWorkspaceStore().workspaces = [{
       id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve",
       defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5", defaultThinking: "high",
     }];
@@ -1344,7 +1362,7 @@ describe("app store", () => {
 
   it("applies the workspace reasoning level before the first prompt is sent", async () => {
     const store = useAppStore();
-    store.workspaces = [{
+    useWorkspaceStore().workspaces = [{
       id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve",
       defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5", defaultThinking: "high",
     }];
@@ -1379,7 +1397,7 @@ describe("app store", () => {
 
   it("drops a remembered level the model no longer offers instead of failing the send", async () => {
     const store = useAppStore();
-    store.workspaces = [{
+    useWorkspaceStore().workspaces = [{
       id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve",
       defaultModelProvider: "anthropic", defaultModelId: "claude-sonnet-4-5", defaultThinking: "xhigh",
     }];
@@ -1581,15 +1599,12 @@ describe("app store", () => {
 
   it("updates workspace access for every related task and restarts idle Pi processes", async () => {
     const store = useAppStore();
-    store.$patch({
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }],
-      threads: [
+    store.$patch({activeThreadId: "thread-1", piProcessOrder: ["thread-1"]});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [
         { id: "thread-1", title: "One", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "deny", status: "idle", started: true, generation: 2 },
         { id: "thread-2", title: "Two", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "deny", status: "idle", started: false, generation: 0 },
-      ],
-      activeThreadId: "thread-1",
-      piProcessOrder: ["thread-1"],
-    });
+      ];;
     mocks.stopSession.mockResolvedValue(undefined);
     store.startThreadInBackground = vi.fn();
 
@@ -1605,14 +1620,12 @@ describe("app store", () => {
 
   it("does not change workspace access while a related task is running", async () => {
     const store = useAppStore();
-    store.$patch({
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }],
-      threads: [
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [
         { id: "thread-1", title: "One", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "deny", status: "idle", started: false, generation: 0 },
         { id: "thread-2", title: "Two", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "deny", status: "running", started: true, generation: 2 },
-      ],
-      activeThreadId: "thread-1",
-    });
+      ];;
 
     expect(store.activeWorkspaceTrustBusy).toBe(true);
     expect(await store.setActiveWorkspaceTrust("approve")).toBe(false);
@@ -1636,14 +1649,12 @@ describe("app store", () => {
 
   it("removes an idle workspace registration without deleting its directory", async () => {
     const store = useAppStore();
-    store.$patch({
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }],
-      threads: [{
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Workspace task", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "deny",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
 
     await store.removeWorkspace("workspace-1");
 
@@ -1655,7 +1666,7 @@ describe("app store", () => {
 
   it("permanently deletes workspace sessions before removing its registration", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }];
 
     await store.removeWorkspace("workspace-1", true);
 
@@ -1666,8 +1677,8 @@ describe("app store", () => {
 
   it("permanently deletes a discovered workspace by its local path", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "discovered-session-1", name: "removed", path: "D:\\work\\removed", trust: "deny", discovered: true }];
-    store.threads = [{
+    useWorkspaceStore().workspaces = [{ id: "discovered-session-1", name: "removed", path: "D:\\work\\removed", trust: "deny", discovered: true }];
+    useWorkspaceStore().threads = [{
       id: "thread-1", title: "Old task", workspace: "removed", workspacePath: "D:\\work\\removed", trust: "deny",
       status: "idle", started: false, generation: 0, sessionFile: "C:\\sessions\\old.jsonl",
     }];
@@ -1687,12 +1698,12 @@ describe("app store", () => {
       firstMessage: "Keep", createdAt: "2026-08-10T08:00:00Z", modifiedAt: "2026-08-10T09:00:00Z", messageCount: 1,
     }]);
     const store = useAppStore();
-    store.workspaces = [
+    useWorkspaceStore().workspaces = [
       { id: "workspace-live", name: "old live", path: "D:\\work\\live", trust: "deny" },
       { id: "workspace-missing", name: "missing", path: "D:\\work\\missing", trust: "deny" },
       { id: "discovered-old", name: "old", path: "D:\\work\\old", trust: "deny", discovered: true },
     ];
-    store.threads = [
+    useWorkspaceStore().threads = [
       { id: "thread-live", title: "Old title", workspace: "old live", workspaceId: "workspace-live", workspacePath: "D:\\work\\live", trust: "deny", status: "idle", started: false, generation: 0, sessionFile: "C:\\sessions\\live.jsonl" },
       { id: "thread-missing-session", title: "Missing session", workspace: "old", workspacePath: "D:\\work\\old", trust: "deny", status: "idle", started: false, generation: 0, sessionFile: "C:\\sessions\\missing.jsonl" },
       { id: "thread-missing-workspace", title: "Missing workspace", workspace: "missing", workspaceId: "workspace-missing", workspacePath: "D:\\work\\missing", trust: "deny", status: "idle", started: false, generation: 0 },
@@ -1780,17 +1791,13 @@ describe("app store", () => {
   it("refreshes available thinking levels after switching the active model", async () => {
     const store = useAppStore();
     const grok = { provider: "grok", id: "grok-4.6", name: "Grok 4.6", reasoning: true };
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-model", sessionStateByThread: { "thread-model": {
+        model: { provider: "openai", id: "gpt-5.6-sol", reasoning: true }, thinkingLevel: "xhigh",
+      } }, thinkingLevelsByThread: { "thread-model": ["off", "minimal", "low", "medium", "high", "xhigh"] }});
+    useWorkspaceStore().threads = [{
         id: "thread-model", title: "Models", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
-      }],
-      activeThreadId: "thread-model",
-      sessionStateByThread: { "thread-model": {
-        model: { provider: "openai", id: "gpt-5.6-sol", reasoning: true }, thinkingLevel: "xhigh",
-      } },
-      thinkingLevelsByThread: { "thread-model": ["off", "minimal", "low", "medium", "high", "xhigh"] },
-    });
+      }];;
     mocks.getState.mockResolvedValueOnce({ model: grok, thinkingLevel: "high" });
     mocks.getAvailableThinkingLevels.mockResolvedValueOnce({ levels: ["low", "medium", "high"] });
 
@@ -1933,15 +1940,11 @@ describe("app store", () => {
     const store = useAppStore();
     const gpt = { provider: "openai", id: "gpt-5.6-sol", reasoning: true };
     const grok = { provider: "grok", id: "grok-4.6", reasoning: true };
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-model-race", sessionStateByThread: { "thread-model-race": { model: gpt } }, thinkingLevelsByThread: { "thread-model-race": ["off", "low", "medium", "high", "xhigh"] }});
+    useWorkspaceStore().threads = [{
         id: "thread-model-race", title: "Models", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
-      }],
-      activeThreadId: "thread-model-race",
-      sessionStateByThread: { "thread-model-race": { model: gpt } },
-      thinkingLevelsByThread: { "thread-model-race": ["off", "low", "medium", "high", "xhigh"] },
-    });
+      }];;
     let resolveOld!: (value: { levels: string[] }) => void;
     mocks.getAvailableThinkingLevels
       .mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }))
@@ -1960,16 +1963,11 @@ describe("app store", () => {
     const store = useAppStore();
     const oldOpenAIModel = { provider: "openai", id: "gpt-5.4", name: "GPT 5.4" };
     const configured = { provider: "openai-direct", id: "gpt-5.6-sol", name: "GPT 5.6 Sol" };
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-runtime-models", modelsByThread: { "thread-runtime-models": [configured] }, configuredModels: [configured], knownRuntimeModels: [oldOpenAIModel]});
+    useWorkspaceStore().threads = [{
         id: "thread-runtime-models", title: "Models", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "running", started: true, generation: 1,
-      }],
-      activeThreadId: "thread-runtime-models",
-      modelsByThread: { "thread-runtime-models": [configured] },
-      configuredModels: [configured],
-      knownRuntimeModels: [oldOpenAIModel],
-    });
+      }];;
 
     expect(store.activeModels).toEqual([configured]);
   });
@@ -1992,13 +1990,8 @@ describe("app store", () => {
     const store = useAppStore();
     const allowed = { provider: "openai", id: "allowed", source: "account" };
     const previous = { provider: "openai", id: "previous" };
-    store.$patch({
-      threads: [{ id: "account-models", title: "Models", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
-      activeThreadId: "account-models",
-      configuredModels: [allowed],
-      modelsByThread: { "account-models": [allowed, previous, { provider: "openai", id: "not-in-account" }] },
-      sessionStateByThread: { "account-models": { model: previous } },
-    });
+    store.$patch({activeThreadId: "account-models", configuredModels: [allowed], modelsByThread: { "account-models": [allowed, previous, { provider: "openai", id: "not-in-account" }] }, sessionStateByThread: { "account-models": { model: previous } }});
+    useWorkspaceStore().threads = [{ id: "account-models", title: "Models", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }];;
     expect(store.activeModels.map(model => model.id)).toEqual(["allowed", "previous"]);
   });
 
@@ -2068,11 +2061,11 @@ describe("app store", () => {
 
   it("refreshes the settled background workspace instead of the active Repository", async () => {
     const store = useAppStore();
-    store.workspaces = [
+    useWorkspaceStore().workspaces = [
       { id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" },
       { id: "workspace-local", name: "local", path: "D:\\local", trust: "approve" },
     ];
-    store.threads = [
+    useWorkspaceStore().threads = [
       { id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "running", started: true, generation: 4 },
       { id: "thread-local", title: "Local", workspace: "local", workspaceId: "workspace-local", workspacePath: "D:\\local", trust: "approve", status: "idle", started: false, generation: 0 },
     ];
@@ -3453,8 +3446,8 @@ describe("app store", () => {
     const store = useAppStore();
     const blocker = { id: "thread-blocker-stale", title: "Blocker", workspace: "local", workspacePath: "D:\\local", trust: "deny" as const, status: "idle" as const, started: false, generation: 0 };
     const remote = { id: "thread-remote-stale", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [blocker, remote];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [blocker, remote];
     store.remoteReadyByWorkspace["workspace-remote"] = true;
     let finishBlocker!: (value: { threadId: string; generation: number; stateJson: string }) => void;
     mocks.startSession.mockReturnValueOnce(new Promise((resolve) => { finishBlocker = resolve; }));
@@ -3475,7 +3468,7 @@ describe("app store", () => {
     const store = useAppStore();
     const blocker = { id: "thread-blocker", title: "Blocker", workspace: "local", workspacePath: "D:\\local", trust: "deny" as const, status: "idle" as const, started: false, generation: 0 };
     const thread = { id: "thread-restart", title: "Restart", workspace: "repo", workspacePath: "D:\\repo", trust: "deny" as const, status: "idle" as const, started: false, generation: 2 };
-    store.threads = [blocker, thread];
+    useWorkspaceStore().threads = [blocker, thread];
     let finishBlocker!: (value: { threadId: string; generation: number; stateJson: string }) => void;
     let finishRestart!: (value: { threadId: string; generation: number; stateJson: string }) => void;
     mocks.startSession
@@ -3693,11 +3686,11 @@ describe("app store", () => {
 
   it("keeps context-change invalidation scoped to one workspace", () => {
     const store = useAppStore();
-    store.workspaces = [
+    useWorkspaceStore().workspaces = [
       { id: "workspace-a", name: "A", path: "", kind: "ssh", targetId: "target-shared", remoteRoot: "/a", trust: "approve" },
       { id: "workspace-b", name: "B", path: "", kind: "ssh", targetId: "target-shared", remoteRoot: "/b", trust: "approve" },
     ];
-    store.threads = [{ id: "thread-a", title: "A", workspace: "A", workspaceId: "workspace-a", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
+    useWorkspaceStore().threads = [{ id: "thread-a", title: "A", workspace: "A", workspaceId: "workspace-a", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
     store.remoteReadyByWorkspace = { "workspace-a": true, "workspace-b": true };
 
     store.remoteFailureMessage("thread-a", new Error("REMOTE_CONTEXT_CHANGED_WAIT_FOR_IDLE"));
@@ -3709,11 +3702,11 @@ describe("app store", () => {
 
   it("revokes every sibling workspace projection after a target failure", () => {
     const store = useAppStore();
-    store.workspaces = [
+    useWorkspaceStore().workspaces = [
       { id: "workspace-a", name: "A", path: "", kind: "ssh", targetId: "target-shared", remoteRoot: "/a", trust: "approve" },
       { id: "workspace-b", name: "B", path: "", kind: "ssh", targetId: "target-shared", remoteRoot: "/b", trust: "approve" },
     ];
-    store.threads = [{ id: "thread-a", title: "A", workspace: "A", workspaceId: "workspace-a", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
+    useWorkspaceStore().threads = [{ id: "thread-a", title: "A", workspace: "A", workspaceId: "workspace-a", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
     store.remoteReadyByWorkspace = { "workspace-a": true, "workspace-b": true };
 
     expect(store.remoteFailureMessage("thread-a", new Error("REMOTE_DISCONNECTED: helper exited"))).toContain("REMOTE_DISCONNECTED");
@@ -3724,8 +3717,8 @@ describe("app store", () => {
 
   it("clears remote readiness when a Repository request reports disconnection", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
     store.activeThreadId = "thread-remote";
     store.remoteReadyByWorkspace["workspace-remote"] = true;
     mocks.snapshotRepository.mockRejectedValueOnce(new Error("REMOTE_DISCONNECTED: read lease revoked"));
@@ -3792,8 +3785,8 @@ describe("app store", () => {
 
   it("ignores a Terminal failure from an older remote session incarnation", () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 2 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 2 }];
     store.remoteReadyByWorkspace["workspace-remote"] = true;
     store.setTerminalGeneration("thread-remote", undefined, 2);
     store.markRemoteRepositoryStale("thread-remote");
@@ -4751,11 +4744,7 @@ describe("app store", () => {
 
   it("runs a due one-time task in the background and keeps the scheduled-task page open", async () => {
     const store = useAppStore();
-    store.$patch({
-      catalogReady: true,
-      activePage: "scheduledTasks",
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }],
-      scheduledTasks: [{
+    store.$patch({catalogReady: true, activePage: "scheduledTasks", scheduledTasks: [{
         id: "schedule-1",
         name: "Dependency review",
         prompt: "Review dependency updates.",
@@ -4770,8 +4759,8 @@ describe("app store", () => {
         nextRunAt: "2026-09-03T01:00:00.000Z",
         createdAt: "2026-09-02T01:00:00.000Z",
         updatedAt: "2026-09-02T01:00:00.000Z",
-      }],
-    });
+      }]});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }];;
     mocks.getState
       .mockResolvedValueOnce({ sessionId: "session-1", model: { provider: "openai", id: "gpt-5.6", name: "GPT 5.6" }, isStreaming: false })
       .mockResolvedValueOnce({ sessionId: "session-1", model: { provider: "openai", id: "gpt-5.6", name: "GPT 5.6" }, thinkingLevel: "medium", isStreaming: false });
@@ -4791,7 +4780,7 @@ describe("app store", () => {
   it("persists scheduled tasks with desktop state", async () => {
     const store = useAppStore();
     store.catalogReady = true;
-    store.workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }];
     store.configuredModels = [{ provider: "openai", id: "gpt-5.6", name: "GPT 5.6" }];
     store.saveScheduledTask({
       name: "Daily review",
@@ -4816,14 +4805,12 @@ describe("app store", () => {
 
   it("does not send a scheduled prompt when the saved thinking level is unavailable", async () => {
     const store = useAppStore();
-    store.$patch({
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }],
-      scheduledTasks: [{
+    store.$patch({scheduledTasks: [{
         id: "schedule-unsupported", name: "Deep review", prompt: "Review deeply.", workspaceId: "workspace-1",
         modelProvider: "openai", modelId: "gpt-5.6", thinkingLevel: "max", frequency: "daily", time: "09:00",
         enabled: true, nextRunAt: "2026-09-04T01:00:00.000Z", createdAt: "2026-09-03T01:00:00.000Z", updatedAt: "2026-09-03T01:00:00.000Z",
-      }],
-    });
+      }]});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }];;
     mocks.getAvailableThinkingLevels.mockResolvedValue({ levels: ["off", "medium"] });
     mocks.getState.mockResolvedValueOnce({ model: { provider: "openai", id: "gpt-5.6" }, isStreaming: false });
 
@@ -4836,7 +4823,7 @@ describe("app store", () => {
   });
   it("loads session file changes when refreshing the repository", async () => {
     const store = useAppStore();
-    store.threads = [{ id: "t1", title: "Task", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve", status: "idle", started: false, generation: 0, sessionFile: "D:\\sessions\\repo\\a.jsonl" }];
+    useWorkspaceStore().threads = [{ id: "t1", title: "Task", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve", status: "idle", started: false, generation: 0, sessionFile: "D:\\sessions\\repo\\a.jsonl" }];
     store.activeThreadId = "t1";
     mocks.snapshotRepository.mockResolvedValue({ files: [], git: { isRepository: true, files: [] } });
     mocks.sessionFileChanges.mockResolvedValue([{ path: "src/main.go", editCalls: 2, writeCalls: 0, plan: "revert-edits" }]);
@@ -4850,7 +4837,7 @@ describe("app store", () => {
 
   it("rolls back a session file and refreshes the workspace", async () => {
     const store = useAppStore();
-    store.threads = [{ id: "t1", title: "Task", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve", status: "idle", started: false, generation: 0, sessionFile: "D:\\sessions\\repo\\a.jsonl" }];
+    useWorkspaceStore().threads = [{ id: "t1", title: "Task", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve", status: "idle", started: false, generation: 0, sessionFile: "D:\\sessions\\repo\\a.jsonl" }];
     store.activeThreadId = "t1";
     mocks.rollbackSessionFile.mockResolvedValue(undefined);
     mocks.snapshotRepository.mockResolvedValue({ files: [], git: { isRepository: true, files: [] } });
@@ -4865,7 +4852,7 @@ describe("app store", () => {
 
   it("surfaces rollback failures without refreshing", async () => {
     const store = useAppStore();
-    store.threads = [{ id: "t1", title: "Task", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve", status: "idle", started: false, generation: 0, sessionFile: "D:\\sessions\\repo\\a.jsonl" }];
+    useWorkspaceStore().threads = [{ id: "t1", title: "Task", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve", status: "idle", started: false, generation: 0, sessionFile: "D:\\sessions\\repo\\a.jsonl" }];
     store.activeThreadId = "t1";
     mocks.rollbackSessionFile.mockRejectedValueOnce(new Error("recorded change no longer matches the file"));
 
@@ -4877,8 +4864,8 @@ describe("app store", () => {
 
   it("skips session file changes for remote workspaces", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "t2", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0, sessionFile: "/tmp/a.jsonl" }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "t2", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0, sessionFile: "/tmp/a.jsonl" }];
     store.activeThreadId = "t2";
     store.sessionChangesByThread["t2"] = [{ path: "x", editCalls: 1, writeCalls: 0, plan: "revert-edits" }];
 
@@ -4890,14 +4877,12 @@ describe("app store", () => {
 
   it("mentions a picked workspace file with a relative path", async () => {
     const store = useAppStore();
-    store.$patch({
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }],
-      threads: [{
+    store.$patch({activeThreadId: "thread-mention"});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{
         id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-mention",
-    });
+      }];;
     mocks.pickFile.mockResolvedValue("D:\\work\\repo\\src\\main.go");
 
     await expect(store.pickFileMention()).resolves.toEqual({ path: "D:/work/repo/src/main.go", external: false });
@@ -4908,13 +4893,11 @@ describe("app store", () => {
 
   it("mentions a picked file outside the workspace with an absolute path", async () => {
     const store = useAppStore();
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-mention"});
+    useWorkspaceStore().threads = [{
         id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-mention",
-    });
+      }];;
     mocks.pickFile.mockResolvedValue("C:\\notes\\run book.md");
 
     await expect(store.pickFileMention()).resolves.toEqual({ path: "C:/notes/run book.md", external: true });
@@ -4925,14 +4908,12 @@ describe("app store", () => {
 
   it("keeps the draft untouched when the file picker is cancelled", async () => {
     const store = useAppStore();
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-mention"});
+    useComposerStore().draftsByThread = { "thread-mention": "Keep this " };;
+    useWorkspaceStore().threads = [{
         id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-mention",
-      draftsByThread: { "thread-mention": "Keep this " },
-    });
+      }];;
     mocks.pickFile.mockResolvedValue(undefined);
 
     await expect(store.pickFileMention()).resolves.toBeUndefined();
@@ -4946,13 +4927,11 @@ describe("app store", () => {
 
   it("records repository tree expansion per workspace so every tab shares one tree", () => {
     const store = useAppStore();
-    store.$patch({
-      threads: [
+    store.$patch({activeThreadId: "t-a"});
+    useWorkspaceStore().threads = [
         { id: "t-a", title: "A", workspace: "repo-a", workspacePath: "D:\\repo-a", trust: "approve", status: "idle", started: false, generation: 0 },
         { id: "t-b", title: "B", workspace: "repo-b", workspacePath: "D:\\repo-b", trust: "approve", status: "idle", started: false, generation: 0 },
-      ],
-      activeThreadId: "t-a",
-    });
+      ];;
 
     expect(store.activeRepositoryTreeExpanded).toEqual({});
     store.setRepositoryTreeExpanded("src", false);
@@ -4976,13 +4955,11 @@ describe("app store", () => {
 
   it("marks only the just-inserted mention draft as a programmatic insert", async () => {
     const store = useAppStore();
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-mention"});
+    useWorkspaceStore().threads = [{
         id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-mention",
-    });
+      }];;
 
     store.insertFileMention("src/main.go");
     const inserted = store.activeDraft;
@@ -4999,8 +4976,8 @@ describe("app store", () => {
 
   it("refuses the local file picker for remote workspaces", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];
     store.activeThreadId = "thread-remote";
     mocks.pickFile.mockResolvedValue("C:\\notes\\runbook.md");
 
@@ -5066,7 +5043,8 @@ describe("app store", () => {
 
   it("serializes desktop saves and coalesces changes into the latest snapshot", async () => {
     const store = useAppStore();
-    store.$patch({ catalogReady: true, activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }] });
+    store.$patch({catalogReady: true, activeThreadId: "t"});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }];;
     let release!: () => void;
     mocks.saveDesktopState.mockReturnValueOnce(new Promise<void>(resolve => { release = resolve; }));
     store.draftsByThread.t = "old";
@@ -5085,10 +5063,10 @@ describe("app store", () => {
 
   it("persists image references and restores queues paused until explicit resume", async () => {
     const store = useAppStore();
-    store.$patch({ catalogReady: true, activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }],
-      attachmentsByThread: { t: [{ id: "a", name: "draft.png", mimeType: "image/png", data: "YQ==", previewUrl: "data:image/png;base64,YQ==" }] },
-      pendingPromptsByThread: { t: [{ id: "p", text: "queued text", createdAt: "now", images: [{ id: "b", name: "queue.png", mimeType: "image/png", data: "Yg==", previewUrl: "data:image/png;base64,Yg==" }] }] },
-    });
+    store.$patch({catalogReady: true, activeThreadId: "t"});
+    useComposerStore().attachmentsByThread = { t: [{ id: "a", name: "draft.png", mimeType: "image/png", data: "YQ==", previewUrl: "data:image/png;base64,YQ==" }] };
+    useComposerStore().pendingPromptsByThread = { t: [{ id: "p", text: "queued text", createdAt: "now", images: [{ id: "b", name: "queue.png", mimeType: "image/png", data: "Yg==", previewUrl: "data:image/png;base64,Yg==" }] }] };;
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }];;
     await store.persistDesktopState();
     const metadata = mocks.saveDesktopState.mock.calls.at(-1)![0].threads[0].composerJson;
     expect(metadata).not.toContain("YQ=="); expect(metadata).not.toContain("Yg=="); expect(metadata).not.toContain("previewUrl");
@@ -5106,7 +5084,8 @@ describe("app store", () => {
 
   it("retains queued text when a cached image is missing and blocks dispatch", async () => {
     const store = useAppStore();
-    store.$patch({ activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }] });
+    store.$patch({activeThreadId: "t"});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }];;
     mocks.readComposerImage.mockRejectedValueOnce(new Error("missing"));
     await store.restoreComposer("t", JSON.stringify({ pending: [{ id: "p", text: "keep this text", createdAt: "now", images: [{ id: "i", name: "missing.png", mimeType: "image/png", cacheKey: "a".repeat(64) }] }] }));
     await store.resumePendingPrompts();
@@ -5118,7 +5097,8 @@ describe("app store", () => {
 
   it("cancels a pending body search and discards late results", async () => {
     const store = useAppStore();
-    store.$patch({ searchQuery: "needle", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0, sessionFile: "D:/sessions/one.jsonl" }] });
+    store.$patch({searchQuery: "needle"});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0, sessionFile: "D:/sessions/one.jsonl" }];;
     let resolve!: (value: { text: string; messageCount: number }) => void;
     const cancel = vi.fn().mockResolvedValue(undefined);
     const request = Object.assign(new Promise(resolveCallback => { resolve = resolveCallback; }), { cancel });
@@ -5133,7 +5113,8 @@ describe("app store", () => {
 
   it.each(["completed", "failed", "cancelled"] as const)("finalizes scheduled runs as %s only at settlement", status => {
     const store = useAppStore();
-    store.$patch({ activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "running", started: true, generation: 4 }], scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }] });
+    store.$patch({activeThreadId: "t", scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }]});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "running", started: true, generation: 4 }];;
     if (status === "failed") store.messagesByThread.t = [{ id: "a", role: "assistant", text: "", thinking: "", timestamp: "now", streaming: false, tools: [], error: "provider failed" }];
     store.handlePiEvent({ threadId: "t", event: { generation: 4, type: "agent_end", payload: {} } });
     expect(store.scheduledTasks[0].lastStatus).toBe("started");
@@ -5143,13 +5124,16 @@ describe("app store", () => {
 
   it("blocks a second scheduled run while its linked session is running", async () => {
     const store = useAppStore();
-    store.$patch({ threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "attention", started: true, generation: 4 }], scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }] });
+    store.$patch({scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }]});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "attention", started: true, generation: 4 }];;
     await store.runScheduledTask("s"); expect(mocks.startSession).not.toHaveBeenCalled();
   });
 
   it("blocks history changes before stopping a large session", async () => {
     const store = useAppStore();
-    store.$patch({ activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", sessionFile: "D:/sessions/one.jsonl", trust: "deny", status: "idle", started: true, generation: 4 }], sessionMutationErrorByThread: { t: "64 MiB limit" }, messagesByThread: { t: [{ id: "u", entryId: "entry", role: "user", text: "question", thinking: "", timestamp: "now", streaming: false, tools: [] }] } });
+    store.$patch({activeThreadId: "t", sessionMutationErrorByThread: { t: "64 MiB limit" }});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", sessionFile: "D:/sessions/one.jsonl", trust: "deny", status: "idle", started: true, generation: 4 }];;
+    store.messagesByThread.t = [{ id: "u", entryId: "entry", role: "user", text: "question", thinking: "", timestamp: "now", streaming: false, tools: [] }];
     expect(await store.editMessage("u", "edit")).toBe(false);
     expect(await store.deleteMessage("u")).toBe(false);
     expect(await store.forkFromMessage("u")).toBe(false);
@@ -5159,7 +5143,9 @@ describe("app store", () => {
 
   it("retains a queued prompt on disk until Pi acknowledges it", async () => {
     const store = useAppStore();
-    store.$patch({ catalogReady: true, activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: true, generation: 4 }], pendingPromptsByThread: { t: [{ id: "p", text: "still awaiting acknowledgement", images: [], createdAt: "now" }] } });
+    store.$patch({catalogReady: true, activeThreadId: "t"});
+    useComposerStore().pendingPromptsByThread = { t: [{ id: "p", text: "still awaiting acknowledgement", images: [], createdAt: "now" }] };;
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: true, generation: 4 }];;
     let acknowledge!: (value: { command: string }) => void;
     mocks.sendPrompt.mockReturnValueOnce(new Promise(resolve => { acknowledge = resolve; }));
     const dispatch = store.dispatchNextPendingPrompt("t");
@@ -5175,7 +5161,8 @@ describe("app store", () => {
 
   it("keeps a scheduled run active after a failed stop and fails it on runtime exit", async () => {
     const store = useAppStore();
-    store.$patch({ threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "running", started: true, generation: 4 }], scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }] });
+    store.$patch({scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }]});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "running", started: true, generation: 4 }];;
     mocks.stopSession.mockRejectedValueOnce(new Error("stop failed"));
     expect(await store.stopThread("t")).toBe(false);
     expect(store.scheduledTasks[0].lastStatus).toBe("started");
@@ -5185,7 +5172,8 @@ describe("app store", () => {
 
   it.each(["stop", "delete"] as const)("marks an explicitly %s scheduled run cancelled", async action => {
     const store = useAppStore();
-    store.$patch({ threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "running", started: true, generation: 4 }], scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }] });
+    store.$patch({scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }]});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "running", started: true, generation: 4 }];;
     mocks.stopSession.mockImplementationOnce(async () => { store.handlePiEvent({ threadId: "t", event: { generation: 4, type: "runtime_exit", payload: {} } }); });
     if (action === "stop") expect(await store.stopThread("t")).toBe(true);
     else { store.deleteThreadId = "t"; await store.confirmDeleteSession(); }
@@ -5201,7 +5189,8 @@ describe("app store", () => {
 
   it("records completion even when settlement precedes prompt acknowledgement", async () => {
     const store = useAppStore();
-    store.$patch({ workspaces: [{ id: "w", name: "repo", path: "D:/repo", trust: "approve" }], scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", modelProvider: "openai", modelId: "gpt-5.6", thinkingLevel: "medium", frequency: "daily", enabled: true, createdAt: "now", updatedAt: "now" }] });
+    store.$patch({scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", modelProvider: "openai", modelId: "gpt-5.6", thinkingLevel: "medium", frequency: "daily", enabled: true, createdAt: "now", updatedAt: "now" }]});
+    useWorkspaceStore().workspaces = [{ id: "w", name: "repo", path: "D:/repo", trust: "approve" }];;
     mocks.getState
       .mockResolvedValueOnce({ model: { provider: "openai", id: "gpt-5.6" }, isStreaming: false })
       .mockResolvedValueOnce({ model: { provider: "openai", id: "gpt-5.6" }, thinkingLevel: "medium", isStreaming: false });

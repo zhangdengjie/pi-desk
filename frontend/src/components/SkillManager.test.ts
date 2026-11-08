@@ -3,7 +3,9 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SkillScope } from "../../bindings/pi-desk/internal/domain";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import SkillManager from "./SkillManager.vue";
+
 
 const skillMocks = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() }));
 const piSkillRoot = "C:\\Users\\dev\\.pi\\agent\\skills";
@@ -103,11 +105,8 @@ describe("SkillManager", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      threads: [{ id: "thread-1", title: "Runtime", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
-      activeThreadId: "thread-1",
-      commandsByThread: { "thread-1": [{ name: "package-skill", description: "Loaded from a package", source: "skill", path: "C:\\package\\skills\\package-skill\\SKILL.md" }] },
-    });
+    store.$patch({activeThreadId: "thread-1", commandsByThread: { "thread-1": [{ name: "package-skill", description: "Loaded from a package", source: "skill", path: "C:\\package\\skills\\package-skill\\SKILL.md" }] }});
+    useWorkspaceStore().threads = [{ id: "thread-1", title: "Runtime", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }];;
     const wrapper = mount(SkillManager, { global: { plugins: [pinia] } });
     await flushPromises();
 

@@ -27,6 +27,11 @@ tasks:
     cmds:
       - task: "{{.GOOS}}:package"
 
+  check:bindings:
+    summary: Verifies generated frontend bindings are current
+    cmds:
+      - task: common:check:bindings
+
   run:
     summary: Runs the application
     cmds:

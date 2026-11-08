@@ -5,10 +5,12 @@ import { nextTick } from "vue";
 import ConversationMessage from "./ConversationMessage.vue";
 import MarkdownBody from "./MarkdownBody.vue";
 import { type TimelineMessage, useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import { groupConversationTurns } from "../utils/conversationGrouping";
 import { forgetPanelOpenStates, pinPanelOpen } from "../utils/detailsOpenState";
 import { streamTuning } from "../utils/streamTuning";
 import { RuntimeState } from "../../bindings/pi-desk/internal/domain";
+
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -259,7 +261,7 @@ describe("ConversationMessage", () => {
       id: "tagged-history", title: "History", workspace: "repo", workspacePath: "D:/repo",
       trust: "deny" as const, status: "idle" as const, started: false, generation: 0,
     };
-    store.threads = [thread];
+    useWorkspaceStore().threads = [thread];
     store.activeThreadId = thread.id;
     store.applySessionSnapshot(thread, { messages: [
       { role: "assistant", piDeskEntryId: "work", content: [
@@ -717,13 +719,11 @@ describe("ConversationMessage", () => {
   it("shows successful changed files after the response and opens them in the Inspector", async () => {
     const pinia = createPinia();    setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-files"});
+    useWorkspaceStore().threads = [{
         id: "thread-files", title: "Files", workspace: "repo", workspacePath: "D:\\repo",
         trust: "approve", status: "idle", started: true, generation: 1,
-      }],
-      activeThreadId: "thread-files",
-    });
+      }];;
     store.openRepositoryDiff = vi.fn().mockResolvedValue(undefined);
     const tool = (id: string, path: string, status: "complete" | "error" = "complete", resultReceived = true, diff = "+ changed") => ({
       id, name: "edit", output: "", status, resultReceived, diff: { path, text: diff },
@@ -770,14 +770,12 @@ describe("ConversationMessage", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      workspaces: [{ id: "remote", name: "Remote", path: "", kind: "ssh", targetId: "target", remoteRoot: "/srv/repo", trust: "approve" }],
-      threads: [{
+    store.$patch({activeThreadId: "thread-remote"});
+    useWorkspaceStore().workspaces = [{ id: "remote", name: "Remote", path: "", kind: "ssh", targetId: "target", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{
         id: "thread-remote", title: "Remote", workspace: "Remote", workspaceId: "remote", workspacePath: "",
         trust: "approve", status: "idle", started: true, generation: 1,
-      }],
-      activeThreadId: "thread-remote",
-    });
+      }];;
     store.openRepositoryDiff = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(ConversationMessage, { props: { message: {
       id: "assistant-remote-file", role: "assistant", text: "Done", thinking: "", timestamp: "10:05", streaming: false,
@@ -820,13 +818,11 @@ describe("ConversationMessage", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-running"});
+    useWorkspaceStore().threads = [{
         id: "thread-running", title: "Running", workspace: "repo", workspacePath: "D:\\repo",
         trust: "approve", status: "running", started: true, generation: 1,
-      }],
-      activeThreadId: "thread-running",
-    });
+      }];;
     const wrapper = mount(ConversationMessage, {
       props: {
         message: {
@@ -1047,14 +1043,12 @@ describe("ConversationMessage", () => {
       id: "user-latest", entryId: "entry-latest", role: "user" as const,
       text: "Original request", thinking: "", timestamp: "10:06", streaming: false, tools: [],
     };
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-edit"});
+    useWorkspaceStore().threads = [{
         id: "thread-edit", title: "Edit", workspace: "repo", workspacePath: "D:\\repo",
         sessionFile: "C:\\sessions\\edit.jsonl", trust: "approve", status: "idle", started: true, generation: 1,
-      }],
-      activeThreadId: "thread-edit",
-      messagesByThread: { "thread-edit": [message] },
-    });
+      }];;
+    store.messagesByThread["thread-edit"] = [message];
     store.editMessage = vi.fn().mockResolvedValue(true);
     store.resendEditedMessage = vi.fn().mockResolvedValue(true);
     const wrapper = mount(ConversationMessage, {
@@ -1076,7 +1070,9 @@ describe("ConversationMessage", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const message = { id: "latest", entryId: "entry", role: "user" as const, text: "Continue", thinking: "", timestamp: "", streaming: false, tools: [] };
-    store.$patch({ threads: [{ id: "replay", title: "Replay", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }], activeThreadId: "replay", messagesByThread: { replay: [message] } });
+    store.$patch({activeThreadId: "replay"});
+    useWorkspaceStore().threads = [{ id: "replay", title: "Replay", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }];;
+    store.messagesByThread.replay = [message];
     store.resendEditedMessage = vi.fn().mockImplementationOnce(async () => {
       store.activeThread!.error = "session transcript contains malformed JSON at line 1028";
       return false;

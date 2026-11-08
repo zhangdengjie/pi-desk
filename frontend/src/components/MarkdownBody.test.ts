@@ -2,9 +2,11 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import MarkdownBody from "./MarkdownBody.vue";
 import { markdownRenderCache, renderMarkdownDocument } from "../utils/markdownRenderer";
 import { applyStreamTuning, resetStreamTuning } from "../utils/streamTuning";
+
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -22,13 +24,11 @@ function mountMarkdown(text: string, extraProps: Record<string, unknown> = {}) {
   const pinia = createPinia();
   setActivePinia(pinia);
   const store = useAppStore();
-  store.$patch({
-    threads: [{
+  store.$patch({activeThreadId: "thread-1"});
+  useWorkspaceStore().threads = [{
       id: "thread-1", title: "Files", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
       status: "idle", started: false, generation: 0,
-    }],
-    activeThreadId: "thread-1",
-  });
+    }];;
   return { store, wrapper: mount(MarkdownBody, { props: { text, ...extraProps }, attachTo: document.body, global: { plugins: [pinia] } }) };
 }
 

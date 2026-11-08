@@ -13,7 +13,9 @@ import (
 
 	"pi-desk/internal/appdirs"
 	"pi-desk/internal/appservice"
+	"pi-desk/internal/buildinfo"
 	"pi-desk/internal/domain"
+	"pi-desk/internal/eventbus"
 	"pi-desk/internal/piruntime"
 	"pi-desk/internal/remotessh"
 	"pi-desk/internal/repository"
@@ -261,7 +263,18 @@ func main() {
 			log.Printf("close remote workspace lifecycle: %v", shutdownErr)
 		}
 	}()
-	agentService := appservice.NewAgentService(locator, sessionIndex, remoteLifecycle, anchorRoot, browserService)
+	harness, harnessErr := appservice.StartHarness(context.Background(), filepath.Dir(statePath), catalog)
+	if harnessErr != nil {
+		log.Printf("harness disabled: %v", harnessErr)
+	}
+	if harness != nil {
+		defer harness.Close()
+	}
+	var eventSink func(piruntime.SessionEvent)
+	if harness != nil {
+		eventSink = harness.Handle
+	}
+	agentService := appservice.NewAgentService(locator, sessionIndex, remoteLifecycle, anchorRoot, browserService, eventSink)
 	defer func() {
 		if shutdownErr := agentService.ServiceShutdown(); shutdownErr != nil {
 			log.Printf("shutdown agent service: %v", shutdownErr)
@@ -269,6 +282,7 @@ func main() {
 	}()
 	piMaintenanceService := appservice.NewPiMaintenanceService(locator, agentService)
 	catalogService := appservice.NewCatalogService(catalog, sessionIndex, remoteCatalog)
+	taskService := appservice.NewTaskService(harness, agentService, sessionIndex, sessionIndex, catalog)
 
 	app := application.New(application.Options{
 		Name:           instanceTitle(),
@@ -285,6 +299,7 @@ func main() {
 			application.NewService(piExtensionService),
 			application.NewService(mcpConfigService),
 			application.NewService(catalogService),
+			application.NewService(taskService),
 			application.NewService(remoteWorkspaceService),
 			application.NewService(orphanSessionService),
 			application.NewService(repositoryService),
@@ -310,6 +325,12 @@ func main() {
 		},
 	})
 
+	if harness != nil {
+		harness.SetEmitter(func(event eventbus.Event) {
+			app.Event.Emit("agent:event", event)
+		})
+	}
+
 	screens := app.Screen.GetAll()
 	windowState := centeredWindowState(defaultWindowWidth, defaultWindowHeight, screens)
 	restoreMaximized := false
@@ -330,7 +351,7 @@ func main() {
 		MinWidth:        minimumWindowWidth,
 		MinHeight:       minimumWindowHeight,
 		Frameless:       runtime.GOOS == "windows",
-		DevToolsEnabled: true,
+		DevToolsEnabled: buildinfo.DevTools,
 		Hidden:          restoreMaximized && runtime.GOOS == "windows",
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 46,

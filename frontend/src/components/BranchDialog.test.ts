@@ -2,7 +2,9 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import BranchDialog from "./BranchDialog.vue";
+
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -18,14 +20,7 @@ describe("BranchDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      branchPanelOpen: true,
-      activeThreadId: "thread-1",
-      threads: [{
-        id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
-        status: "idle", started: true, generation: 1, sessionFile: "one.jsonl",
-      }],
-      sessionBranchesByThread: {
+    store.$patch({branchPanelOpen: true, activeThreadId: "thread-1", sessionBranchesByThread: {
         "thread-1": {
           leafId: "assistant-1",
           entries: [
@@ -33,8 +28,11 @@ describe("BranchDialog", () => {
             { id: "assistant-1", parentId: "user-1", type: "message", timestamp: "", role: "assistant", text: "Done", label: "" },
           ],
         },
-      },
-    });
+      }});
+    useWorkspaceStore().threads = [{
+        id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
+        status: "idle", started: true, generation: 1, sessionFile: "one.jsonl",
+      }];;
     store.forkActiveSession = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(BranchDialog, { global: { plugins: [pinia] } });
 
@@ -57,15 +55,11 @@ describe("BranchDialog", () => {
       text: `Entry ${index}`,
       label: "",
     }));
-    store.$patch({
-      branchPanelOpen: true,
-      activeThreadId: "thread-1",
-      threads: [{
+    store.$patch({branchPanelOpen: true, activeThreadId: "thread-1", sessionBranchesByThread: { "thread-1": { entries, leafId: "entry-1999" } }});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Long session", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: true, generation: 1, sessionFile: "long.jsonl",
-      }],
-      sessionBranchesByThread: { "thread-1": { entries, leafId: "entry-1999" } },
-    });
+      }];;
 
     const wrapper = mount(BranchDialog, { global: { plugins: [pinia] } });
 
@@ -77,15 +71,11 @@ describe("BranchDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      branchPanelOpen: true,
-      activeThreadId: "thread-1",
-      threads: [{
+    store.$patch({branchPanelOpen: true, activeThreadId: "thread-1", sessionBranchesErrorByThread: { "thread-1": "Maximum call stack size exceeded" }});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: true, generation: 1, sessionFile: "one.jsonl",
-      }],
-      sessionBranchesErrorByThread: { "thread-1": "Maximum call stack size exceeded" },
-    });
+      }];;
     const wrapper = mount(BranchDialog, { global: { plugins: [pinia] } });
 
     expect(wrapper.get('[role="alertdialog"]').text()).toContain("Unable to load session branches");

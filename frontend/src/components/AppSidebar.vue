@@ -13,6 +13,7 @@ import {
   Folder,
   FolderOpen,
   GitBranch,
+  ListTodo,
   MessageCirclePlus,
   MoreHorizontal,
   PanelLeftOpen,
@@ -37,12 +38,14 @@ import RuntimeBadge from "./RuntimeBadge.vue";
 import RemoveWorkspaceDialog from "./RemoveWorkspaceDialog.vue";
 import ThreadRowMarks from "./ThreadRowMarks.vue";
 import { useAppStore, type ThreadSummary } from "../stores/app";
+import { useTasksStore } from "../stores/tasks";
 import { tr } from "../i18n";
 import { threadTooltip } from "../utils/threadLabel";
 import { relativeTimeText } from "../utils/relativeTime";
 import { PANEL_SETTLE_MS } from "../utils/paneMotion";
 
 const appStore = useAppStore();
+const tasksStore = useTasksStore();
 const searchInput = ref<HTMLInputElement>();
 
 // Pane motion · the left rail (任务). `workbench.css` interpolates `.app-shell`'s first grid track
@@ -230,6 +233,17 @@ async function runTaskAction(action: "branch" | "clone" | "export" | "compact") 
   else if (action === "clone") await appStore.cloneActiveSession();
   else if (action === "export") await appStore.exportActiveSession();
   else await appStore.compactActiveSession();
+}
+
+async function openThreadTask(threadId: string) {
+  closeTaskMenu();
+  try {
+    await tasksStore.adoptThread(threadId);
+  } catch (error) {
+    tasksStore.error = error instanceof Error ? error.message : String(error);
+  } finally {
+    appStore.openTasks();
+  }
 }
 
 async function dismissActiveThread() {
@@ -420,6 +434,18 @@ onBeforeUnmount(() => {
         v-if="!collapsed"
         class="flex h-8 w-full items-center gap-2 whitespace-nowrap rounded-md border border-transparent bg-transparent px-2.5 text-[var(--font-size-body)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] aria-pressed:bg-[var(--bg-active)] aria-pressed:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
         type="button"
+        :title="tr('taskCenter.title')"
+        :aria-label="tr('taskCenter.title')"
+        :aria-pressed="appStore.activePage === 'tasks'"
+        @click="appStore.openTasks"
+      >
+        <ListTodo :size="20" :stroke-width="1.7" />
+        <span>{{ tr("taskCenter.title") }}</span>
+      </button>
+      <button
+        v-if="!collapsed"
+        class="flex h-8 w-full items-center gap-2 whitespace-nowrap rounded-md border border-transparent bg-transparent px-2.5 text-[var(--font-size-body)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] aria-pressed:bg-[var(--bg-active)] aria-pressed:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
+        type="button"
         :title="tr('usage.title')"
         :aria-label="tr('usage.title')"
         :aria-pressed="appStore.activePage === 'usage'"
@@ -583,6 +609,7 @@ onBeforeUnmount(() => {
       @click.stop="closeTaskMenu"
       @contextmenu.prevent
     >
+      <button type="button" role="menuitem" @click="void openThreadTask(taskMenuThread.id)"><ListTodo :size="14" />{{ tr("sidebar.adoptTask") }}</button>
       <button v-if="taskMenuWorkspace?.kind !== 'ssh'" type="button" role="menuitem" @click="void openTaskWorkspace()"><FolderOpen :size="14" />{{ tr("sidebar.openWorkspace") }}</button>
       <button type="button" role="menuitem" @click="void beginTaskRename()"><Pencil :size="14" />{{ tr("topbar.rename") }}</button>
       <button type="button" role="menuitem" :disabled="!taskMenuThread.sessionFile || Boolean(appStore.activeSessionOperation)" @click="void runTaskAction('branch')"><GitBranch :size="14" />{{ tr("topbar.branches") }}</button>

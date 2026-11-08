@@ -3,7 +3,9 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RuntimeState } from "../../bindings/pi-desk/internal/domain";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import AppSidebar from "./AppSidebar.vue";
+
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -69,7 +71,7 @@ describe("AppSidebar", () => {
     store.$patch({
       bootstrap: {
         appVersion: "0.1.0",
-        wailsVersion: "v3.0.0-beta.16",
+        wailsVersion: "v3.1.0",
         workingDirectory: "D:\\repo",
         runtime: { state: RuntimeState.RuntimeReady, version: "0.83.0", command: "pi.cmd" },
       },
@@ -97,17 +99,15 @@ describe("AppSidebar", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const now = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [
+    store.$patch({catalogLoading: false});
+    useWorkspaceStore().workspaces = [
         { id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" },
         { id: "workspace-empty", name: "empty", path: "D:\\empty", trust: "deny" },
-      ],
-      threads: [{
+      ];
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Inspect runtime", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0, modifiedAt: now,
-      }],
-    });
+      }];;
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
 
     expect(wrapper.find(".sidebar-header").exists()).toBe(false);
@@ -130,17 +130,15 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [
+    store.$patch({catalogLoading: false});
+    useWorkspaceStore().workspaces = [
         { id: "workspace-a", name: "remote A", path: "", kind: "ssh", targetId: "target-a", remoteRoot: "/srv/a", trust: "approve" },
         { id: "workspace-b", name: "remote B", path: "", kind: "ssh", targetId: "target-b", remoteRoot: "/srv/b", trust: "approve" },
-      ],
-      threads: [
+      ];
+    useWorkspaceStore().threads = [
         { id: "thread-a", title: "Task A", workspace: "remote A", workspaceId: "workspace-a", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 },
         { id: "thread-b", title: "Task B", workspace: "remote B", workspaceId: "workspace-b", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 },
-      ],
-    });
+      ];;
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
     const groups = wrapper.findAll(".workspace-group");
 
@@ -156,10 +154,9 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
-      threads: [
+    store.$patch({catalogLoading: false});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [
         {
           id: "thread-old", title: "Old task", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
           status: "idle", started: false, generation: 0, modifiedAt: "2026-08-14T08:00:00Z",
@@ -172,8 +169,7 @@ describe("AppSidebar", () => {
           id: "thread-middle", title: "Middle task", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
           status: "idle", started: false, generation: 0, modifiedAt: "2026-08-14T12:00:00Z",
         },
-      ],
-    });
+      ];;
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
 
     expect(wrapper.findAll(".thread-title").map((item) => item.text())).toEqual([
@@ -191,8 +187,8 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.workspaces = [{ id: "repo", name: "repo", path: "D:\\repo", trust: "deny" }];
-    store.threads = Array.from({ length: 55 }, (_, index) => ({
+    useWorkspaceStore().workspaces = [{ id: "repo", name: "repo", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = Array.from({ length: 55 }, (_, index) => ({
       id: `task-${index}`, title: `Task ${index}`, workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
       status: "idle", started: false, generation: 0, modifiedAt: new Date(60_000 * (55 - index)).toISOString(),
     }));
@@ -217,8 +213,8 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.workspaces = [{ id: "repo", name: "repo", path: "D:\\repo", trust: "deny" }];
-    store.threads = Array.from({ length: 45 }, (_, index) => ({
+    useWorkspaceStore().workspaces = [{ id: "repo", name: "repo", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = Array.from({ length: 45 }, (_, index) => ({
       id: `task-${index}`, title: `Task ${index}`, workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
       status: "idle", started: false, generation: 0, archived: index === 44,
     }));
@@ -252,8 +248,8 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.workspaces = [{ id: "repo", name: "repo", path: "D:\\repo", trust: "deny" }];
-    store.threads = [{ id: "task", title: "Task", workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "running", started: true, generation: 1 }];
+    useWorkspaceStore().workspaces = [{ id: "repo", name: "repo", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{ id: "task", title: "Task", workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "running", started: true, generation: 1 }];
     store.activeThreadId = "task";
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
     await wrapper.get(".thread-row").trigger("contextmenu");
@@ -274,17 +270,12 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      catalogReady: true,
-      catalogError: "",
-      settingsError: "state file is locked",
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
-      threads: [{
+    store.$patch({catalogLoading: false, catalogReady: true, catalogError: "", settingsError: "state file is locked"});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Inspect runtime", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0,
-      }],
-    });
+      }];;
 
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
 
@@ -297,14 +288,12 @@ describe("AppSidebar", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const now = new Date().toISOString();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
-      threads: [{
+    store.$patch({catalogLoading: false});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Inspect runtime", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0, modifiedAt: now,
-      }],
-    });
+      }];;
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
     const workspace = wrapper.get(".workspace-header .workspace-row");
 
@@ -323,10 +312,8 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\\\repo", trust: "approve" }],
-    });
+    store.$patch({catalogLoading: false});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\\\repo", trust: "approve" }];;
     store.createThread = vi.fn().mockImplementation(async () => { store.activeThreadId = "thread-new"; });
     store.startThreadInBackground = vi.fn();
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
@@ -345,14 +332,12 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
-      threads: [{
+    store.$patch({catalogLoading: false});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Active runtime", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: true, generation: 2, modifiedAt: new Date().toISOString(), unread: false,
-      }],
-    });
+      }];;
 
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
     const title = wrapper.get(".thread-title");
@@ -396,20 +381,17 @@ describe("AppSidebar", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
-    store.$patch({
-      catalogLoading: false,
-      activeThreadId: "t-quiet",
-      workspaces: [
+    store.$patch({catalogLoading: false, activeThreadId: "t-quiet"});
+    useWorkspaceStore().workspaces = [
         { id: "ws-a", name: "alpha", path: "/repo/a", kind: "local", trust: "approve" },
         { id: "ws-b", name: "beta", path: "/repo/b", kind: "local", trust: "approve" },
-      ],
-      threads: [
+      ];
+    useWorkspaceStore().threads = [
         { id: "t-quiet", title: "Quiet session", workspace: "alpha", workspacePath: "/repo/a", trust: "approve", status: "idle", started: false, generation: 0, modifiedAt: hoursAgo(1) },
         { id: "t-stale", title: "Interrupted long ago", workspace: "alpha", workspacePath: "/repo/a", trust: "approve", status: "attention", started: false, generation: 0, modifiedAt: hoursAgo(0.5) },
         { id: "t-live", title: "Live in beta", workspace: "beta", workspacePath: "/repo/b", trust: "approve", status: "idle", started: true, generation: 3, modifiedAt: hoursAgo(2) },
         { id: "t-unread", title: "Finished while away", workspace: "alpha", workspacePath: "/repo/a", trust: "approve", status: "idle", started: false, generation: 0, unread: true, modifiedAt: hoursAgo(3) },
-      ],
-    });
+      ];;
 
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
     const rows = wrapper.findAll(".active-session-row");
@@ -444,13 +426,11 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [{ id: "ws-a", name: "alpha", path: "/repo/a", kind: "local", trust: "approve" }],
-      threads: [
+    store.$patch({catalogLoading: false});
+    useWorkspaceStore().workspaces = [{ id: "ws-a", name: "alpha", path: "/repo/a", kind: "local", trust: "approve" }];
+    useWorkspaceStore().threads = [
         { id: "t-live", title: "Live in beta", workspace: "alpha", workspacePath: "/repo/a", trust: "approve", status: "idle", started: true, generation: 1, modifiedAt: new Date().toISOString() },
-      ],
-    });
+      ];;
 
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
 
@@ -474,14 +454,12 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
-      threads: [{
+    store.$patch({catalogLoading: false});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Spinning", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: true, generation: 1, modifiedAt: new Date().toISOString(), unread: false,
-      }],
-    });
+      }];;
     const animate = vi.fn((_frames: Keyframe[], _options: KeyframeAnimationOptions) => ({ cancel: vi.fn(), playState: "running" }));
     const originalAnimate = HTMLElement.prototype.animate;
     HTMLElement.prototype.animate = animate as unknown as typeof HTMLElement.prototype.animate;
@@ -508,14 +486,12 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
-      threads: [{
+    store.$patch({catalogLoading: false});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Stopped runtime", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0,
-      }],
-    });
+      }];;
 
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
 
@@ -528,10 +504,8 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\\\repo", trust: "approve" }],
-    });
+    store.$patch({catalogLoading: false});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\\\repo", trust: "approve" }];;
     store.openWorkspace = vi.fn().mockResolvedValue(undefined);
     store.removeWorkspace = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
@@ -564,14 +538,12 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
-      threads: [{
+    store.$patch({catalogLoading: false});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Runtime audit", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0, sessionFile: "one.jsonl",
-      }],
-    });
+      }];;
     store.loadSessionSearchBodies = vi.fn(async () => {
       store.searchBodyTextByThread["thread-1"] = "The hidden answer is in the session body.";
     });
@@ -593,15 +565,12 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
-      threads: [{
+    store.$patch({catalogLoading: false, activeThreadId: "thread-1"});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Context actions", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0, sessionFile: "one.jsonl",
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
     store.openWorkspace = vi.fn().mockResolvedValue(undefined);
     store.renameActiveSession = vi.fn().mockResolvedValue(undefined);
     store.openBranchPanel = vi.fn().mockResolvedValue(undefined);
@@ -615,6 +584,7 @@ describe("AppSidebar", () => {
     await wrapper.get(".thread-row").trigger("contextmenu", { clientX: 40, clientY: 60 });
     const menuItems = wrapper.get(".thread-context-menu").findAll('[role="menuitem"]');
     expect(menuItems.map((item) => item.text())).toEqual([
+      "Open in Tasks",
       "Show in File Explorer",
       "Rename task",
       "Session branches",
@@ -627,7 +597,7 @@ describe("AppSidebar", () => {
     ]);
     expect(menuItems.find((item) => item.text() === "Archive task")!.attributes("disabled")).toBeUndefined();
 
-    await menuItems[0].trigger("click");
+    await menuItems[1].trigger("click");
     expect(store.openWorkspace).toHaveBeenCalledWith("workspace-1");
 
     for (const [label, action] of [
@@ -660,21 +630,19 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
-      threads: [{
+    store.$patch({catalogLoading: false, activeThreadId: "thread-1"});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Running task", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: true, generation: 3, sessionFile: "one.jsonl",
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
     store.reloadThreadResources = vi.fn().mockResolvedValue(true);
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
 
     await wrapper.get(".thread-row").trigger("contextmenu", { clientX: 40, clientY: 60 });
     const items = wrapper.get(".thread-context-menu").findAll('[role="menuitem"]');
     expect(items.map((item) => item.text())).toEqual([
+      "Open in Tasks",
       "Show in File Explorer",
       "Rename task",
       "Session branches",
@@ -696,15 +664,12 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      catalogLoading: false,
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
-      threads: [{
+    store.$patch({catalogLoading: false, activeThreadId: "thread-1"});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Quiet task", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0, unread: true,
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
     const dismissed = vi.fn().mockResolvedValue(true);
     store.dismissActiveSession = dismissed;
     store.startThreadInBackground = vi.fn();

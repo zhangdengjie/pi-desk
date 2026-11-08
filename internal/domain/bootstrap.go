@@ -25,6 +25,15 @@ type BootstrapState struct {
 	WorkingDirectory string          `json:"workingDirectory"`
 	Runtime          PiRuntimeStatus `json:"runtime"`
 	Window           WindowState     `json:"window"`
+	// NormalizedEvents is the dev/gray switch for agent:event consumers. It is
+	// injected by PI_DESK_NORMALIZED_EVENTS=1 and read once at startup.
+	NormalizedEvents bool `json:"normalizedEvents,omitempty"`
+	// HarnessEnabled says whether the R1a event tap is running. Normalized
+	// events are only safe when it is true.
+	HarnessEnabled bool `json:"harnessEnabled,omitempty"`
+	// NormalizedEventsDisabled is the explicit raw override
+	// (PI_DESK_NORMALIZED_EVENTS=0).
+	NormalizedEventsDisabled bool `json:"normalizedEventsDisabled,omitempty"`
 	// ProviderEnvIssues is the startup precheck: providers whose `$VAR` API key never reached this
 	// process. A .app opened from Finder does not read ~/.zshrc, so Pi silently drops them.
 	ProviderEnvIssues []ProviderEnvIssue `json:"providerEnvIssues,omitempty"`

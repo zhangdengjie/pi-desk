@@ -1,5 +1,4 @@
 # Local project data
-/docs/
 /temp/
 /agent.md
 /AGENT.md
@@ -45,6 +44,7 @@ go.work.sum
 
 # Editors and operating systems
 .idea/
+.openidea/
 .vscode/
 .vs/
 *.swp

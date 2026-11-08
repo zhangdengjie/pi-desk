@@ -2,7 +2,8 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { McpConfigScope } from "../../bindings/pi-desk/internal/domain";
-import { useAppStore, type WorkspaceSummary } from "../stores/app";
+import type { WorkspaceSummary } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import McpManager from "./McpManager.vue";
 
 const mcpMocks = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), upsert: vi.fn(), delete: vi.fn(), test: vi.fn(), importCandidates: vi.fn() }));
@@ -15,7 +16,7 @@ vi.mock("../services/repository", () => ({ repositoryService: {} }));
 function mountManager(workspaces: WorkspaceSummary[] = []) {
   const pinia = createPinia();
   setActivePinia(pinia);
-  useAppStore().workspaces = workspaces;
+  useWorkspaceStore().workspaces = workspaces;
   return mount(McpManager, { global: { plugins: [pinia] } });
 }
 

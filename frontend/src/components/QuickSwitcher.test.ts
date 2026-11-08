@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import { catalogService } from "../services/catalog";
 import { useAppStore, type ThreadSummary } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import QuickSwitcher from "./QuickSwitcher.vue";
+
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: { searchAllSessions: vi.fn() } }));
@@ -49,8 +51,7 @@ describe("QuickSwitcher", () => {
   });
 
   it("opens on ⌘K and lists the most recent sessions", async () => {
-    const store = useAppStore();
-    store.threads = [
+    useWorkspaceStore().threads = [
       thread({ id: "a", title: "修滚动抖动", modifiedAt: "2026-10-31T08:00:00Z" }),
       thread({ id: "b", title: "升级 1.4.0", modifiedAt: "2026-10-30T08:00:00Z", archived: true }),
     ];
@@ -66,7 +67,7 @@ describe("QuickSwitcher", () => {
 
   it("filters by title and opens the selection with Enter", async () => {
     const store = useAppStore();
-    store.threads = [
+    useWorkspaceStore().threads = [
       thread({ id: "a", title: "修滚动抖动" }),
       thread({ id: "b", title: "升级 1.4.0" }),
     ];
@@ -89,7 +90,7 @@ describe("QuickSwitcher", () => {
   });
 
   it("closes on Escape and on a second ⌘K", async () => {
-    useAppStore().threads = [thread({ id: "a", title: "one" })];
+    useWorkspaceStore().threads = [thread({ id: "a", title: "one" })];
     wrapper = mount(QuickSwitcher, { attachTo: document.body });
 
     press({ key: "k", metaKey: true });
@@ -108,7 +109,7 @@ describe("QuickSwitcher", () => {
   });
 
   it("moves exactly one row per arrow press, even from the focused search box", async () => {
-    useAppStore().threads = [
+    useWorkspaceStore().threads = [
       thread({ id: "a", title: "one", modifiedAt: "2026-10-31T08:00:00Z" }),
       thread({ id: "b", title: "two", modifiedAt: "2026-10-30T08:00:00Z" }),
       thread({ id: "c", title: "three", modifiedAt: "2026-10-29T08:00:00Z" }),
@@ -134,7 +135,7 @@ describe("QuickSwitcher", () => {
 
   it("finds a phrase inside old conversations and opens that session", async () => {
     const store = useAppStore();
-    store.threads = [
+    useWorkspaceStore().threads = [
       thread({ id: "a", title: "修滚动抖动", sessionFile: "/sessions/aaa.jsonl" }),
       thread({ id: "b", title: "升级 1.4.0", sessionFile: "/sessions/bbb.jsonl" }),
     ];
@@ -170,7 +171,7 @@ describe("QuickSwitcher", () => {
   });
 
   it("does not stack on top of another dialog", async () => {
-    useAppStore().threads = [thread({ id: "a", title: "one" })];
+    useWorkspaceStore().threads = [thread({ id: "a", title: "one" })];
     const other = document.createElement("div");
     other.setAttribute("role", "dialog");
     document.body.appendChild(other);

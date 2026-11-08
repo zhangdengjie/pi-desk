@@ -3,7 +3,9 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PromptTemplateScope } from "../../bindings/pi-desk/internal/domain";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import PromptTemplateManager from "./PromptTemplateManager.vue";
+
 
 const promptMocks = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), upsert: vi.fn(), delete: vi.fn() }));
 
@@ -82,11 +84,8 @@ describe("PromptTemplateManager", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      threads: [{ id: "thread-1", title: "Runtime", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
-      activeThreadId: "thread-1",
-      commandsByThread: { "thread-1": [{ name: "package-prompt", description: "Loaded from a package", source: "prompt", path: "C:\\package\\prompts\\package-prompt.md" }] },
-    });
+    store.$patch({activeThreadId: "thread-1", commandsByThread: { "thread-1": [{ name: "package-prompt", description: "Loaded from a package", source: "prompt", path: "C:\\package\\prompts\\package-prompt.md" }] }});
+    useWorkspaceStore().threads = [{ id: "thread-1", title: "Runtime", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }];;
     const wrapper = mount(PromptTemplateManager, { global: { plugins: [pinia] } });
     await flushPromises();
 

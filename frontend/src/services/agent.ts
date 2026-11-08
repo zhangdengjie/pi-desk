@@ -155,6 +155,7 @@ export function onPiEvent(callback: (event: PiSessionEvent) => void): () => void
   return Events.On("pi:event", (event) => callback(event.data as PiSessionEvent));
 }
 
+
 export type {
   BashRequest,
   CompactRequest,

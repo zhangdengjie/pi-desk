@@ -82,16 +82,21 @@ type AgentService struct {
 	historyStopFailed bool // Protected by mutationMu; fail closed until the host restarts.
 	maintenanceMu     sync.RWMutex
 	runtime           agentRuntime
+	eventSink         func(piruntime.SessionEvent)
 	remoteSessions    map[string]remoteAgentSession
 	remoteThreads     map[string]string
 }
 
-func NewAgentService(locator *piruntime.Locator, index *sessionindex.Index, remoteLifecycle *RemoteWorkspaceLifecycle, anchorRoot string, browser *BrowserService) *AgentService {
-	return &AgentService{
+func NewAgentService(locator *piruntime.Locator, index *sessionindex.Index, remoteLifecycle *RemoteWorkspaceLifecycle, anchorRoot string, browser *BrowserService, eventSinks ...func(piruntime.SessionEvent)) *AgentService {
+	service := &AgentService{
 		locator: locator, index: index, remoteLifecycle: remoteLifecycle, anchorRoot: anchorRoot,
 		browser:        browser,
 		remoteSessions: make(map[string]remoteAgentSession), remoteThreads: make(map[string]string),
 	}
+	if len(eventSinks) > 0 {
+		service.eventSink = eventSinks[0]
+	}
+	return service
 }
 
 func newAgentService(runtime agentRuntime) *AgentService {
@@ -102,6 +107,7 @@ func (service *AgentService) ServiceStartup(ctx context.Context, _ application.S
 	app := application.Get()
 	runtime := piruntime.NewSupervisor(ctx, piruntime.NewExecStarter(service.locator), func(event piruntime.SessionEvent) {
 		service.handleRuntimeExit(event)
+		service.emitSessionEvent(event)
 		app.Event.Emit(piEventName, event)
 	})
 	service.mu.Lock()
@@ -114,6 +120,15 @@ func (service *AgentService) handleRuntimeExit(event piruntime.SessionEvent) {
 	if event.Event.Type == "runtime_exit" && event.ThreadID != "" {
 		service.browser.finishThread(event.ThreadID)
 		service.closeRemoteSession(event.ThreadID, event.Event.Generation)
+	}
+}
+
+// emitSessionEvent forwards to the optional R1a tap. The sink is installed at
+// construction time, before ServiceStartup starts the supervisor goroutines,
+// so no lock is needed on the hot path.
+func (service *AgentService) emitSessionEvent(event piruntime.SessionEvent) {
+	if service.eventSink != nil {
+		service.eventSink(event)
 	}
 }
 

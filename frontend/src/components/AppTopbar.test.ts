@@ -2,7 +2,9 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import AppTopbar from "./AppTopbar.vue";
+
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -18,19 +20,16 @@ describe("AppTopbar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-1", workspaceApplicationsLoading: false});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0, sessionFile: "one.jsonl",
-      }],
-      activeThreadId: "thread-1",
-      workspaceApplications: [
+      }];
+    useWorkspaceStore().workspaceApplications = [
         { id: "vscode", name: "Visual Studio Code", iconDataUrl: "data:image/png;base64,dnNjb2Rl" },
         { id: "file-manager", name: "File Explorer", iconDataUrl: "data:image/png;base64,ZmlsZXM=" },
-      ],
-      workspaceApplicationsLoading: false,
-      workspaceApplication: "file-manager",
-    });
+      ];
+    useWorkspaceStore().workspaceApplication = "file-manager";;
     store.openActiveWorkspaceWith = vi.fn().mockResolvedValue(true);
     const wrapper = mount(AppTopbar, { global: { plugins: [pinia] } });
 
@@ -54,15 +53,12 @@ describe("AppTopbar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-1", workspaceApplicationsLoading: true});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-1",
-      workspaceApplications: [],
-      workspaceApplicationsLoading: true,
-    });
+      }];
+    useWorkspaceStore().workspaceApplications = [];;
     const wrapper = mount(AppTopbar, { global: { plugins: [pinia] } });
 
     expect(wrapper.find(".workspace-application-anchor").exists()).toBe(false);
@@ -72,15 +68,12 @@ describe("AppTopbar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-1", workspaceApplicationsLoading: false});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-1",
-      workspaceApplications: [{ id: "file-manager", name: "File Explorer", iconDataUrl: "data:image/png;base64,ZmlsZXM=" }],
-      workspaceApplicationsLoading: false,
-    });
+      }];
+    useWorkspaceStore().workspaceApplications = [{ id: "file-manager", name: "File Explorer", iconDataUrl: "data:image/png;base64,ZmlsZXM=" }];;
     const wrapper = mount(AppTopbar, { global: { plugins: [pinia] } });
 
     expect(wrapper.get(".workspace-application-primary").attributes("disabled")).toBeDefined();
@@ -91,13 +84,11 @@ describe("AppTopbar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      threads: [{
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0, sessionFile: "one.jsonl",
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
     const wrapper = mount(AppTopbar, { global: { plugins: [pinia] } });
 
     expect(wrapper.find('button[title="Task actions"]').exists()).toBe(false);
@@ -110,13 +101,11 @@ describe("AppTopbar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      threads: [
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().threads = [
         { id: "thread-1", title: "First", workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "idle", started: false, generation: 0 },
         { id: "thread-2", title: "Second", workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "idle", started: false, generation: 0 },
-      ],
-      activeThreadId: "thread-1",
-    });
+      ];;
     const wrapper = mount(AppTopbar, { global: { plugins: [pinia] } });
 
     // 3271ac4 removed the "Pi" mark and the back/forward buttons. The stack behind them

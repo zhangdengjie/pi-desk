@@ -1,6 +1,13 @@
 import { defineStore } from "pinia";
+import { useSessionStore } from "./session";
+import { useWorkspaceStore } from "./workspace";
+import { useRepositoryStore } from "./repository";
+import { useUsageStore } from "./usage";
+import { useComposerStore } from "./composer";
+import { createID, formatMessageTime, nowLabel } from "../utils/ids";
 import { RuntimeState, type BootstrapState, type DesktopState, type ProviderEnvIssue, type SessionSnapshot, type UserConfigView, type WorkspaceApplication, type WorkspaceSummary as HostWorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
 import { agentService, onPiEvent, type PiSessionEvent, type SessionBranches } from "../services/agent";
+import { onAgentEvent, type AgentEvent } from "../services/agentEvents";
 import { catalogService } from "../services/catalog";
 import { checkForUpdates, checkRuntime as checkRuntimeStatus, getBootstrapState, notifyDesktop, readUserConfig, writeUserConfig } from "../services/desktop";
 import { repositoryService, type RepositoryFileDiff, type RepositoryFilePreview, type RepositorySnapshot, type RepositoryWorkspaceReference, type SessionFileChange } from "../services/repository";
@@ -14,21 +21,52 @@ import { FONT_FAMILY_INPUT_MAX } from "../utils/fontFamily";
 import { BATCH_ASK_PLACEHOLDER, parseBatchAskEnvelope, type BatchAskQuestion } from "../utils/batchAsk";
 import { formatFileMention } from "../utils/fileMentions";
 import { appendQuoteToDraft, formatSelectionQuote } from "../utils/selectionQuote";
-import { MAX_ATTACHED_IMAGES, MAX_SOURCE_IMAGE_BYTES, parseImageDataURL, type PreparedImage } from "../utils/imageAttachments";
-import { sessionImageUrl } from "../utils/sessionImages";
+import { MAX_ATTACHED_IMAGES, MAX_SOURCE_IMAGE_BYTES, type PreparedImage } from "../utils/imageAttachments";
 import { skillInvocationCommandText, skillInvocationTitleText } from "../utils/skillInvocation";
-import { runtimeErrorText } from "../utils/runtimeError";
-import { subagentSummaryFromResult, type SubagentTaskSummary } from "../utils/subagentTasks";
-import { buildToolDiff } from "../utils/toolDiff";
+import type { SubagentTaskSummary } from "../utils/subagentTasks";
+import {
+  boundedToolOutput,
+  contentText,
+  contentThinking,
+  messageEndParts,
+  messageStartParts,
+  retryEndFromPayload,
+  retryStartFromPayload,
+  toolProgressFromPayload,
+  toolStartFromPayload,
+} from "./events/piEvents";
 import { threadTitleText } from "../utils/threadLabel";
 import { setAppLanguage, tr } from "../i18n";
+import type { ScheduledTask, ScheduledTaskDraft } from "../utils/scheduledTasks";
 import {
-  localDateTimeToISO,
-  nextScheduledRun,
-  scheduledTaskThinkingLevels,
-  type ScheduledTask,
-  type ScheduledTaskDraft,
-} from "../utils/scheduledTasks";
+  checkScheduledTasks,
+  clearScheduledTaskStopping,
+  deleteScheduledTask,
+  finishScheduledRun,
+  isScheduledTaskStopping,
+  markScheduledTaskStopping,
+  restoreScheduledTask,
+  runScheduledTask,
+  saveScheduledTask,
+  startScheduledTaskScheduler,
+  stopScheduledTaskScheduler,
+  toggleScheduledTask,
+} from "./scheduledTaskActions";
+
+import {
+  adoptStreamedIds,
+  compactionEstimateKey,
+  contentImages,
+  copyMessages,
+  findTool,
+  historicalMessages,
+  imageAttachmentContent,
+  latestPromptCacheStatus,
+  liveCompactionMessage,
+  nestedToolHistory,
+  promptCacheStatus,
+  transcriptDisplayID,
+} from "./transcriptHistory";
 
 export type ThreadStatus = "idle" | "starting" | "running" | "attention";
 export interface PanelTab {
@@ -112,7 +150,7 @@ export const CODE_THEME_OPTIONS = [
   ["catppuccin-latte", "Catppuccin Latte"], ["catppuccin-mocha", "Catppuccin Mocha"],
 ] as const;
 export type CodeTheme = typeof CODE_THEME_OPTIONS[number][0];
-export type AppPage = "task" | "scheduledTasks" | "usage";
+export type AppPage = "task" | "scheduledTasks" | "tasks" | "usage";
 type RemoteReconnectIntent = "start" | "prompt" | "bash" | "terminal";
 export type RemoteReconnectProgressStatus = "pending" | "active" | "complete" | "error";
 export interface RemoteReconnectProgressStep {
@@ -186,6 +224,7 @@ export interface ThreadSummary {
   messageCount?: number;
   firstMessage?: string;
   parentSessionFile?: string;
+  composerJson?: string;
   unread?: boolean;
   archived?: boolean;
   error?: string;
@@ -468,14 +507,33 @@ function mergeModelCatalog(runtime: PiModel[], configured: PiModel[], current: P
 }
 
 let unsubscribePiEvents: (() => void) | undefined;
+let unsubscribeAgentEvents: (() => void) | undefined;
 let unsubscribeTerminalEvents: (() => void) | undefined;
+
+function normalizedEventsForcedOff(): boolean {
+  try {
+    return globalThis.localStorage?.getItem("pidesk.useNormalizedEvents") === "0";
+  } catch {
+    return false;
+  }
+}
+
+function agentPayload(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
 // The user config is a file someone edits in another app. Re-reading it when the
 // window comes back to the foreground is the whole hot-reload story: switching to
 // an editor and back is the gesture, and no timer runs while nobody looks.
 let unsubscribeUserConfigWatch: (() => void) | undefined;
-let localSequence = 0;
 let desktopSaveTimer: ReturnType<typeof setTimeout> | undefined;
-const scheduledTaskStoppingThreads = new Set<string>();
 let desktopSavePromise: Promise<void> | undefined;
 let desktopSavePending = false;
 let searchGeneration = 0;
@@ -499,26 +557,11 @@ function isCurrentPiRequest(threads: ThreadSummary[], thread: ThreadSummary | un
   return Boolean(thread && threads.includes(thread) && thread.generation === generation && (!wasStarted || thread.started));
 }
 const settledReloadPromises = new Map<string, Promise<void>>();
-let scheduledTaskTimer: ReturnType<typeof setInterval> | undefined;
-let scheduledTaskTicking = false;
-const TOOL_OUTPUT_LIMIT = 256 << 10;
-const TOOL_OUTPUT_TRUNCATION_MARKER = "\n\n... output truncated by Pi Desk ...\n\n";
-
 function supportsContextEdits(version?: string): boolean {
   const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version?.trim() ?? "");
   if (!match) return false;
   const current = match.slice(1).map(Number);
   return current[0] > 0 || current[1] > 87 || (current[1] === 87 && current[2] >= 0);
-}
-
-function createID(prefix: string): string {
-  localSequence += 1;
-  const uuid = globalThis.crypto?.randomUUID?.();
-  return uuid ? `${prefix}-${uuid}` : `${prefix}-${Date.now()}-${localSequence}`;
-}
-
-function nowLabel(): string {
-  return formatMessageTime(new Date());
 }
 
 function boundedExtensionText(value: unknown, limit: number): string {
@@ -710,34 +753,11 @@ function isClosedRPCStreamError(error: unknown): boolean {
   return /read pi RPC stream:.*(?:file already closed|closed pipe)/i.test(errorMessage(error));
 }
 
-function contentText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      if (!part || typeof part !== "object") return "";
-      const value = part as Record<string, unknown>;
-      if (value.type === "text" && typeof value.text === "string") return value.text;
-      return "";
-    })
-    .join("");
-}
 
 function isInternalRuntimeNotice(text: string): boolean {
   return /^\s*Ponytail loaded:\s*[^\r\n]+\s*$/i.test(text);
 }
 
-function contentThinking(content: unknown): string {
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      if (!part || typeof part !== "object") return "";
-      const value = part as Record<string, unknown>;
-      if (value.type === "thinking" && typeof value.thinking === "string") return value.thinking;
-      return "";
-    })
-    .join("");
-}
 
 function snapshotSearchText(source: Array<Record<string, unknown>>): string {
   return source.map((value) => {
@@ -767,339 +787,6 @@ function sessionSearchVersion(thread: ThreadSummary): string {
   return `${thread.sessionFile ?? ""}\n${thread.messageCount ?? ""}\n${thread.modifiedAt ?? ""}`;
 }
 
-function contentImages(content: unknown): PreparedImage[] {
-  if (!Array.isArray(content)) return [];
-  return content.flatMap((part, index) => {
-    if (!part || typeof part !== "object") return [];
-    const value = part as Record<string, unknown>;
-    if (value.type !== "image" || typeof value.mimeType !== "string") return [];
-    // A snapshot image carries a reference instead of bytes (see utils/sessionImages.ts). Its
-    // payload is the URL itself - one string, no base64 copy, and no `data:` URL built here.
-    if (typeof value.ref === "string" && value.ref) {
-      return [{
-        id: createID(`history-image-${index}`),
-        name: `Image ${index + 1}`,
-        data: "",
-        bytes: typeof value.bytes === "number" ? value.bytes : undefined,
-        ref: value.ref,
-        mimeType: value.mimeType,
-        previewUrl: sessionImageUrl(value.ref),
-      }];
-    }
-    if (typeof value.data !== "string" || !value.data) return [];
-    return [{
-      id: createID(`history-image-${index}`),
-      name: `Image ${index + 1}`,
-      data: value.data,
-      mimeType: value.mimeType,
-      previewUrl: `data:${value.mimeType};base64,${value.data}`,
-    }];
-  });
-}
-
-/**
- * The one path that still needs an image's bytes: sending it. A fork of a user message carries that
- * message's images into the composer, and those may be reference-only, so they are fetched back and
- * encoded at the RPC boundary instead of being kept in memory for the whole session.
- */
-async function imageAttachmentContent(image: PreparedImage): Promise<{ type: "image"; data: string; mimeType: string }> {
-  if (image.data || !image.ref) return { type: "image", data: image.data, mimeType: image.mimeType };
-  const response = await fetch(sessionImageUrl(image.ref));
-  if (!response.ok) throw new Error("Unable to read the attached image");
-  const parsed = parseImageDataURL(await readBlobDataURL(await response.blob()), image.mimeType);
-  return { type: "image", data: parsed.data, mimeType: parsed.mimeType };
-}
-
-function readBlobDataURL(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error || new Error("Unable to read the attached image"));
-    reader.onload = () => resolve(String(reader.result));
-    reader.readAsDataURL(blob);
-  });
-}
-
-function resultText(result: unknown): string {
-  if (typeof result === "string") return result;
-  if (!result || typeof result !== "object") return "";
-  const value = result as Record<string, unknown>;
-  return contentText(value.content) || (typeof value.output === "string" ? value.output : "");
-}
-
-function boundedToolOutput(output: string): { text: string; truncated: boolean } {
-  if (output.length <= TOOL_OUTPUT_LIMIT) return { text: output, truncated: false };
-  const available = TOOL_OUTPUT_LIMIT - TOOL_OUTPUT_TRUNCATION_MARKER.length;
-  const headLength = Math.floor(available * 0.6);
-  return {
-    text: output.slice(0, headLength) + TOOL_OUTPUT_TRUNCATION_MARKER + output.slice(-(available - headLength)),
-    truncated: true,
-  };
-}
-
-function messageTimestamp(value: unknown): number | undefined {
-  if (typeof value !== "number" && typeof value !== "string") return undefined;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date.getTime();
-}
-
-function formatMessageTime(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function messageTime(value: unknown): string {
-  const timestamp = messageTimestamp(value);
-  return timestamp === undefined ? "" : formatMessageTime(new Date(timestamp));
-}
-
-function transcriptDisplayID(value: Record<string, unknown>): string | undefined {
-  if (typeof value.piDeskEntryId === "string") return value.piDeskEntryId;
-  return typeof value.piDeskDisplayId === "string" ? value.piDeskDisplayId : undefined;
-}
-
-function historicalIdentity(value: Record<string, unknown>, fallback: string, prefix = "history"): { id: string; entryId?: string } {
-  const entryId = typeof value.piDeskEntryId === "string" ? value.piDeskEntryId : undefined;
-  const displayId = transcriptDisplayID(value);
-  return {
-    id: displayId ? `${prefix}-${displayId}` : createID(fallback),
-    entryId,
-  };
-}
-
-function tokenCount(value: unknown): number | undefined {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : undefined;
-}
-
-function promptCacheStatus(message: Record<string, unknown>, cacheObserved = false): PromptCacheStatus | undefined {
-  if (!message.usage || typeof message.usage !== "object" || Array.isArray(message.usage)) return undefined;
-  const usage = message.usage as Record<string, unknown>;
-  const input = tokenCount(usage.input) ?? 0;
-  const cacheRead = tokenCount(usage.cacheRead) ?? 0;
-  const cacheWrite = tokenCount(usage.cacheWrite) ?? 0;
-  if (input + cacheRead + cacheWrite === 0) return undefined;
-  return { input, cacheRead, cacheWrite, cacheObserved: cacheObserved || cacheRead + cacheWrite > 0 };
-}
-
-function latestPromptCacheStatus(source: Array<Record<string, unknown>>): PromptCacheStatus | undefined {
-  let latest: PromptCacheStatus | undefined;
-  for (const message of source) {
-    if (message.role !== "assistant") continue;
-    latest = promptCacheStatus(message, latest?.cacheObserved) ?? latest;
-  }
-  return latest;
-}
-
-function compactionEstimateKey(summary: string, tokensBefore: number | undefined): string {
-  return `${tokensBefore ?? ""}\n${summary}`;
-}
-
-function findTool(tools: ToolExecution[], id: string): ToolExecution | undefined {
-  for (const tool of tools) {
-    if (tool.id === id) return tool;
-    const child = findTool(tool.children ?? [], id);
-    if (child) return child;
-  }
-}
-
-function nestedToolHistory(value: unknown): ToolExecution[] | undefined {
-  if (!value || typeof value !== "object") return;
-  const calls = (value as Record<string, unknown>).calls;
-  if (!Array.isArray(calls)) return;
-  const roots: ToolExecution[] = [];
-  const byId = new Map<string, ToolExecution>();
-  for (const call of calls) {
-    if (!call || typeof call !== "object") continue;
-    const tool: ToolExecution = {
-      id: String(call.id), name: String(call.name), arguments: call.arguments,
-      output: typeof call.error === "string" ? call.error : call.status === "unfinished" ? tr("tools.unfinished") : "",
-      status: call.status === "ok" ? "complete" : call.status === "unfinished" ? "unfinished" : "error",
-      resultReceived: call.status !== "unfinished", durationMs: tokenCount(call.durationMs),
-    };
-    // Pi assigns each nested call <callerId>/<n>; the durable record omits parentToolCallId.
-    const parent = byId.get(tool.id.slice(0, tool.id.lastIndexOf("/")));
-    (parent ? (parent.children ??= []) : roots).push(tool);
-    byId.set(tool.id, tool);
-  }
-  return roots;
-}
-
-function historicalMessages(
-  source: Array<Record<string, unknown>>,
-  compactionEstimates: Record<string, number> = {},
-  compactionDurations: Record<string, number> = {},
-): TimelineMessage[] {
-  const result: TimelineMessage[] = [];
-  const toolsByID = new Map<string, ToolExecution>();
-  for (const value of source) {
-    const role = String(value.role ?? "");
-    if (role === "piDeskCompaction") {
-      const identity = historicalIdentity(value, "history-compaction", "history-compaction");
-      const summary = typeof value.summary === "string" ? value.summary : "";
-      const tokensBefore = tokenCount(value.tokensBefore);
-      const persistedEstimate = tokenCount(value.estimatedTokensAfter);
-      const estimateKey = compactionEstimateKey(summary, tokensBefore);
-      result.push({
-        id: identity.id,
-        role: "system", text: "", thinking: "",
-        timestamp: messageTime(value.timestamp), timestampMs: messageTimestamp(value.timestamp), streaming: false, tools: [],
-        compaction: {
-          summary,
-          tokensBefore,
-          estimatedTokensAfter: persistedEstimate ?? compactionEstimates[estimateKey],
-          durationMs: compactionDurations[estimateKey],
-        },
-      });
-      continue;
-    }
-    if (role === "toolResult") {
-      const toolCallID = String(value.toolCallId ?? "");
-      const tool = toolsByID.get(toolCallID);
-      if (tool) {
-        tool.entryId = typeof value.piDeskEntryId === "string" ? value.piDeskEntryId : undefined;
-        tool.contextExcluded = value.piDeskContextExcluded === true || undefined;
-        const output = boundedToolOutput(contentText(value.content));
-        tool.output = output.text;
-        tool.truncated = output.truncated || undefined;
-        tool.resultReceived = true;
-        tool.status = value.isError ? "error" : "complete";
-        const images = contentImages(value.content);
-        if (images.length) tool.images = images;
-        const endedAt = messageTimestamp(value.timestamp);
-        tool.durationMs = tokenCount(value.durationMs) ?? (endedAt !== undefined && tool.startedAt !== undefined ? Math.max(0, endedAt - tool.startedAt) : undefined);
-        tool.children = nestedToolHistory(value.nestedCalls);
-        tool.nestedCallsIncomplete = !!value.nestedCalls && (value.nestedCalls as Record<string, unknown>).complete === false;
-        tool.diff = buildToolDiff(tool.name, tool.arguments, value.details) ?? tool.diff;
-      }
-      continue;
-    }
-    if (role === "user") {
-      const images = contentImages(value.content);
-      const identity = historicalIdentity(value, "history-user");
-      result.push({
-        ...identity,
-        role: "user", text: contentText(value.content), thinking: "",
-        timestamp: messageTime(value.timestamp), timestampMs: messageTimestamp(value.timestamp), streaming: false, images, tools: [],
-        contextExcluded: value.piDeskContextExcluded === true || undefined,
-      });
-      continue;
-    }
-    if (role === "assistant") {
-      const content = Array.isArray(value.content) ? value.content : [];
-      const tools: ToolExecution[] = [];
-      for (const item of content) {
-        if (!item || typeof item !== "object") continue;
-        const part = item as Record<string, unknown>;
-        if (part.type === "toolCall") {
-          const tool: ToolExecution = {
-            id: String(part.id ?? createID("history-tool")), name: String(part.name ?? "tool"),
-            arguments: part.arguments, output: "", status: "unfinished", startedAt: messageTimestamp(value.timestamp),
-          };
-          tool.diff = buildToolDiff(tool.name, tool.arguments);
-          tools.push(tool);
-          toolsByID.set(tool.id, tool);
-        }
-      }
-      const identity = historicalIdentity(value, "history-assistant");
-      result.push({
-        ...identity,
-        role: "assistant", text: contentText(value.content), thinking: contentThinking(value.content),
-        timestamp: messageTime(value.timestamp), timestampMs: messageTimestamp(value.timestamp), streaming: false,
-        error: runtimeErrorText(value.errorMessage), tools,
-        contextExcluded: value.piDeskContextExcluded === true || undefined,
-      });
-      continue;
-    }
-    if (role === "bashExecution") {
-      const command = typeof value.command === "string" ? value.command : "";
-      const output = typeof value.output === "string" ? value.output : "";
-      result.push({
-        ...historicalIdentity(value, "history-bash"), role: "system", text: [`$ ${command}`, output].filter(Boolean).join("\n"),
-        thinking: "", timestamp: messageTime(value.timestamp), timestampMs: messageTimestamp(value.timestamp), streaming: false,
-        error: Number(value.exitCode ?? 0) !== 0 ? `Command exited with code ${String(value.exitCode)}` : undefined, tools: [],
-      });
-    }
-  }
-  return result;
-}
-
-function liveCompactionMessage(payload: Record<string, unknown>, durationMs?: number): TimelineMessage | undefined {
-  if (payload.aborted === true) return undefined;
-  const result = payload.result && typeof payload.result === "object" ? payload.result as Record<string, unknown> : undefined;
-  if (!result || typeof result.summary !== "string") return undefined;
-  const tokensBefore = tokenCount(result.tokensBefore);
-  const timestampMs = Date.now();
-  return {
-    id: createID("live-compaction"),
-    role: "system", text: "", thinking: "",
-    timestamp: formatMessageTime(new Date(timestampMs)), timestampMs, streaming: false, tools: [],
-    compaction: {
-      summary: result.summary,
-      tokensBefore,
-      estimatedTokensAfter: tokenCount(result.estimatedTokensAfter),
-      durationMs,
-    },
-  };
-}
-
-/**
- * Give the rows of the run that just settled back the ids they streamed under.
- *
- * A live turn is keyed by the RPC message id; the transcript snapshot that replaces it a
- * moment later is keyed by the session entry id (`historicalIdentity`). Same row, two
- * ids - and two ids mean Vue tears the row down and builds it again: the markdown is
- * parsed a second time, `useRevealedText` restarts, the reader's expanded panels are
- * forgotten (`detailsOpenState` remembers them by message id) and the virtualizer
- * re-measures every row below. Adopting the streamed id makes the settled transcript a
- * patch instead of a rebuild.
- *
- * Deliberately narrow: only the tail still keyed by a streamed id is touched, and it is
- * matched from the end so a repeated prompt cannot re-pair older rows. `entryId` is left
- * as the snapshot set it - edit/delete/fork address the session entry through that, not
- * through the display id.
- */
-function adoptStreamedIds(historical: TimelineMessage[], previous: TimelineMessage[]): void {
-  let incoming = historical.length - 1;
-  let streamed = previous.length - 1;
-  while (incoming >= 0 && streamed >= 0) {
-    const next = historical[incoming];
-    const live = previous[streamed];
-    // A row on a session entry id on either side means the run ends here.
-    if (live.id.startsWith("history-") || !next.id.startsWith("history-")) return;
-    // A prompt can come back expanded (prompt templates, skills), so the one row that
-    // cannot be anything else is allowed to differ in text.
-    const sameText = next.role === live.role && next.text === live.text;
-    const samePrompt = next.role === "user" && live.role === "user";
-    if (!sameText && !samePrompt) return;
-    next.id = live.id;
-    incoming -= 1;
-    streamed -= 1;
-  }
-}
-
-function finishTool(tool: ToolExecution) {
-  if (tool.status === "running") tool.status = "unfinished";
-  tool.children?.forEach(finishTool);
-}
-
-function copyTool(tool: ToolExecution): ToolExecution {
-  return { ...tool, diff: tool.diff ? { ...tool.diff } : undefined, children: tool.children?.map(copyTool) };
-}
-
-function copyMessages(messages: TimelineMessage[]): TimelineMessage[] {
-  return messages.map((message) => ({
-    ...message,
-    images: message.images?.map((image) => ({ ...image })),
-    tools: message.tools.map(copyTool),
-    executionSteps: message.executionSteps?.map((step) => ({
-      ...step,
-      tools: step.tools?.map(copyTool),
-    })),
-    compaction: message.compaction ? { ...message.compaction } : undefined,
-    runNotice: message.runNotice ? { ...message.runNotice } : undefined,
-  }));
-}
-
 let lastMentionDraft = "";
 
 /**
@@ -1118,6 +805,7 @@ export const useAppStore = defineStore("app", {
   state: () => ({
     sidebarCollapsed: false,
     activePage: "task" as AppPage,
+    useNormalizedEvents: false,
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     /** See `setPaneResizing`: true only while a resizer is being dragged. */
     paneResizing: false,
@@ -1162,70 +850,41 @@ export const useAppStore = defineStore("app", {
     sessionSyncError: "",
     desktopStateReady: false,
     bootstrap: null as BootstrapState | null,
-    workspaces: [] as WorkspaceSummary[],
-    workspaceApplications: [] as WorkspaceApplication[],
     workspaceApplicationsLoading: true,
-    workspaceApplication: "" as string,
     workspaceApplicationError: "",
-    threads: [] as ThreadSummary[],
     scheduledTasks: [] as ScheduledTask[],
     scheduledTaskRunningByID: {} as Record<string, boolean>,
     activeThreadId: "",
-    messagesByThread: {} as Record<string, TimelineMessage[]>,
     searchBodyTextByThread: {} as Record<string, string>,
     searchBodyVersionByThread: {} as Record<string, string>,
     searchBodyLoading: false,
     transcriptEntriesByThread: {} as Record<string, Array<Record<string, unknown>>>,
     transcriptReloadGenerationByThread: {} as Record<string, number>,
-    draftsByThread: {} as Record<string, string>,
-    attachmentsByThread: {} as Record<string, PreparedImage[]>,
-    activeAssistantByThread: {} as Record<string, string>,
-    waitingForOutputByThread: {} as Record<string, boolean | undefined>,
     sessionStateByThread: {} as Record<string, PiSessionState>,
-    sessionStatsByThread: {} as Record<string, SessionStats>,
-    promptCacheByThread: {} as Record<string, PromptCacheStatus | undefined>,
-    sessionStatsRefreshGenerationByThread: {} as Record<string, number>,
-    compactionEstimatesByThread: {} as Record<string, Record<string, number>>,
-    compactionDurationsByThread: {} as Record<string, Record<string, number>>,
     // When `compaction_start` arrived, per thread. Consumed by the matching `compaction_end`.
-    compactionStartByThread: {} as Record<string, number>,
-    latestCompactionEstimateByThread: {} as Record<string, number | undefined>,
     modelsByThread: {} as Record<string, PiModel[]>,
     configuredModels: [] as PiModel[],
     accountModelProviders: [] as string[],
     knownRuntimeModels: [] as PiModel[],
-    pendingModelByThread: {} as Record<string, PiModel | undefined>,
     // Reasoning level a *not yet started* thread should adopt. Levels can only be set on a live Pi
     // process, so this waits for `applyPendingThinking` right after the model is applied.
-    pendingThinkingByThread: {} as Record<string, string | undefined>,
     modelSelectionGenerationByThread: {} as Record<string, number>,
     sessionStateRefreshGenerationByThread: {} as Record<string, number>,
     modelCatalogError: "",
     thinkingLevelsByThread: {} as Record<string, string[]>,
     thinkingLevelsRefreshGenerationByThread: {} as Record<string, number>,
     commandsByThread: {} as Record<string, SlashCommand[]>,
-    queueByThread: {} as Record<string, QueuedMessages>,
-    pendingPromptsByThread: {} as Record<string, PendingPrompt[]>,
-    pendingPromptsPausedByThread: {} as Record<string, boolean>,
-    pendingPromptDispatchByThread: {} as Record<string, string>,
     retryByThread: {} as Record<string, RetryInfo | undefined>,
     bashMessageByThread: {} as Record<string, string | undefined>,
     bashRunningByThread: {} as Record<string, boolean | undefined>,
     autoRetryEnabledByThread: {} as Record<string, boolean | undefined>,
-    repositoryByWorkspace: {} as Record<string, RepositorySnapshot | undefined>,
-    repositoryLoadingByWorkspace: {} as Record<string, boolean>,
-    repositoryErrorByWorkspace: {} as Record<string, string>,
-    repositoryStaleByWorkspace: {} as Record<string, boolean>,
     // Which repository directories the user has opened, per workspace. Upstream's panel keeps one
     // `expanded` record per file tab, which would force every tab of the same repository to be
     // opened again - so the bucket stays here and feeds FileTreeNode's `expanded` prop.
     // In-memory like `repositoryByWorkspace`; the tab's own scroll/selection state stays upstream's.
-    repositoryTreeExpandedByWorkspace: {} as Record<string, Record<string, boolean>>,
     // Whether the file tree shows paths Git excludes. On by default: those paths are real files in
     // the workspace (`pi` keeps its own notes under `.pi/plans/`, excluded via `.git/info/exclude`),
     // and hiding them made the listing look broken.
-    repositoryShowIgnoredFiles: true,
-    repositoryRefreshGenerationByWorkspace: {} as Record<string, number>,
     sessionChangesByThread: {} as Record<string, SessionFileChange[] | undefined>,
     sessionChangesErrorByThread: {} as Record<string, string>,
     workspaceTrustUpdatingPath: "",
@@ -1295,8 +954,51 @@ export const useAppStore = defineStore("app", {
     updateCheckResult: null as import("../../bindings/pi-desk/internal/domain").UpdateCheckResult | null,
   }),
   getters: {
+    repositoryByWorkspace(): Record<string, RepositorySnapshot | undefined> { return useRepositoryStore().repositoryByWorkspace; },
+    repositoryLoadingByWorkspace(): Record<string, boolean> { return useRepositoryStore().repositoryLoadingByWorkspace; },
+    repositoryErrorByWorkspace(): Record<string, string> { return useRepositoryStore().repositoryErrorByWorkspace; },
+    repositoryStaleByWorkspace(): Record<string, boolean> { return useRepositoryStore().repositoryStaleByWorkspace; },
+    repositoryTreeExpandedByWorkspace(): Record<string, Record<string, boolean>> { return useRepositoryStore().repositoryTreeExpandedByWorkspace; },
+    repositoryShowIgnoredFiles(): boolean { return useRepositoryStore().repositoryShowIgnoredFiles; },
+    repositoryRefreshGenerationByWorkspace(): Record<string, number> { return useRepositoryStore().repositoryRefreshGenerationByWorkspace; },
+    sessionStatsByThread(): Record<string, SessionStats> { return useUsageStore().sessionStatsByThread; },
+    promptCacheByThread(): Record<string, PromptCacheStatus | undefined> { return useUsageStore().promptCacheByThread; },
+    sessionStatsRefreshGenerationByThread(): Record<string, number> { return useUsageStore().sessionStatsRefreshGenerationByThread; },
+    compactionEstimatesByThread(): Record<string, Record<string, number>> { return useUsageStore().compactionEstimatesByThread; },
+    compactionDurationsByThread(): Record<string, Record<string, number>> { return useUsageStore().compactionDurationsByThread; },
+    compactionStartByThread(): Record<string, number> { return useUsageStore().compactionStartByThread; },
+    latestCompactionEstimateByThread(): Record<string, number | undefined> { return useUsageStore().latestCompactionEstimateByThread; },
+    draftsByThread(): Record<string, string> { return useComposerStore().draftsByThread; },
+    attachmentsByThread(): Record<string, PreparedImage[]> { return useComposerStore().attachmentsByThread; },
+    pendingPromptsByThread(): Record<string, PendingPrompt[]> { return useComposerStore().pendingPromptsByThread; },
+    pendingPromptsPausedByThread(): Record<string, boolean> { return useComposerStore().pendingPromptsPausedByThread; },
+    pendingPromptDispatchByThread(): Record<string, string> { return useComposerStore().pendingPromptDispatchByThread; },
+    pendingModelByThread(): Record<string, PiModel | undefined> { return useComposerStore().pendingModelByThread; },
+    pendingThinkingByThread(): Record<string, string | undefined> { return useComposerStore().pendingThinkingByThread; },
+    queueByThread(): Record<string, QueuedMessages> { return useComposerStore().queueByThread; },
+    threads(): ThreadSummary[] {
+      return useWorkspaceStore().threads;
+    },
+    workspaces(): WorkspaceSummary[] {
+      return useWorkspaceStore().workspaces;
+    },
+    workspaceApplications(): WorkspaceApplication[] {
+      return useWorkspaceStore().workspaceApplications;
+    },
+    workspaceApplication(): string {
+      return useWorkspaceStore().workspaceApplication;
+    },
+    messagesByThread(): Record<string, TimelineMessage[]> {
+      return useSessionStore().messagesByThread;
+    },
+    activeAssistantByThread(): Record<string, string> {
+      return useSessionStore().activeAssistantByThread;
+    },
+    waitingForOutputByThread(): Record<string, boolean | undefined> {
+      return useSessionStore().waitingForOutputByThread;
+    },
     activeThread(state): ThreadSummary | undefined {
-      return state.threads.find((thread) => thread.id === state.activeThreadId);
+      return useWorkspaceStore().threads.find((thread) => thread.id === state.activeThreadId);
     },
     // App.vue must NOT key the dialog's existence off the head slot: clearing it synchronously on
     // click unmounted the scroll container, so a menu re-render lost the list's scroll offset and
@@ -1308,42 +1010,42 @@ export const useAppStore = defineStore("app", {
     // The native picker runs on this machine, so an SSH workspace would produce a local path the
     // remote Pi cannot read; the composer button is disabled for those.
     activeWorkspaceIsRemote(state): boolean {
-      return workspaceForThread(state.workspaces, state.threads.find((item) => item.id === state.activeThreadId))?.kind === "ssh";
+      return workspaceForThread(useWorkspaceStore().workspaces, useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId))?.kind === "ssh";
     },
     activeWorkspace(state): WorkspaceSummary | undefined {
-      return workspaceForThread(state.workspaces, state.threads.find((item) => item.id === state.activeThreadId));
+      return workspaceForThread(useWorkspaceStore().workspaces, useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId));
     },
     remoteReconnectThread(state): ThreadSummary | undefined {
-      return state.threads.find((thread) => thread.id === state.remoteReconnectThreadId);
+      return useWorkspaceStore().threads.find((thread) => thread.id === state.remoteReconnectThreadId);
     },
-    activeWorkspaceApplication(state): WorkspaceApplication | undefined {
-      return state.workspaceApplications.find((application) => application.id === state.workspaceApplication)
-        ?? state.workspaceApplications.find((application) => application.id === "file-manager")
-        ?? state.workspaceApplications[0];
+    activeWorkspaceApplication(): WorkspaceApplication | undefined {
+      return useWorkspaceStore().workspaceApplications.find((application) => application.id === useWorkspaceStore().workspaceApplication)
+        ?? useWorkspaceStore().workspaceApplications.find((application) => application.id === "file-manager")
+        ?? useWorkspaceStore().workspaceApplications[0];
     },
     activeMessages(state): TimelineMessage[] {
-      return state.messagesByThread[state.activeThreadId] ?? [];
+      return useSessionStore().messagesByThread[state.activeThreadId] ?? [];
     },
     activeWaitingForOutput(state): boolean {
-      return Boolean(state.waitingForOutputByThread[state.activeThreadId]);
+      return Boolean(useSessionStore().waitingForOutputByThread[state.activeThreadId]);
     },
     activeDraft(state): string {
-      return state.draftsByThread[state.activeThreadId] ?? "";
+      return useComposerStore().draftsByThread[state.activeThreadId] ?? "";
     },
     activeAttachments(state): PreparedImage[] {
-      return state.attachmentsByThread[state.activeThreadId] ?? [];
+      return useComposerStore().attachmentsByThread[state.activeThreadId] ?? [];
     },
     activeSessionState(state): PiSessionState | undefined {
       return state.sessionStateByThread[state.activeThreadId];
     },
     activeSessionStats(state): SessionStats | undefined {
-      return state.sessionStatsByThread[state.activeThreadId];
+      return useUsageStore().sessionStatsByThread[state.activeThreadId];
     },
     activePromptCache(state): PromptCacheStatus | undefined {
-      return state.promptCacheByThread[state.activeThreadId];
+      return useUsageStore().promptCacheByThread[state.activeThreadId];
     },
     activeModels(state): PiModel[] {
-      const thread = state.threads.find((candidate) => candidate.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((candidate) => candidate.id === state.activeThreadId);
       if (!thread) return [];
       const current = state.sessionStateByThread[state.activeThreadId]?.model;
       return mergeModelCatalog(
@@ -1363,7 +1065,7 @@ export const useAppStore = defineStore("app", {
       );
     },
     activeModelPending(state): boolean {
-      return Boolean(state.pendingModelByThread[state.activeThreadId]);
+      return Boolean(useComposerStore().pendingModelByThread[state.activeThreadId]);
     },
     activeThinkingLevels(state): string[] {
       return state.thinkingLevelsByThread[state.activeThreadId] ?? [];
@@ -1375,10 +1077,10 @@ export const useAppStore = defineStore("app", {
       return [...new Set(normalizeSlashCommandList(state.hiddenSlashCommands))];
     },
     activeQueue(state): QueuedMessages {
-      return state.queueByThread[state.activeThreadId] ?? { steering: [], followUp: [] };
+      return useComposerStore().queueByThread[state.activeThreadId] ?? { steering: [], followUp: [] };
     },
     activePendingPrompts(state): PendingPrompt[] {
-      return state.pendingPromptsByThread[state.activeThreadId] ?? [];
+      return useComposerStore().pendingPromptsByThread[state.activeThreadId] ?? [];
     },
     activeRetry(state): RetryInfo | undefined {
       return state.retryByThread[state.activeThreadId];
@@ -1413,28 +1115,28 @@ export const useAppStore = defineStore("app", {
       };
     },
     activeRepository(state): RepositorySnapshot | undefined {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
-      return thread ? state.repositoryByWorkspace[repositoryKey(thread)] : undefined;
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
+      return thread ? useRepositoryStore().repositoryByWorkspace[repositoryKey(thread)] : undefined;
     },
     activeRepositoryTreeKey(state): string {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
       return thread ? repositoryKey(thread) : "";
     },
     activeRepositoryTreeExpanded(state): Record<string, boolean> {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
-      return (thread && state.repositoryTreeExpandedByWorkspace[repositoryKey(thread)]) || {};
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
+      return (thread && useRepositoryStore().repositoryTreeExpandedByWorkspace[repositoryKey(thread)]) || {};
     },
     activeRepositoryLoading(state): boolean {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
-      return thread ? Boolean(state.repositoryLoadingByWorkspace[repositoryKey(thread)]) : false;
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
+      return thread ? Boolean(useRepositoryStore().repositoryLoadingByWorkspace[repositoryKey(thread)]) : false;
     },
     activeRepositoryError(state): string {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
-      return thread ? state.repositoryErrorByWorkspace[repositoryKey(thread)] ?? "" : "";
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
+      return thread ? useRepositoryStore().repositoryErrorByWorkspace[repositoryKey(thread)] ?? "" : "";
     },
     activeRepositoryStale(state): boolean {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
-      return thread ? Boolean(state.repositoryStaleByWorkspace[repositoryKey(thread)]) : false;
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
+      return thread ? Boolean(useRepositoryStore().repositoryStaleByWorkspace[repositoryKey(thread)]) : false;
     },
     activePanel(state): ThreadPanel | undefined {
       return state.inspectorByThread[state.activeThreadId];
@@ -1503,30 +1205,31 @@ export const useAppStore = defineStore("app", {
       return supportsContextEdits(state.bootstrap?.runtime.version) && !state.sessionMutationErrorByThread[state.activeThreadId];
     },
     activeWorkspaceTrustUpdating(state): boolean {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
       return Boolean(thread && state.workspaceTrustUpdatingPath === pathKey(thread.workspacePath));
     },
     activeWorkspaceTrustBusy(state): boolean {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
       if (!thread) return false;
       const workspaceKey = pathKey(thread.workspacePath);
-      return state.threads.some((item) => pathKey(item.workspacePath) === workspaceKey
+      return useWorkspaceStore().threads.some((item) => pathKey(item.workspacePath) === workspaceKey
         && (item.status === "running" || item.status === "starting" || Boolean(state.bashRunningByThread[item.id])));
     },
     piMaintenanceBusy(state): boolean {
-      return state.threads.some((thread) => thread.started
+      return useWorkspaceStore().threads.some((thread) => thread.started
         && (thread.status === "running" || thread.status === "starting" || Boolean(state.bashRunningByThread[thread.id])));
     },
     filteredThreads(state): ThreadSummary[] {
+      const session = useSessionStore();
       const query = state.searchQuery.trim().toLocaleLowerCase();
-      const threads = query ? state.threads.filter((thread) => [
+      const threads = query ? useWorkspaceStore().threads.filter((thread) => [
         thread.title,
         thread.firstMessage ?? "",
         thread.workspace,
         thread.workspacePath,
         state.searchBodyTextByThread[thread.id] ?? "",
-        timelineSearchText(state.messagesByThread[thread.id] ?? []),
-      ].join("\n").toLocaleLowerCase().includes(query)) : state.threads;
+        timelineSearchText(session.messagesByThread[thread.id] ?? []),
+      ].join("\n").toLocaleLowerCase().includes(query)) : useWorkspaceStore().threads;
       return [...threads].sort((left, right) => {
         const leftTime = Date.parse(left.modifiedAt || left.createdAt || "");
         const rightTime = Date.parse(right.modifiedAt || right.createdAt || "");
@@ -1540,6 +1243,9 @@ export const useAppStore = defineStore("app", {
     async initialize() {
       if (!unsubscribePiEvents) {
         unsubscribePiEvents = onPiEvent((event) => this.handlePiEvent(event));
+      }
+      if (!unsubscribeAgentEvents) {
+        unsubscribeAgentEvents = onAgentEvent((event) => this.handleAgentEvent(event));
       }
       if (!unsubscribeTerminalEvents) {
         unsubscribeTerminalEvents = onTerminalEvent((event) => this.handleTerminalEvent(event));
@@ -1869,7 +1575,7 @@ export const useAppStore = defineStore("app", {
         this.workspaceApplicationError = tr("topbar.workspaceUnavailable");
         return false;
       }
-      this.workspaceApplication = application.id;
+      useWorkspaceStore().workspaceApplication = application.id;
       this.scheduleDesktopStateSave();
       try {
         await catalogService.openWorkspaceWith(workspace.id, application.id);
@@ -1957,7 +1663,7 @@ export const useAppStore = defineStore("app", {
       }
       if (!workspace.discovered) await catalogService.removeWorkspace(id);
       for (const thread of removedThreads) this.removeThreadState(thread.id);
-      this.workspaces = this.workspaces.filter((item) => item.id !== id);
+      useWorkspaceStore().workspaces = this.workspaces.filter((item) => item.id !== id);
       this.scheduledTasks = this.scheduledTasks.filter((task) => task.workspaceId !== id);
       delete this.remoteReadyByWorkspace[id];
       this.scheduleDesktopStateSave();
@@ -2235,7 +1941,7 @@ export const useAppStore = defineStore("app", {
       return { path: normalized, external: !inside };
     },
     setRepositoryShowIgnoredFiles(value: boolean) {
-      this.repositoryShowIgnoredFiles = value;
+      useRepositoryStore().repositoryShowIgnoredFiles = value;
     },
     setRepositoryTreeExpanded(directory: string, value: boolean) {
       const key = this.activeRepositoryTreeKey;
@@ -2534,6 +2240,9 @@ export const useAppStore = defineStore("app", {
       if (!thread.workspaceId) return undefined;
       const workspace = this.workspaces.find((item) => item.id === thread.workspaceId);
       return workspace?.kind === "ssh" ? workspace : undefined;
+    },
+    useNormalizedForThread(thread: ThreadSummary): boolean {
+      return this.useNormalizedEvents && !this.remoteWorkspaceForThread(thread);
     },
     requestRemoteReconnect(thread: ThreadSummary, intent: RemoteReconnectIntent): boolean {
       const workspace = this.remoteWorkspaceForThread(thread);
@@ -2910,7 +2619,7 @@ export const useAppStore = defineStore("app", {
       const thread = this.threads.find((candidate) => candidate.id === threadId);
       if (!thread?.started) return false;
       try {
-        scheduledTaskStoppingThreads.add(thread.id);
+        markScheduledTaskStopping(thread.id);
         await agentService.stopSession(thread.id);
         this.finishScheduledRun(thread.id, "cancelled");
         thread.started = false;
@@ -2933,7 +2642,7 @@ export const useAppStore = defineStore("app", {
         this.appendSystem(thread.id, `Unable to close session: ${failure}`, failure);
         return false;
       } finally {
-        scheduledTaskStoppingThreads.delete(thread.id);
+        clearScheduledTaskStopping(thread.id);
       }
     },
     async stopActiveSession() {
@@ -3062,7 +2771,7 @@ export const useAppStore = defineStore("app", {
       try {
         await waitForPiStart(thread.id);
         if (thread.started) {
-          scheduledTaskStoppingThreads.add(thread.id);
+          markScheduledTaskStopping(thread.id);
           await agentService.stopSession(thread.id);
           this.finishScheduledRun(thread.id, "cancelled");
           thread.started = false;
@@ -3083,7 +2792,7 @@ export const useAppStore = defineStore("app", {
       } catch (error) {
         this.deleteSessionError = this.remoteFailureMessage(thread.id, error);
       } finally {
-        scheduledTaskStoppingThreads.delete(thread.id);
+        clearScheduledTaskStopping(thread.id);
         delete this.sessionOperationByThread[thread.id];
       }
     },
@@ -3170,191 +2879,37 @@ export const useAppStore = defineStore("app", {
       this.searchOpen = false;
       this.searchQuery = "";
     },
+    openTasks() {
+      this.activePage = "tasks";
+      this.searchOpen = false;
+      this.searchQuery = "";
+    },
     startScheduledTaskScheduler() {
-      if (scheduledTaskTimer) return;
-      scheduledTaskTimer = setInterval(() => void this.checkScheduledTasks(), 30_000);
+      startScheduledTaskScheduler(this);
     },
     stopScheduledTaskScheduler() {
-      if (!scheduledTaskTimer) return;
-      clearInterval(scheduledTaskTimer);
-      scheduledTaskTimer = undefined;
+      stopScheduledTaskScheduler();
     },
     saveScheduledTask(draft: ScheduledTaskDraft, taskID = "") {
-      const workspace = this.workspaces.find((item) => item.id === draft.workspaceId);
-      if (!workspace || workspace.kind === "ssh" || workspace.trust !== "approve") {
-        throw new Error(tr("scheduledTasks.errors.workspace"));
-      }
-      const name = draft.name.trim();
-      const prompt = draft.prompt.trim();
-      if (!name || !prompt) throw new Error(tr("scheduledTasks.errors.required"));
-      const modelProvider = draft.modelProvider.trim();
-      const modelId = draft.modelId.trim();
-      if (!modelProvider || !modelId) throw new Error(tr("scheduledTasks.errors.model"));
-      const thinkingLevel = draft.thinkingLevel.trim();
-      if (!scheduledTaskThinkingLevels.includes(thinkingLevel as (typeof scheduledTaskThinkingLevels)[number])) {
-        throw new Error(tr("scheduledTasks.errors.thinkingLevel"));
-      }
-      const now = nowISO();
-      const existing = this.scheduledTasks.find((task) => task.id === taskID);
-      const schedule = {
-        frequency: draft.frequency,
-        time: draft.frequency === "once" ? undefined : draft.time,
-        weekday: draft.frequency === "weekly" ? draft.weekday : undefined,
-        runAt: draft.frequency === "once" ? localDateTimeToISO(draft.runAt) : undefined,
-      } as const;
-      const nextRunAt = nextScheduledRun(schedule);
-      if (!nextRunAt) throw new Error(tr("scheduledTasks.errors.future"));
-      const task: ScheduledTask = {
-        ...(existing ?? {
-          id: createID("schedule"),
-          enabled: true,
-          createdAt: now,
-        }),
-        ...schedule,
-        name,
-        prompt,
-        workspaceId: workspace.id,
-        modelProvider,
-        modelId,
-        modelName: draft.modelName.trim() || undefined,
-        thinkingLevel,
-        nextRunAt,
-        updatedAt: now,
-      };
-      if (existing) Object.assign(existing, task);
-      else this.scheduledTasks.unshift(task);
-      this.scheduleDesktopStateSave();
-      return task;
+      return saveScheduledTask(this, draft, taskID);
     },
     deleteScheduledTask(taskID: string): ScheduledTask | undefined {
-      const index = this.scheduledTasks.findIndex((task) => task.id === taskID);
-      if (index < 0) return undefined;
-      const [removed] = this.scheduledTasks.splice(index, 1);
-      this.scheduleDesktopStateSave();
-      return removed;
+      return deleteScheduledTask(this, taskID);
     },
     restoreScheduledTask(task: ScheduledTask) {
-      if (this.scheduledTasks.some((item) => item.id === task.id)) return;
-      this.scheduledTasks.unshift({
-        ...task,
-        enabled: Boolean(task.enabled && task.modelProvider && task.modelId && task.thinkingLevel),
-        updatedAt: nowISO(),
-      });
-      this.scheduleDesktopStateSave();
+      restoreScheduledTask(this, task);
     },
     toggleScheduledTask(taskID: string) {
-      const task = this.scheduledTasks.find((item) => item.id === taskID);
-      if (!task) return;
-      if (!task.enabled && (!task.modelProvider || !task.modelId || !task.thinkingLevel)) return;
-      task.enabled = !task.enabled;
-      task.updatedAt = nowISO();
-      task.nextRunAt = task.enabled ? nextScheduledRun(task) : undefined;
-      if (task.enabled && !task.nextRunAt) task.enabled = false;
-      this.scheduleDesktopStateSave();
+      toggleScheduledTask(this, taskID);
     },
     finishScheduledRun(threadId: string, status: "completed" | "failed" | "cancelled", error = "") {
-      for (const task of this.scheduledTasks) {
-        if (task.lastThreadId !== threadId || task.lastStatus !== "started") continue;
-        task.lastStatus = status;
-        task.lastError = status === "failed" ? error || this.messagesByThread[threadId]?.findLast(message => message.role === "assistant")?.error || this.threads.find(thread => thread.id === threadId)?.error : undefined;
-        task.updatedAt = nowISO();
-      }
-      this.scheduleDesktopStateSave();
+      finishScheduledRun(this, threadId, status, error);
     },
     async runScheduledTask(taskID: string, manual = true): Promise<string | undefined> {
-      const task = this.scheduledTasks.find((item) => item.id === taskID);
-      if (!task || this.scheduledTaskRunningByID[taskID] || task.lastStatus === "started") return undefined;
-      this.scheduledTaskRunningByID[taskID] = true;
-      const startedAt = nowISO();
-      let threadID: string | undefined;
-      try {
-        const workspace = this.workspaces.find((item) => item.id === task.workspaceId);
-        if (!workspace || workspace.kind === "ssh" || workspace.trust !== "approve") {
-          throw new Error(tr("scheduledTasks.errors.workspace"));
-        }
-        if (!task.modelProvider || !task.modelId) throw new Error(tr("scheduledTasks.errors.model"));
-        if (!task.thinkingLevel) throw new Error(tr("scheduledTasks.errors.thinkingLevel"));
-        threadID = createID("thread");
-        const thread: ThreadSummary = {
-          id: threadID,
-          title: task.name,
-          workspace: workspace.name,
-          workspaceId: workspace.id,
-          workspacePath: workspace.path,
-          trust: "approve",
-          status: "idle",
-          started: false,
-          generation: 0,
-          createdAt: startedAt,
-          modifiedAt: startedAt,
-          unread: true,
-        };
-        this.threads.unshift(thread);
-        this.messagesByThread[threadID] = [];
-        this.draftsByThread[threadID] = "";
-        this.transcriptEntriesByThread[threadID] = [];
-        this.transcriptStateByThread[threadID] = "loaded";
-        const scheduledModel: PiModel = { provider: task.modelProvider, id: task.modelId, name: task.modelName };
-        this.pendingModelByThread[threadID] = scheduledModel;
-        this.sessionStateByThread[threadID] = { model: scheduledModel };
-        await this.ensureSession(thread);
-        const appliedModel = this.sessionStateByThread[threadID]?.model;
-        if (!appliedModel || modelKey(appliedModel) !== modelKey(scheduledModel)) {
-          throw new Error(thread.error || tr("scheduledTasks.errors.modelApply"));
-        }
-        const availableThinkingLevels = this.thinkingLevelsByThread[threadID] ?? [];
-        if (!availableThinkingLevels.includes(task.thinkingLevel)) {
-          throw new Error(tr("scheduledTasks.errors.thinkingLevelUnavailable", { level: task.thinkingLevel }));
-        }
-        await agentService.setThinkingLevel({ threadId: threadID, level: task.thinkingLevel });
-        await this.refreshState(threadID);
-        if (this.sessionStateByThread[threadID]?.thinkingLevel !== task.thinkingLevel) {
-          throw new Error(tr("scheduledTasks.errors.thinkingLevelApply"));
-        }
-        task.lastThreadId = threadID;
-        task.lastStatus = "started";
-        task.lastError = undefined;
-        this.scheduleDesktopStateSave();
-        const delivered = await this.deliverPrompt(thread, task.prompt, []);
-        if (!delivered) throw new Error(thread.error || tr("scheduledTasks.errors.start"));
-        return threadID;
-      } catch (error) {
-        const failure = errorMessage(error);
-        task.lastStatus = "failed";
-        task.lastError = failure;
-        task.lastThreadId = threadID;
-        if (threadID) {
-          const failedThread = this.threads.find((candidate) => candidate.id === threadID);
-          if (failedThread) {
-            if (failedThread.started) {
-              failedThread.status = "attention";
-              failedThread.error = failure;
-            } else {
-              this.removeThreadState(threadID);
-            }
-          }
-        }
-        return undefined;
-      } finally {
-        task.lastRunAt = startedAt;
-        task.updatedAt = nowISO();
-        if (!manual) {
-          task.nextRunAt = task.frequency === "once" ? undefined : nextScheduledRun(task);
-          if (task.frequency === "once") task.enabled = false;
-        }
-        this.scheduledTaskRunningByID[taskID] = false;
-        this.scheduleDesktopStateSave();
-      }
+      return runScheduledTask(this, taskID, manual);
     },
     async checkScheduledTasks(now = new Date()) {
-      if (scheduledTaskTicking || !this.catalogReady) return;
-      scheduledTaskTicking = true;
-      try {
-        const due = this.scheduledTasks.filter((task) => task.enabled && task.nextRunAt && Date.parse(task.nextRunAt) <= now.getTime());
-        for (const task of due) await this.runScheduledTask(task.id, false);
-      } finally {
-        scheduledTaskTicking = false;
-      }
+      return checkScheduledTasks(this, now);
     },
     async resendEditedMessage(messageId: string, text: string): Promise<boolean> {
       const thread = this.activeThread;
@@ -4180,6 +3735,223 @@ export const useAppStore = defineStore("app", {
       const messages = this.messagesByThread[threadId] ?? (this.messagesByThread[threadId] = []);
       messages.push({ id: createID("system"), role: "system", text, thinking: "", timestamp: nowLabel(), streaming: false, error, tools: [] });
     },
+    applyToolStart(thread: ThreadSummary, payload: Record<string, unknown>) {
+      this.waitingForOutputByThread[thread.id] = false;
+      const messages = this.messagesByThread[thread.id] ?? (this.messagesByThread[thread.id] = []);
+      const assistant = messages.findLast((message) => findTool(message.tools, String(payload.parentToolCallId ?? "")))
+        ?? this.currentAssistant(thread.id, true);
+      if (!assistant) return;
+      const parent = typeof payload.parentToolCallId === "string" ? findTool(assistant.tools, payload.parentToolCallId) : undefined;
+      const tools = parent ? (parent.children ??= []) : assistant.tools;
+      tools.push(toolStartFromPayload(payload, String(payload.toolCallId ?? createID("tool")), Date.now()));
+      assistant.activeExecution = "tool";
+      if (REMOTE_MUTATING_TOOLS.has(String(payload.toolName ?? ""))) this.markRemoteRepositoryStale(thread.id);
+    },
+    applyToolProgress(thread: ThreadSummary, payload: Record<string, unknown>, isEnd: boolean) {
+      const messages = this.messagesByThread[thread.id] ?? (this.messagesByThread[thread.id] = []);
+      const assistant = messages.findLast((message) => findTool(message.tools, String(payload.parentToolCallId ?? payload.toolCallId ?? "")))
+        ?? this.currentAssistant(thread.id, true);
+      if (!assistant) return;
+      const toolID = String(payload.toolCallId ?? "");
+      let tool = findTool(assistant.tools, toolID);
+      if (!tool) {
+        tool = { id: toolID || createID("tool"), name: String(payload.toolName ?? "tool"), output: "", status: "running" };
+        const parent = typeof payload.parentToolCallId === "string" ? findTool(assistant.tools, payload.parentToolCallId) : undefined;
+        (parent ? (parent.children ??= []) : assistant.tools).push(tool);
+      }
+      assistant.activeExecution = isEnd && !payload.parentToolCallId ? undefined : "tool";
+      const progress = toolProgressFromPayload(tool, payload, isEnd, Date.now());
+      Object.assign(tool, progress.patch);
+      if (isEnd) {
+        if (!payload.parentToolCallId) this.waitingForOutputByThread[thread.id] = true;
+        const images = contentImages(progress.result?.content);
+        if (images.length) tool.images = images;
+        if (REMOTE_MUTATING_TOOLS.has(tool.name)) this.markRemoteRepositoryStale(thread.id);
+      }
+    },
+    applyRunStarted(thread: ThreadSummary) {
+      thread.archived = false;
+      thread.status = "running";
+      this.waitingForOutputByThread[thread.id] = true;
+      this.scheduleDesktopStateSave();
+    },
+    applyRunUpdated(thread: ThreadSummary, payload: Record<string, unknown>) {
+      const willRetry = payload.willRetry === true;
+      if (willRetry) {
+        thread.status = "running";
+        this.waitingForOutputByThread[thread.id] = true;
+      } else {
+        this.waitingForOutputByThread[thread.id] = false;
+        this.finishAssistant(thread.id);
+      }
+      void this.refreshState(thread.id);
+    },
+    applyRunSettled(thread: ThreadSummary, _payload: Record<string, unknown>, cancelled: boolean) {
+      const messages = this.messagesByThread[thread.id] ?? (this.messagesByThread[thread.id] = []);
+
+      thread.status = "idle";
+      this.waitingForOutputByThread[thread.id] = false;
+      const unfinishedRetry = this.retryByThread[thread.id];
+      if (unfinishedRetry) {
+        const retryIndex = messages.findLastIndex((message) => message.runNotice?.status === "retrying");
+        const retryMessage = retryIndex >= 0 ? messages[retryIndex] : undefined;
+        if (retryMessage?.runNotice) {
+          const recovered = messages.slice(retryIndex + 1)
+            .some((message) => message.role === "assistant" && !message.error);
+          retryMessage.runNotice = {
+            status: recovered ? "recovered" : "failed",
+            error: retryMessage.runNotice.error ?? unfinishedRetry.errorMessage,
+            attempt: unfinishedRetry.attempt,
+            maxAttempts: unfinishedRetry.maxAttempts,
+          };
+        }
+        this.retryByThread[thread.id] = undefined;
+      }
+      this.finishAssistant(thread.id);
+      this.finishScheduledRun(thread.id, cancelled ? "cancelled" : messages.findLast(message => message.role === "assistant")?.error ? "failed" : "completed");
+      if (thread.id !== this.activeThreadId || appIsInBackground()) thread.unread = true;
+      {
+        const reload = (async () => {
+          if (thread.sessionFile) await this.reloadSessionTranscript(thread).catch(() => undefined);
+          void this.refreshActiveRepository(thread.id);
+        })();
+        settledReloadPromises.set(thread.id, reload);
+        void reload.finally(() => {
+          if (settledReloadPromises.get(thread.id) === reload) settledReloadPromises.delete(thread.id);
+          void this.dispatchNextPendingPrompt(thread.id);
+        });
+      }
+      if (this.notificationsEnabled && !(this.pendingPromptsByThread[thread.id]?.length)) {
+        const lastAssistant = messages.findLast((message) => message.role === "assistant");
+        const notification = cancelled ? "notifications.taskCancelled" : lastAssistant?.error ? "notifications.taskFailed" : "notifications.taskCompleted";
+        void notifyDesktop(tr(notification), taskNotificationSummary(thread.title));
+      }
+      void this.refreshState(thread.id);
+      void this.refreshStats(thread.id).catch(() => undefined);
+      thread.modifiedAt = nowISO();
+      this.scheduleDesktopStateSave();
+    },
+    applyRuntimeExit(thread: ThreadSummary, error: string, generation: number) {
+      piExitedGenerationByThread.set(thread.id, generation);
+      thread.started = false;
+      this.waitingForOutputByThread[thread.id] = false;
+      this.piProcessOrder = this.piProcessOrder.filter((id) => id !== thread.id);
+      thread.status = "attention";
+      thread.error = error;
+      this.finishScheduledRun(thread.id, isScheduledTaskStopping(thread.id) ? "cancelled" : "failed", thread.error);
+      this.finishAssistant(thread.id);
+      if (thread.id !== this.activeThreadId || appIsInBackground()) thread.unread = true;
+      this.queueByThread[thread.id] = { steering: [], followUp: [] };
+      this.retryByThread[thread.id] = undefined;
+      this.clearExtensionRequests(thread.id);
+      this.extensionStatusesByThread[thread.id] = {};
+      this.extensionWidgetsByThread[thread.id] = {};
+      this.extensionTitleByThread[thread.id] = undefined;
+      if (!isClosedRPCStreamError(thread.error)) this.appendSystem(thread.id, thread.error, thread.error);
+      this.scheduleDesktopStateSave();
+    },
+    handleAgentEvent(event: AgentEvent) {
+      if (!this.useNormalizedEvents) return;
+      const thread = event.threadId ? this.threads.find((item) => item.id === event.threadId) : undefined;
+      if (!thread || !this.useNormalizedForThread(thread)) return;
+      const payload = agentPayload(event.payload);
+      if (event.type === "run.started") {
+        this.applyRunStarted(thread);
+        return;
+      }
+      if (event.type === "run.updated") {
+        this.applyRunUpdated(thread, payload);
+        return;
+      }
+      if (event.type === "run.completed" || event.type === "run.cancelled") {
+        this.applyRunSettled(thread, payload, event.type === "run.cancelled");
+        return;
+      }
+      if (event.type === "run.failed") {
+        this.applyRuntimeExit(thread, event.error || "Pi process exited", event.generation ?? 0);
+        return;
+      }
+      if (event.type === "message.started") {
+        this.applyMessageStart(thread, payload);
+        return;
+      }
+      if (event.type === "message.delta") {
+        this.applyMessageUpdate(thread, payload);
+        return;
+      }
+      if (event.type === "message.completed") {
+        this.applyMessageEnd(thread, payload);
+        return;
+      }
+      if (event.type === "tool.started") {
+        this.applyToolStart(thread, payload);
+      } else if (event.type === "tool.updated") {
+        this.applyToolProgress(thread, payload, false);
+      } else if (event.type === "tool.completed" || event.type === "tool.failed") {
+        this.applyToolProgress(thread, event.type === "tool.failed" ? { ...payload, isError: true } : payload, true);
+      }
+    },
+    applyMessageStart(thread: ThreadSummary, payload: Record<string, unknown>) {
+      const message = payload.message as Record<string, unknown> | undefined;
+      if (message?.role !== "assistant") return;
+      const id = typeof message.id === "string" ? message.id : createID("assistant");
+      const parts = messageStartParts(message);
+      this.activeAssistantByThread[thread.id] = id;
+      const messages = this.messagesByThread[thread.id] ?? (this.messagesByThread[thread.id] = []);
+      messages.push({
+        id, role: "assistant", text: parts.text, thinking: parts.thinking, timestamp: nowLabel(), timestampMs: Date.now(), streaming: true, tools: [],
+        activeExecution: parts.activeExecution,
+      });
+      if (parts.text || parts.thinking) this.waitingForOutputByThread[thread.id] = false;
+    },
+    applyMessageUpdate(thread: ThreadSummary, payload: Record<string, unknown>) {
+      const update = payload.assistantMessageEvent as Record<string, unknown> | undefined;
+      const assistant = this.currentAssistant(thread.id, true);
+      if (!update || !assistant) return;
+      if (update.type === "text_delta" && typeof update.delta === "string") {
+        assistant.text += update.delta;
+        assistant.activeExecution = "text";
+        if (update.delta) this.waitingForOutputByThread[thread.id] = false;
+      }
+      if (update.type === "thinking_delta" && typeof update.delta === "string") {
+        assistant.thinking += update.delta;
+        assistant.activeExecution = "thinking";
+        if (update.delta) this.waitingForOutputByThread[thread.id] = false;
+      }
+    },
+    applyMessageEnd(thread: ThreadSummary, payload: Record<string, unknown>) {
+      const message = payload.message as Record<string, unknown> | undefined;
+      const messages = this.messagesByThread[thread.id] ?? (this.messagesByThread[thread.id] = []);
+      const assistant = this.currentAssistant(thread.id, false);
+      if (assistant && message?.role === "assistant") {
+        const ended = messageEndParts(message);
+        if (ended.text) assistant.text = ended.text;
+        if (ended.thinking) assistant.thinking = ended.thinking;
+        assistant.activeExecution = undefined;
+        if (ended.text || ended.thinking || ended.error) this.waitingForOutputByThread[thread.id] = false;
+        if (ended.error) {
+          assistant.error = ended.error;
+          assistant.runNotice = { status: "failed", error: ended.error };
+        }
+        const endedAt = ended.timestampMs ?? Date.now();
+        assistant.timestampMs = endedAt;
+        assistant.timestamp = formatMessageTime(new Date(endedAt));
+      }
+      if (message?.role === "toolResult") {
+        const parent = messages.map((item) => findTool(item.tools, String(message.toolCallId ?? ""))).find(Boolean);
+        if (parent) {
+          parent.children ??= nestedToolHistory(message.nestedCalls);
+          parent.nestedCallsIncomplete = !!message.nestedCalls && (message.nestedCalls as Record<string, unknown>).complete === false;
+        }
+      }
+      if (message?.role === "assistant") {
+        this.promptCacheByThread[thread.id] = promptCacheStatus(
+          message,
+          this.promptCacheByThread[thread.id]?.cacheObserved,
+        ) ?? this.promptCacheByThread[thread.id];
+      }
+      void this.refreshStats(thread.id).catch(() => undefined);
+    },
     handlePiEvent(sessionEvent: PiSessionEvent) {
       const thread = this.threads.find((item) => item.id === sessionEvent.threadId);
       if (!thread) return;
@@ -4197,70 +3969,14 @@ export const useAppStore = defineStore("app", {
 
       switch (sessionEvent.event.type) {
         case "agent_start":
-          thread.archived = false;
-          thread.status = "running";
-          this.waitingForOutputByThread[thread.id] = true;
-          this.scheduleDesktopStateSave();
+          if (!this.useNormalizedForThread(thread)) this.applyRunStarted(thread);
           break;
-        case "agent_end": {
-          // Pi's agent_end only closes one low-level run. RPC may still emit
-          // an automatic retry/compaction or drain queued messages before
-          // agent_settled, which is the authoritative idle boundary.
-          const willRetry = payload.willRetry === true;
-          if (willRetry) {
-            thread.status = "running";
-            this.waitingForOutputByThread[thread.id] = true;
-          } else {
-            this.waitingForOutputByThread[thread.id] = false;
-            this.finishAssistant(thread.id);
-          }
-          void this.refreshState(thread.id);
+        case "agent_end":
+          if (!this.useNormalizedForThread(thread)) this.applyRunUpdated(thread, payload);
           break;
-        }
-        case "agent_settled": {
-          thread.status = "idle";
-          this.waitingForOutputByThread[thread.id] = false;
-          const unfinishedRetry = this.retryByThread[thread.id];
-          if (unfinishedRetry) {
-            const retryIndex = messages.findLastIndex((message) => message.runNotice?.status === "retrying");
-            const retryMessage = retryIndex >= 0 ? messages[retryIndex] : undefined;
-            if (retryMessage?.runNotice) {
-              const recovered = messages.slice(retryIndex + 1)
-                .some((message) => message.role === "assistant" && !message.error);
-              retryMessage.runNotice = {
-                status: recovered ? "recovered" : "failed",
-                error: retryMessage.runNotice.error ?? unfinishedRetry.errorMessage,
-                attempt: unfinishedRetry.attempt,
-                maxAttempts: unfinishedRetry.maxAttempts,
-              };
-            }
-            this.retryByThread[thread.id] = undefined;
-          }
-          this.finishAssistant(thread.id);
-          this.finishScheduledRun(thread.id, payload.aborted === true ? "cancelled" : messages.findLast(message => message.role === "assistant")?.error ? "failed" : "completed");
-          if (thread.id !== this.activeThreadId || appIsInBackground()) thread.unread = true;
-          {
-            const reload = (async () => {
-              if (thread.sessionFile) await this.reloadSessionTranscript(thread).catch(() => undefined);
-              void this.refreshActiveRepository(thread.id);
-            })();
-            settledReloadPromises.set(thread.id, reload);
-            void reload.finally(() => {
-              if (settledReloadPromises.get(thread.id) === reload) settledReloadPromises.delete(thread.id);
-              void this.dispatchNextPendingPrompt(thread.id);
-            });
-          }
-          if (this.notificationsEnabled && !(this.pendingPromptsByThread[thread.id]?.length)) {
-            const lastAssistant = messages.findLast((message) => message.role === "assistant");
-            const notification = payload.aborted === true ? "notifications.taskCancelled" : lastAssistant?.error ? "notifications.taskFailed" : "notifications.taskCompleted";
-            void notifyDesktop(tr(notification), taskNotificationSummary(thread.title));
-          }
-          void this.refreshState(thread.id);
-          void this.refreshStats(thread.id).catch(() => undefined);
-          thread.modifiedAt = nowISO();
-          this.scheduleDesktopStateSave();
+        case "agent_settled":
+          if (!this.useNormalizedForThread(thread)) this.applyRunSettled(thread, payload, payload.aborted === true);
           break;
-        }
         case "queue_update": {
           const steering = Array.isArray(payload.steering) ? payload.steering.filter((item): item is string => typeof item === "string") : [];
           const followUp = Array.isArray(payload.followUp) ? payload.followUp.filter((item): item is string => typeof item === "string") : [];
@@ -4277,129 +3993,22 @@ export const useAppStore = defineStore("app", {
           message.text = output.text;
           break;
         }
-        case "message_start": {
-          const message = payload.message as Record<string, unknown> | undefined;
-          if (message?.role !== "assistant") break;
-          const id = typeof message.id === "string" ? message.id : createID("assistant");
-          const text = contentText(message.content);
-          const thinking = contentThinking(message.content);
-          this.activeAssistantByThread[thread.id] = id;
-          messages.push({
-            id, role: "assistant", text, thinking, timestamp: nowLabel(), timestampMs: Date.now(), streaming: true, tools: [],
-            activeExecution: thinking ? "thinking" : text ? "text" : undefined,
-          });
-          if (text || thinking) this.waitingForOutputByThread[thread.id] = false;
+        case "message_start":
+          if (!this.useNormalizedForThread(thread)) this.applyMessageStart(thread, payload);
           break;
-        }
-        case "message_update": {
-          const update = payload.assistantMessageEvent as Record<string, unknown> | undefined;
-          const assistant = this.currentAssistant(thread.id, true);
-          if (!update || !assistant) break;
-          // The store always holds the complete text as far as Pi has sent it: search,
-          // previews, grouping and the virtualizer all read these fields, so smoothing
-          // belongs to the renderer (MarkdownBody / ToolCallPanel), never here.
-          if (update.type === "text_delta" && typeof update.delta === "string") {
-            assistant.text += update.delta;
-            assistant.activeExecution = "text";
-            if (update.delta) this.waitingForOutputByThread[thread.id] = false;
-          }
-          if (update.type === "thinking_delta" && typeof update.delta === "string") {
-            assistant.thinking += update.delta;
-            assistant.activeExecution = "thinking";
-            if (update.delta) this.waitingForOutputByThread[thread.id] = false;
-          }
+        case "message_update":
+          if (!this.useNormalizedForThread(thread)) this.applyMessageUpdate(thread, payload);
           break;
-        }
-        case "message_end": {
-          const message = payload.message as Record<string, unknown> | undefined;
-          const assistant = this.currentAssistant(thread.id, false);
-          if (assistant && message?.role === "assistant") {
-            const finalText = contentText(message.content);
-            const finalThinking = contentThinking(message.content);
-            if (finalText) assistant.text = finalText;
-            if (finalThinking) assistant.thinking = finalThinking;
-            assistant.activeExecution = undefined;
-            const finalError = runtimeErrorText(message.errorMessage);
-            if (finalText || finalThinking || finalError) this.waitingForOutputByThread[thread.id] = false;
-            if (finalError) {
-              assistant.error = finalError;
-              assistant.runNotice = { status: "failed", error: finalError };
-            }
-            const endedAt = messageTimestamp(message.timestamp) ?? Date.now();
-            assistant.timestampMs = endedAt;
-            assistant.timestamp = formatMessageTime(new Date(endedAt));
-          }
-          if (message?.role === "toolResult") {
-            const parent = messages.map((item) => findTool(item.tools, String(message.toolCallId ?? ""))).find(Boolean);
-            if (parent) {
-              parent.children ??= nestedToolHistory(message.nestedCalls);
-              parent.nestedCallsIncomplete = !!message.nestedCalls && (message.nestedCalls as Record<string, unknown>).complete === false;
-            }
-          }
-          if (message?.role === "assistant") {
-            this.promptCacheByThread[thread.id] = promptCacheStatus(
-              message,
-              this.promptCacheByThread[thread.id]?.cacheObserved,
-            ) ?? this.promptCacheByThread[thread.id];
-          }
-          void this.refreshStats(thread.id).catch(() => undefined);
+        case "message_end":
+          if (!this.useNormalizedForThread(thread)) this.applyMessageEnd(thread, payload);
           break;
-        }
-        case "tool_execution_start": {
-          this.waitingForOutputByThread[thread.id] = false;
-          const assistant = messages.findLast((message) => findTool(message.tools, String(payload.parentToolCallId ?? "")))
-            ?? this.currentAssistant(thread.id, true);
-          if (!assistant) break;
-          const parent = typeof payload.parentToolCallId === "string" ? findTool(assistant.tools, payload.parentToolCallId) : undefined;
-          const tools = parent ? (parent.children ??= []) : assistant.tools;
-          tools.push({
-            id: String(payload.toolCallId ?? createID("tool")),
-            name: String(payload.toolName ?? "tool"),
-            arguments: payload.args,
-            output: "",
-            status: "running",
-            startedAt: Date.now(),
-            diff: buildToolDiff(String(payload.toolName ?? "tool"), payload.args),
-          });
-          assistant.activeExecution = "tool";
-          if (REMOTE_MUTATING_TOOLS.has(String(payload.toolName ?? ""))) this.markRemoteRepositoryStale(thread.id);
+        case "tool_execution_start":
+          if (!this.useNormalizedForThread(thread)) this.applyToolStart(thread, payload);
           break;
-        }
         case "tool_execution_update":
-        case "tool_execution_end": {
-          const assistant = messages.findLast((message) => findTool(message.tools, String(payload.parentToolCallId ?? payload.toolCallId ?? "")))
-            ?? this.currentAssistant(thread.id, true);
-          if (!assistant) break;
-          const toolID = String(payload.toolCallId ?? "");
-          let tool = findTool(assistant.tools, toolID);
-          if (!tool) {
-            tool = { id: toolID || createID("tool"), name: String(payload.toolName ?? "tool"), output: "", status: "running" };
-            const parent = typeof payload.parentToolCallId === "string" ? findTool(assistant.tools, payload.parentToolCallId) : undefined;
-            (parent ? (parent.children ??= []) : assistant.tools).push(tool);
-          }
-          assistant.activeExecution = sessionEvent.event.type === "tool_execution_end" && !payload.parentToolCallId ? undefined : "tool";
-          const rawResult = payload.partialResult ?? payload.result;
-          const output = resultText(rawResult);
-          if (output) {
-            const bounded = boundedToolOutput(output);
-            tool.output = bounded.text;
-            tool.truncated = bounded.truncated || undefined;
-          }
-          const subagents = subagentSummaryFromResult(rawResult);
-          if (subagents) tool.subagents = subagents;
-          if (sessionEvent.event.type === "tool_execution_end") {
-            tool.resultReceived = true;
-            tool.status = payload.isError ? "error" : "complete";
-            if (!payload.parentToolCallId) this.waitingForOutputByThread[thread.id] = true;
-            tool.durationMs = tokenCount(payload.durationMs) ?? (tool.startedAt !== undefined ? Math.max(0, Date.now() - tool.startedAt) : undefined);
-            const result = payload.result && typeof payload.result === "object" ? payload.result as Record<string, unknown> : undefined;
-            tool.diff = buildToolDiff(tool.name, tool.arguments, result?.details) ?? tool.diff;
-            const images = contentImages(result?.content);
-            if (images.length) tool.images = images;
-            if (REMOTE_MUTATING_TOOLS.has(tool.name)) this.markRemoteRepositoryStale(thread.id);
-          }
+        case "tool_execution_end":
+          if (!this.useNormalizedForThread(thread)) this.applyToolProgress(thread, payload, sessionEvent.event.type === "tool_execution_end");
           break;
-        }
         case "compaction_start":
           // Pi writes the durable compaction entry only when compaction succeeds.
           // Keep start progress out of the conversation timeline, but keep
@@ -4444,15 +4053,13 @@ export const useAppStore = defineStore("app", {
         }
         case "auto_retry_start": {
           thread.status = "running";
-          const retryError = runtimeErrorText(payload.errorMessage);
-          const retry = {
-            attempt: Number(payload.attempt ?? 0),
-            maxAttempts: Number(payload.maxAttempts ?? 0),
-            delayMs: Number(payload.delayMs ?? 0),
-            errorMessage: retryError,
+          const retry = retryStartFromPayload(payload, Date.now());
+          this.retryByThread[thread.id] = {
+            attempt: retry.attempt,
+            maxAttempts: retry.maxAttempts,
+            delayMs: retry.delayMs,
+            errorMessage: retry.errorMessage,
           };
-          const retryAt = Date.now() + Math.max(0, retry.delayMs);
-          this.retryByThread[thread.id] = retry;
           const assistant = this.currentAssistant(thread.id, false)
             ?? messages.findLast((message) => message.role === "assistant");
           const previousRetry = messages.findLast((message) => message.runNotice?.status === "retrying");
@@ -4462,32 +4069,31 @@ export const useAppStore = defineStore("app", {
           if (assistant) {
             assistant.runNotice = {
               status: "retrying",
-              error: retryError ?? assistant.error,
+              error: retry.errorMessage ?? assistant.error,
               attempt: retry.attempt,
               maxAttempts: retry.maxAttempts,
               delayMs: retry.delayMs,
-              retryAt,
+              retryAt: retry.retryAt,
             };
           }
           break;
         }
         case "auto_retry_end": {
           const retry = this.retryByThread[thread.id];
-          const retrySucceeded = payload.success === true;
-          const finalError = runtimeErrorText(payload.finalError) ?? retry?.errorMessage;
+          const ended = retryEndFromPayload(payload, retry);
           const assistant = messages.findLast((message) => message.runNotice?.status === "retrying")
             ?? this.currentAssistant(thread.id, false)
             ?? messages.findLast((message) => message.role === "assistant");
           this.retryByThread[thread.id] = undefined;
           if (assistant) {
             assistant.runNotice = {
-              status: retrySucceeded ? "recovered" : "failed",
-              error: finalError ?? assistant.error,
-              attempt: Number(payload.attempt ?? retry?.attempt ?? 0),
-              maxAttempts: retry?.maxAttempts,
+              status: ended.status,
+              error: ended.error ?? assistant.error,
+              attempt: ended.attempt,
+              maxAttempts: ended.maxAttempts,
             };
-          } else if (!retrySucceeded && finalError) {
-            this.appendSystem(thread.id, `Retry failed: ${finalError}`, finalError);
+          } else if (!ended.succeeded && ended.error) {
+            this.appendSystem(thread.id, `Retry failed: ${ended.error}`, ended.error);
           }
           break;
         }
@@ -4553,55 +4159,25 @@ export const useAppStore = defineStore("app", {
           break;
         }
         case "runtime_exit":
-          piExitedGenerationByThread.set(thread.id, sessionEvent.event.generation);
-          thread.started = false;
-          this.waitingForOutputByThread[thread.id] = false;
-          this.piProcessOrder = this.piProcessOrder.filter((id) => id !== thread.id);
-          thread.status = "attention";
-          thread.error = sessionEvent.event.error || "Pi process exited";
-          this.finishScheduledRun(thread.id, scheduledTaskStoppingThreads.has(thread.id) ? "cancelled" : "failed", thread.error);
-          this.finishAssistant(thread.id);
-          if (thread.id !== this.activeThreadId || appIsInBackground()) thread.unread = true;
-          this.queueByThread[thread.id] = { steering: [], followUp: [] };
-          this.retryByThread[thread.id] = undefined;
-          this.clearExtensionRequests(thread.id);
-          this.extensionStatusesByThread[thread.id] = {};
-          this.extensionWidgetsByThread[thread.id] = {};
-          this.extensionTitleByThread[thread.id] = undefined;
-          if (!isClosedRPCStreamError(thread.error)) this.appendSystem(thread.id, thread.error, thread.error);
-          this.scheduleDesktopStateSave();
+          if (!this.useNormalizedForThread(thread)) this.applyRuntimeExit(thread, sessionEvent.event.error || "Pi process exited", sessionEvent.event.generation);
           break;
       }
     },
     currentAssistant(threadId: string, create: boolean): TimelineMessage | undefined {
-      const messages = this.messagesByThread[threadId] ?? (this.messagesByThread[threadId] = []);
-      const activeID = this.activeAssistantByThread[threadId];
-      let assistant = messages.find((message) => message.id === activeID);
-      if (!assistant && create) {
-        assistant = { id: createID("assistant"), role: "assistant", text: "", thinking: "", timestamp: nowLabel(), timestampMs: Date.now(), streaming: true, tools: [] };
-        messages.push(assistant);
-        this.activeAssistantByThread[threadId] = assistant.id;
-      }
-      return assistant;
+      return useSessionStore().currentAssistant(threadId, create);
     },
     finishAssistant(threadId: string) {
-      const messages = this.messagesByThread[threadId] ?? [];
-      const activeID = this.activeAssistantByThread[threadId];
-      const activeIndex = messages.findIndex((message) => message.id === activeID);
-      for (let index = activeIndex; index >= 0; index -= 1) {
-        const message = messages[index];
-        if (message.role !== "assistant") break;
-        message.streaming = false;
-        message.activeExecution = undefined;
-        message.tools.forEach(finishTool);
-      }
-      delete this.activeAssistantByThread[threadId];
+      useSessionStore().finishAssistant(threadId);
     },
     async loadBootstrapState() {
       this.bootstrapLoading = true;
       this.bootstrapError = "";
       try {
-        this.bootstrap = await getBootstrapState();
+        const bootstrap = await getBootstrapState();
+        this.useNormalizedEvents = Boolean(bootstrap.harnessEnabled)
+          && !bootstrap.normalizedEventsDisabled
+          && !normalizedEventsForcedOff();
+        this.bootstrap = bootstrap;
       } catch (error) {
         this.bootstrapError = errorMessage(error) || "Desktop service is unavailable";
       } finally {
@@ -4755,15 +4331,15 @@ export const useAppStore = defineStore("app", {
       this.hiddenSlashCommands = desktop.preferences.hiddenSlashCommands || "";
       this.updateChecksEnabled = desktop.preferences.updateChecksEnabled ?? true;
       this.closeToTray = true;
-      this.workspaceApplication = desktop.preferences.workspaceApplication || "";
+      useWorkspaceStore().workspaceApplication = desktop.preferences.workspaceApplication || "";
     },
     async loadWorkspaceApplications() {
       this.workspaceApplicationsLoading = true;
       this.workspaceApplicationError = "";
       try {
-        this.workspaceApplications = await catalogService.listWorkspaceApplications();
+        useWorkspaceStore().workspaceApplications = await catalogService.listWorkspaceApplications();
       } catch (error) {
-        this.workspaceApplications = [];
+        useWorkspaceStore().workspaceApplications = [];
         this.workspaceApplicationError = errorMessage(error);
       } finally {
         this.workspaceApplicationsLoading = false;
@@ -4791,7 +4367,7 @@ export const useAppStore = defineStore("app", {
             this.desktopStateReady = true;
           });
         const [[catalogWorkspaces, sessions], desktop] = await Promise.all([catalogPromise, desktopPromise]);
-        this.workspaces = catalogWorkspaces.map((workspace) => ({
+        useWorkspaceStore().workspaces = catalogWorkspaces.map((workspace) => ({
           ...workspace,
           trust: workspace.trust as "approve" | "deny",
           discovered: false,
@@ -4888,7 +4464,7 @@ export const useAppStore = defineStore("app", {
             drafts.set(saved.id, saved.draft ?? "");
           }
         }
-        this.threads = historicalThreads;
+        useWorkspaceStore().threads = historicalThreads;
         this.scheduledTasks = (desktop.scheduledTasks ?? []).map((task) => {
           const hasExecutionSettings = Boolean(task.modelProvider && task.modelId && task.thinkingLevel);
           return {
@@ -4925,7 +4501,7 @@ export const useAppStore = defineStore("app", {
           catalogService.listWorkspaces(),
           catalogService.listSessions() as Promise<CatalogSession[]>,
         ]);
-        this.workspaces = catalogWorkspaces.map((workspace) => ({
+        useWorkspaceStore().workspaces = catalogWorkspaces.map((workspace) => ({
           ...workspace,
           trust: workspace.trust as "approve" | "deny",
           discovered: false,

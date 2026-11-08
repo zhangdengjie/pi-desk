@@ -2,7 +2,9 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import OrphanSessionsDialog from "./OrphanSessionsDialog.vue";
+
 
 const orphanSessionService = vi.hoisted(() => ({
   list: vi.fn(), snapshot: vi.fn(), restore: vi.fn(),
@@ -37,7 +39,7 @@ describe("OrphanSessionsDialog", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     store.orphanSessionsOpen = true;
-    store.workspaces = [{ id: "workspace-new", name: "Remote", path: "", kind: "ssh", targetId: "target-1", remoteRoot: "/srv/repository", trust: "approve" }];
+    useWorkspaceStore().workspaces = [{ id: "workspace-new", name: "Remote", path: "", kind: "ssh", targetId: "target-1", remoteRoot: "/srv/repository", trust: "approve" }];
     const wrapper = mount(OrphanSessionsDialog, { global: { plugins: [pinia] } });
 
     await vi.waitFor(() => expect(wrapper.text()).toContain("Inspect remote"));

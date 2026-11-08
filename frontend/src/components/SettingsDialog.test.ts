@@ -4,8 +4,10 @@ import { nextTick } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { RuntimeState } from "../../bindings/pi-desk/internal/domain";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import SettingsDialog from "./SettingsDialog.vue";
 import { applyStreamTuning, resetStreamTuning } from "../utils/streamTuning";
+
 
 const modelConfigMocks = vi.hoisted(() => ({ selectable: vi.fn() }));
 const desktopMocks = vi.hoisted(() => ({ getBootstrapState: vi.fn(), maintainPi: vi.fn(), exportDiagnostics: vi.fn() }));
@@ -222,18 +224,15 @@ describe("SettingsDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      threads: [{
-        id: "thread-1", title: "Runtime audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
-        status: "idle", started: true, generation: 1,
-      }],
-      activeThreadId: "thread-1",
-      commandsByThread: { "thread-1": [
+    store.$patch({activeThreadId: "thread-1", commandsByThread: { "thread-1": [
         { name: "skill:review", description: "Review code", source: "skill", location: "user", path: "C:\\Users\\dev\\.pi\\agent\\skills\\review\\SKILL.md" },
         { name: "deploy", description: "Deploy project", source: "extension", path: "D:\\repo\\.pi\\extensions\\deploy.ts" },
         { name: "fix-tests", description: "Fix tests", source: "prompt", location: "project", path: "D:\\repo\\.pi\\prompts\\fix-tests.md" },
-      ] },
-    });
+      ] }});
+    useWorkspaceStore().threads = [{
+        id: "thread-1", title: "Runtime audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: true, generation: 1,
+      }];;
     store.chooseModel = vi.fn().mockResolvedValue(undefined);
     store.refreshModels = vi.fn().mockResolvedValue(undefined);
     store.refreshThinkingLevels = vi.fn().mockResolvedValue(undefined);
@@ -330,15 +329,12 @@ describe("SettingsDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      threads: [{ id: "running-thread", title: "Running", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "running", started: true, generation: 1 }],
-      activeThreadId: "running-thread",
-      bootstrap: {
+    store.$patch({activeThreadId: "running-thread", bootstrap: {
         productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3", workingDirectory: "D:\\repo",
         runtime: { state: RuntimeState.RuntimeReady, command: "C:\\tools\\pi.cmd", version: "0.84.0" },
         window: { x: 0, y: 0, width: 1000, height: 700, maximized: false, valid: true },
-      },
-    });
+      }});
+    useWorkspaceStore().threads = [{ id: "running-thread", title: "Running", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "running", started: true, generation: 1 }];;
     const wrapper = mount(SettingsDialog, { global: { plugins: [pinia] } });
 
     await wrapper.get('[data-testid="update-pi"]').trigger("click");

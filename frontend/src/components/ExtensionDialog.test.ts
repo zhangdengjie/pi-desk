@@ -2,8 +2,10 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAppStore, type ExtensionUIRequest } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import { agentService } from "../services/agent";
 import ExtensionDialog from "./ExtensionDialog.vue";
+
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -14,14 +16,11 @@ function setup(request: ExtensionUIRequest, options: { liveRespond?: boolean } =
   const pinia = createPinia();
   setActivePinia(pinia);
   const store = useAppStore();
-  store.$patch({
-    threads: [{
+  store.$patch({activeThreadId: "thread-1", extensionRequestByThread: { "thread-1": request }});
+  useWorkspaceStore().threads = [{
       id: "thread-1", title: "Extension", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
       status: "idle", started: true, generation: 1,
-    }],
-    activeThreadId: "thread-1",
-    extensionRequestByThread: { "thread-1": request },
-  });
+    }];;
   if (!options.liveRespond) store.respondToExtension = vi.fn().mockResolvedValue(undefined);
   store.dismissExtensionRequest = vi.fn();
   const wrapper = mount(ExtensionDialog, { global: { plugins: [pinia] } });

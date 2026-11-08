@@ -215,6 +215,14 @@ tasks:
     cmds:
       - wails3 generate bindings -f '{{.BUILD_FLAGS}}' -clean=true{{if eq .OBFUSCATED "true"}} -obfuscated{{end}} -ts -i
 
+  check:bindings:
+    summary: Verifies generated frontend bindings match the Go services
+    deps:
+      - task: go:mod:tidy
+    cmds:
+      - wails3 generate bindings -f '' -clean=true -ts -i
+      - git diff --exit-code -- frontend/bindings
+
   generate:icons:
     summary: Generates Windows `.ico` and Mac `.icns` from an image; on macOS, `-iconcomposerinput appicon.icon -macassetdir darwin` also produces `Assets.car` from a `.icon` file (skipped on other platforms).
     run: once

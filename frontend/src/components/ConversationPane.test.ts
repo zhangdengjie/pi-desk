@@ -3,9 +3,11 @@ import { createPinia, setActivePinia } from "pinia";
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore, type TimelineMessage } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import { groupConversationTurns } from "../utils/conversationGrouping";
 import ConversationPane from "./ConversationPane.vue";
 import { TAIL_PIN_OFFSET } from "../utils/scroll";
+
 
 vi.mock("../services/agent", () => ({
   agentService: { getState: vi.fn().mockResolvedValue({}) },
@@ -49,7 +51,7 @@ describe("ConversationPane", () => {
 
   function mountTranscript(length: number) {
     const store = useAppStore();
-    store.threads = [{
+    useWorkspaceStore().threads = [{
       id: "thread-1", title: "Long task", workspace: "repo", workspacePath: "D:\\repo",
       trust: "deny", status: "idle", started: false, generation: 0,
     }];
@@ -504,7 +506,7 @@ describe("ConversationPane", () => {
   it("reveals a streamed turn frame by frame and keeps its panels open in alwaysOpen", async () => {
     vi.useFakeTimers();
     const store = useAppStore();
-    store.threads = [{
+    useWorkspaceStore().threads = [{
       id: "thread-stream", title: "Run", workspace: "repo", workspacePath: "/repo",
       trust: "approve", status: "running", started: true, generation: 4,
     } as never];
@@ -738,7 +740,7 @@ describe("ConversationPane", () => {
 
   it("keeps an opened reasoning block across the row remount a new assistant message causes", async () => {
     const store = useAppStore();
-    store.threads = [{
+    useWorkspaceStore().threads = [{
       id: "thread-1", title: "Streaming task", workspace: "repo", workspacePath: "D:\\repo",
       trust: "deny", status: "running", started: true, generation: 1,
     }];
@@ -843,7 +845,7 @@ describe("ConversationPane", () => {
 
   it("keeps the first answer DOM in place through the empty start of a tool follow-up", async () => {
     const store = useAppStore();
-    store.threads = [{ id: "thread-1", title: "First turn", workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "running", started: true, generation: 1 }];
+    useWorkspaceStore().threads = [{ id: "thread-1", title: "First turn", workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "running", started: true, generation: 1 }];
     store.activeThreadId = "thread-1";
     store.messagesByThread["thread-1"] = [];
     const live = mount(ConversationPane, { global: { stubs: { ComposerBar: true } } });
@@ -869,7 +871,7 @@ describe("ConversationPane", () => {
 
   it("preserves the assistant row and open tools through streaming, completion and history refresh", async () => {
     const store = useAppStore();
-    store.threads = [{
+    useWorkspaceStore().threads = [{
       id: "thread-1", title: "Live task", workspace: "repo", workspacePath: "D:\\repo",
       trust: "deny", status: "running", started: false, generation: 0,
     }];
@@ -928,7 +930,7 @@ describe("ConversationPane", () => {
 
   it("shows the temporary thinking status only while waiting for backend output", async () => {
     const store = useAppStore();
-    store.threads = [{
+    useWorkspaceStore().threads = [{
       id: "thread-1", title: "Waiting task", workspace: "repo", workspacePath: "D:\\repo",
       trust: "deny", status: "running", started: true, generation: 1,
     }];
@@ -1095,7 +1097,7 @@ describe("ConversationPane", () => {
 
   it("renders an empty historical session without a card frame", () => {
     const store = useAppStore();
-    store.threads = [{
+    useWorkspaceStore().threads = [{
       id: "thread-1", title: "History", workspace: "repo", workspacePath: "D:\\repo",
       trust: "deny", status: "idle", started: false, generation: 0, sessionFile: "session.jsonl",
     }];
@@ -1111,7 +1113,7 @@ describe("ConversationPane", () => {
 
   it("removes recovered retry noise before the later assistant response", () => {
     const store = useAppStore();
-    store.threads = [{
+    useWorkspaceStore().threads = [{
       id: "thread-1", title: "Recovered task", workspace: "repo", workspacePath: "D:\\repo",
       trust: "deny", status: "idle", started: false, generation: 0,
     }];

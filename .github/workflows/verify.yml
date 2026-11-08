@@ -36,7 +36,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install pinned Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
 
       - name: Build Windows desktop executable
         run: wails3 build
@@ -91,7 +91,12 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install pinned Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
+
+      - name: Check generated bindings
+        run: |
+          wails3 generate bindings -f '' -clean=true -ts -i
+          git diff --exit-code -- frontend/bindings
 
       - name: Build macOS application bundle
         run: wails3 task darwin:package
@@ -157,7 +162,7 @@ jobs:
           go test ./internal/remotessh -run '^$' -fuzz '^FuzzParseHostKeyEvidence$' -fuzztime=10s
 
       - name: Install pinned Wails CLI
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.1.0
 
       - name: Build Linux desktop executable
         run: wails3 build

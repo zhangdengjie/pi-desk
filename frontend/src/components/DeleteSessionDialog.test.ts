@@ -2,7 +2,9 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import DeleteSessionDialog from "./DeleteSessionDialog.vue";
+
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -18,17 +20,11 @@ describe("DeleteSessionDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
-      deleteDialogOpen: true,
-      deleteThreadId: "thread-1",
-      deleteSessionTitle: "Runtime audit",
-      deleteHasSession: true,
-      activeThreadId: "thread-1",
-      threads: [{
+    store.$patch({deleteDialogOpen: true, deleteThreadId: "thread-1", deleteSessionTitle: "Runtime audit", deleteHasSession: true, activeThreadId: "thread-1"});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Runtime audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0, sessionFile: "one.jsonl",
-      }],
-    });
+      }];;
     store.confirmDeleteSession = vi.fn().mockImplementation(async () => {
       store.deletedRecoveryPath = "one.jsonl.deleted-test";
     });
