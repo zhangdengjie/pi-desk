@@ -18,8 +18,21 @@ import { MAX_ATTACHED_IMAGES, MAX_SOURCE_IMAGE_BYTES, parseImageDataURL, type Pr
 import { sessionImageUrl } from "../utils/sessionImages";
 import { skillInvocationCommandText, skillInvocationTitleText } from "../utils/skillInvocation";
 import { runtimeErrorText } from "../utils/runtimeError";
-import { subagentSummaryFromResult, type SubagentTaskSummary } from "../utils/subagentTasks";
+import type { SubagentTaskSummary } from "../utils/subagentTasks";
 import { buildToolDiff } from "../utils/toolDiff";
+import {
+  boundedToolOutput,
+  contentText,
+  contentThinking,
+  messageEndParts,
+  messageStartParts,
+  messageTimestamp,
+  retryEndFromPayload,
+  retryStartFromPayload,
+  tokenCount,
+  toolProgressFromPayload,
+  toolStartFromPayload,
+} from "./events/piEvents";
 import { threadTitleText } from "../utils/threadLabel";
 import { setAppLanguage, tr } from "../i18n";
 import {
@@ -501,9 +514,6 @@ function isCurrentPiRequest(threads: ThreadSummary[], thread: ThreadSummary | un
 const settledReloadPromises = new Map<string, Promise<void>>();
 let scheduledTaskTimer: ReturnType<typeof setInterval> | undefined;
 let scheduledTaskTicking = false;
-const TOOL_OUTPUT_LIMIT = 256 << 10;
-const TOOL_OUTPUT_TRUNCATION_MARKER = "\n\n... output truncated by Pi Desk ...\n\n";
-
 function supportsContextEdits(version?: string): boolean {
   const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version?.trim() ?? "");
   if (!match) return false;
@@ -710,34 +720,11 @@ function isClosedRPCStreamError(error: unknown): boolean {
   return /read pi RPC stream:.*(?:file already closed|closed pipe)/i.test(errorMessage(error));
 }
 
-function contentText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      if (!part || typeof part !== "object") return "";
-      const value = part as Record<string, unknown>;
-      if (value.type === "text" && typeof value.text === "string") return value.text;
-      return "";
-    })
-    .join("");
-}
 
 function isInternalRuntimeNotice(text: string): boolean {
   return /^\s*Ponytail loaded:\s*[^\r\n]+\s*$/i.test(text);
 }
 
-function contentThinking(content: unknown): string {
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      if (!part || typeof part !== "object") return "";
-      const value = part as Record<string, unknown>;
-      if (value.type === "thinking" && typeof value.thinking === "string") return value.thinking;
-      return "";
-    })
-    .join("");
-}
 
 function snapshotSearchText(source: Array<Record<string, unknown>>): string {
   return source.map((value) => {
@@ -819,28 +806,8 @@ function readBlobDataURL(blob: Blob): Promise<string> {
   });
 }
 
-function resultText(result: unknown): string {
-  if (typeof result === "string") return result;
-  if (!result || typeof result !== "object") return "";
-  const value = result as Record<string, unknown>;
-  return contentText(value.content) || (typeof value.output === "string" ? value.output : "");
-}
 
-function boundedToolOutput(output: string): { text: string; truncated: boolean } {
-  if (output.length <= TOOL_OUTPUT_LIMIT) return { text: output, truncated: false };
-  const available = TOOL_OUTPUT_LIMIT - TOOL_OUTPUT_TRUNCATION_MARKER.length;
-  const headLength = Math.floor(available * 0.6);
-  return {
-    text: output.slice(0, headLength) + TOOL_OUTPUT_TRUNCATION_MARKER + output.slice(-(available - headLength)),
-    truncated: true,
-  };
-}
 
-function messageTimestamp(value: unknown): number | undefined {
-  if (typeof value !== "number" && typeof value !== "string") return undefined;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? undefined : date.getTime();
-}
 
 function formatMessageTime(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, "0");
@@ -866,10 +833,6 @@ function historicalIdentity(value: Record<string, unknown>, fallback: string, pr
   };
 }
 
-function tokenCount(value: unknown): number | undefined {
-  const parsed = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : undefined;
-}
 
 function promptCacheStatus(message: Record<string, unknown>, cacheObserved = false): PromptCacheStatus | undefined {
   if (!message.usage || typeof message.usage !== "object" || Array.isArray(message.usage)) return undefined;
@@ -4286,14 +4249,13 @@ export const useAppStore = defineStore("app", {
           const message = payload.message as Record<string, unknown> | undefined;
           if (message?.role !== "assistant") break;
           const id = typeof message.id === "string" ? message.id : createID("assistant");
-          const text = contentText(message.content);
-          const thinking = contentThinking(message.content);
+          const parts = messageStartParts(message);
           this.activeAssistantByThread[thread.id] = id;
           messages.push({
-            id, role: "assistant", text, thinking, timestamp: nowLabel(), timestampMs: Date.now(), streaming: true, tools: [],
-            activeExecution: thinking ? "thinking" : text ? "text" : undefined,
+            id, role: "assistant", text: parts.text, thinking: parts.thinking, timestamp: nowLabel(), timestampMs: Date.now(), streaming: true, tools: [],
+            activeExecution: parts.activeExecution,
           });
-          if (text || thinking) this.waitingForOutputByThread[thread.id] = false;
+          if (parts.text || parts.thinking) this.waitingForOutputByThread[thread.id] = false;
           break;
         }
         case "message_update": {
@@ -4319,18 +4281,16 @@ export const useAppStore = defineStore("app", {
           const message = payload.message as Record<string, unknown> | undefined;
           const assistant = this.currentAssistant(thread.id, false);
           if (assistant && message?.role === "assistant") {
-            const finalText = contentText(message.content);
-            const finalThinking = contentThinking(message.content);
-            if (finalText) assistant.text = finalText;
-            if (finalThinking) assistant.thinking = finalThinking;
+            const ended = messageEndParts(message);
+            if (ended.text) assistant.text = ended.text;
+            if (ended.thinking) assistant.thinking = ended.thinking;
             assistant.activeExecution = undefined;
-            const finalError = runtimeErrorText(message.errorMessage);
-            if (finalText || finalThinking || finalError) this.waitingForOutputByThread[thread.id] = false;
-            if (finalError) {
-              assistant.error = finalError;
-              assistant.runNotice = { status: "failed", error: finalError };
+            if (ended.text || ended.thinking || ended.error) this.waitingForOutputByThread[thread.id] = false;
+            if (ended.error) {
+              assistant.error = ended.error;
+              assistant.runNotice = { status: "failed", error: ended.error };
             }
-            const endedAt = messageTimestamp(message.timestamp) ?? Date.now();
+            const endedAt = ended.timestampMs ?? Date.now();
             assistant.timestampMs = endedAt;
             assistant.timestamp = formatMessageTime(new Date(endedAt));
           }
@@ -4357,15 +4317,7 @@ export const useAppStore = defineStore("app", {
           if (!assistant) break;
           const parent = typeof payload.parentToolCallId === "string" ? findTool(assistant.tools, payload.parentToolCallId) : undefined;
           const tools = parent ? (parent.children ??= []) : assistant.tools;
-          tools.push({
-            id: String(payload.toolCallId ?? createID("tool")),
-            name: String(payload.toolName ?? "tool"),
-            arguments: payload.args,
-            output: "",
-            status: "running",
-            startedAt: Date.now(),
-            diff: buildToolDiff(String(payload.toolName ?? "tool"), payload.args),
-          });
+          tools.push(toolStartFromPayload(payload, String(payload.toolCallId ?? createID("tool")), Date.now()));
           assistant.activeExecution = "tool";
           if (REMOTE_MUTATING_TOOLS.has(String(payload.toolName ?? ""))) this.markRemoteRepositoryStale(thread.id);
           break;
@@ -4383,23 +4335,12 @@ export const useAppStore = defineStore("app", {
             (parent ? (parent.children ??= []) : assistant.tools).push(tool);
           }
           assistant.activeExecution = sessionEvent.event.type === "tool_execution_end" && !payload.parentToolCallId ? undefined : "tool";
-          const rawResult = payload.partialResult ?? payload.result;
-          const output = resultText(rawResult);
-          if (output) {
-            const bounded = boundedToolOutput(output);
-            tool.output = bounded.text;
-            tool.truncated = bounded.truncated || undefined;
-          }
-          const subagents = subagentSummaryFromResult(rawResult);
-          if (subagents) tool.subagents = subagents;
-          if (sessionEvent.event.type === "tool_execution_end") {
-            tool.resultReceived = true;
-            tool.status = payload.isError ? "error" : "complete";
+          const isEnd = sessionEvent.event.type === "tool_execution_end";
+          const progress = toolProgressFromPayload(tool, payload, isEnd, Date.now());
+          Object.assign(tool, progress.patch);
+          if (isEnd) {
             if (!payload.parentToolCallId) this.waitingForOutputByThread[thread.id] = true;
-            tool.durationMs = tokenCount(payload.durationMs) ?? (tool.startedAt !== undefined ? Math.max(0, Date.now() - tool.startedAt) : undefined);
-            const result = payload.result && typeof payload.result === "object" ? payload.result as Record<string, unknown> : undefined;
-            tool.diff = buildToolDiff(tool.name, tool.arguments, result?.details) ?? tool.diff;
-            const images = contentImages(result?.content);
+            const images = contentImages(progress.result?.content);
             if (images.length) tool.images = images;
             if (REMOTE_MUTATING_TOOLS.has(tool.name)) this.markRemoteRepositoryStale(thread.id);
           }
@@ -4449,15 +4390,13 @@ export const useAppStore = defineStore("app", {
         }
         case "auto_retry_start": {
           thread.status = "running";
-          const retryError = runtimeErrorText(payload.errorMessage);
-          const retry = {
-            attempt: Number(payload.attempt ?? 0),
-            maxAttempts: Number(payload.maxAttempts ?? 0),
-            delayMs: Number(payload.delayMs ?? 0),
-            errorMessage: retryError,
+          const retry = retryStartFromPayload(payload, Date.now());
+          this.retryByThread[thread.id] = {
+            attempt: retry.attempt,
+            maxAttempts: retry.maxAttempts,
+            delayMs: retry.delayMs,
+            errorMessage: retry.errorMessage,
           };
-          const retryAt = Date.now() + Math.max(0, retry.delayMs);
-          this.retryByThread[thread.id] = retry;
           const assistant = this.currentAssistant(thread.id, false)
             ?? messages.findLast((message) => message.role === "assistant");
           const previousRetry = messages.findLast((message) => message.runNotice?.status === "retrying");
@@ -4467,32 +4406,31 @@ export const useAppStore = defineStore("app", {
           if (assistant) {
             assistant.runNotice = {
               status: "retrying",
-              error: retryError ?? assistant.error,
+              error: retry.errorMessage ?? assistant.error,
               attempt: retry.attempt,
               maxAttempts: retry.maxAttempts,
               delayMs: retry.delayMs,
-              retryAt,
+              retryAt: retry.retryAt,
             };
           }
           break;
         }
         case "auto_retry_end": {
           const retry = this.retryByThread[thread.id];
-          const retrySucceeded = payload.success === true;
-          const finalError = runtimeErrorText(payload.finalError) ?? retry?.errorMessage;
+          const ended = retryEndFromPayload(payload, retry);
           const assistant = messages.findLast((message) => message.runNotice?.status === "retrying")
             ?? this.currentAssistant(thread.id, false)
             ?? messages.findLast((message) => message.role === "assistant");
           this.retryByThread[thread.id] = undefined;
           if (assistant) {
             assistant.runNotice = {
-              status: retrySucceeded ? "recovered" : "failed",
-              error: finalError ?? assistant.error,
-              attempt: Number(payload.attempt ?? retry?.attempt ?? 0),
-              maxAttempts: retry?.maxAttempts,
+              status: ended.status,
+              error: ended.error ?? assistant.error,
+              attempt: ended.attempt,
+              maxAttempts: ended.maxAttempts,
             };
-          } else if (!retrySucceeded && finalError) {
-            this.appendSystem(thread.id, `Retry failed: ${finalError}`, finalError);
+          } else if (!ended.succeeded && ended.error) {
+            this.appendSystem(thread.id, `Retry failed: ${ended.error}`, ended.error);
           }
           break;
         }
