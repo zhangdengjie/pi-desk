@@ -1053,8 +1053,8 @@ describe("ConversationMessage", () => {
         sessionFile: "C:\\sessions\\edit.jsonl", trust: "approve", status: "idle", started: true, generation: 1,
       }],
       activeThreadId: "thread-edit",
-      messagesByThread: { "thread-edit": [message] },
     });
+    store.messagesByThread["thread-edit"] = [message];
     store.editMessage = vi.fn().mockResolvedValue(true);
     store.resendEditedMessage = vi.fn().mockResolvedValue(true);
     const wrapper = mount(ConversationMessage, {
@@ -1076,7 +1076,8 @@ describe("ConversationMessage", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const message = { id: "latest", entryId: "entry", role: "user" as const, text: "Continue", thinking: "", timestamp: "", streaming: false, tools: [] };
-    store.$patch({ threads: [{ id: "replay", title: "Replay", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }], activeThreadId: "replay", messagesByThread: { replay: [message] } });
+    store.$patch({ threads: [{ id: "replay", title: "Replay", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }], activeThreadId: "replay" });
+    store.messagesByThread.replay = [message];
     store.resendEditedMessage = vi.fn().mockImplementationOnce(async () => {
       store.activeThread!.error = "session transcript contains malformed JSON at line 1028";
       return false;

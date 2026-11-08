@@ -5149,7 +5149,8 @@ describe("app store", () => {
 
   it("blocks history changes before stopping a large session", async () => {
     const store = useAppStore();
-    store.$patch({ activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", sessionFile: "D:/sessions/one.jsonl", trust: "deny", status: "idle", started: true, generation: 4 }], sessionMutationErrorByThread: { t: "64 MiB limit" }, messagesByThread: { t: [{ id: "u", entryId: "entry", role: "user", text: "question", thinking: "", timestamp: "now", streaming: false, tools: [] }] } });
+    store.$patch({ activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", sessionFile: "D:/sessions/one.jsonl", trust: "deny", status: "idle", started: true, generation: 4 }], sessionMutationErrorByThread: { t: "64 MiB limit" } });
+    store.messagesByThread.t = [{ id: "u", entryId: "entry", role: "user", text: "question", thinking: "", timestamp: "now", streaming: false, tools: [] }];
     expect(await store.editMessage("u", "edit")).toBe(false);
     expect(await store.deleteMessage("u")).toBe(false);
     expect(await store.forkFromMessage("u")).toBe(false);

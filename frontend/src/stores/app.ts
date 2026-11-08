@@ -1,4 +1,6 @@
 import { defineStore } from "pinia";
+import { useSessionStore } from "./session";
+import { createID, formatMessageTime, nowLabel } from "../utils/ids";
 import { RuntimeState, type BootstrapState, type DesktopState, type ProviderEnvIssue, type SessionSnapshot, type UserConfigView, type WorkspaceApplication, type WorkspaceSummary as HostWorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
 import { agentService, onPiEvent, type PiSessionEvent, type SessionBranches } from "../services/agent";
 import { catalogService } from "../services/catalog";
@@ -486,7 +488,6 @@ let unsubscribeTerminalEvents: (() => void) | undefined;
 // window comes back to the foreground is the whole hot-reload story: switching to
 // an editor and back is the gesture, and no timer runs while nobody looks.
 let unsubscribeUserConfigWatch: (() => void) | undefined;
-let localSequence = 0;
 let desktopSaveTimer: ReturnType<typeof setTimeout> | undefined;
 const scheduledTaskStoppingThreads = new Set<string>();
 let desktopSavePromise: Promise<void> | undefined;
@@ -519,16 +520,6 @@ function supportsContextEdits(version?: string): boolean {
   if (!match) return false;
   const current = match.slice(1).map(Number);
   return current[0] > 0 || current[1] > 87 || (current[1] === 87 && current[2] >= 0);
-}
-
-function createID(prefix: string): string {
-  localSequence += 1;
-  const uuid = globalThis.crypto?.randomUUID?.();
-  return uuid ? `${prefix}-${uuid}` : `${prefix}-${Date.now()}-${localSequence}`;
-}
-
-function nowLabel(): string {
-  return formatMessageTime(new Date());
 }
 
 function boundedExtensionText(value: unknown, limit: number): string {
@@ -809,11 +800,6 @@ function readBlobDataURL(blob: Blob): Promise<string> {
 
 
 
-function formatMessageTime(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 function messageTime(value: unknown): string {
   const timestamp = messageTimestamp(value);
   return timestamp === undefined ? "" : formatMessageTime(new Date(timestamp));
@@ -1040,11 +1026,6 @@ function adoptStreamedIds(historical: TimelineMessage[], previous: TimelineMessa
   }
 }
 
-function finishTool(tool: ToolExecution) {
-  if (tool.status === "running") tool.status = "unfinished";
-  tool.children?.forEach(finishTool);
-}
-
 function copyTool(tool: ToolExecution): ToolExecution {
   return { ...tool, diff: tool.diff ? { ...tool.diff } : undefined, children: tool.children?.map(copyTool) };
 }
@@ -1134,7 +1115,6 @@ export const useAppStore = defineStore("app", {
     scheduledTasks: [] as ScheduledTask[],
     scheduledTaskRunningByID: {} as Record<string, boolean>,
     activeThreadId: "",
-    messagesByThread: {} as Record<string, TimelineMessage[]>,
     searchBodyTextByThread: {} as Record<string, string>,
     searchBodyVersionByThread: {} as Record<string, string>,
     searchBodyLoading: false,
@@ -1142,8 +1122,6 @@ export const useAppStore = defineStore("app", {
     transcriptReloadGenerationByThread: {} as Record<string, number>,
     draftsByThread: {} as Record<string, string>,
     attachmentsByThread: {} as Record<string, PreparedImage[]>,
-    activeAssistantByThread: {} as Record<string, string>,
-    waitingForOutputByThread: {} as Record<string, boolean | undefined>,
     sessionStateByThread: {} as Record<string, PiSessionState>,
     sessionStatsByThread: {} as Record<string, SessionStats>,
     promptCacheByThread: {} as Record<string, PromptCacheStatus | undefined>,
@@ -1258,6 +1236,15 @@ export const useAppStore = defineStore("app", {
     updateCheckResult: null as import("../../bindings/pi-desk/internal/domain").UpdateCheckResult | null,
   }),
   getters: {
+    messagesByThread(): Record<string, TimelineMessage[]> {
+      return useSessionStore().messagesByThread;
+    },
+    activeAssistantByThread(): Record<string, string> {
+      return useSessionStore().activeAssistantByThread;
+    },
+    waitingForOutputByThread(): Record<string, boolean | undefined> {
+      return useSessionStore().waitingForOutputByThread;
+    },
     activeThread(state): ThreadSummary | undefined {
       return state.threads.find((thread) => thread.id === state.activeThreadId);
     },
@@ -1285,10 +1272,10 @@ export const useAppStore = defineStore("app", {
         ?? state.workspaceApplications[0];
     },
     activeMessages(state): TimelineMessage[] {
-      return state.messagesByThread[state.activeThreadId] ?? [];
+      return useSessionStore().messagesByThread[state.activeThreadId] ?? [];
     },
     activeWaitingForOutput(state): boolean {
-      return Boolean(state.waitingForOutputByThread[state.activeThreadId]);
+      return Boolean(useSessionStore().waitingForOutputByThread[state.activeThreadId]);
     },
     activeDraft(state): string {
       return state.draftsByThread[state.activeThreadId] ?? "";
@@ -1481,6 +1468,7 @@ export const useAppStore = defineStore("app", {
         && (thread.status === "running" || thread.status === "starting" || Boolean(state.bashRunningByThread[thread.id])));
     },
     filteredThreads(state): ThreadSummary[] {
+      const session = useSessionStore();
       const query = state.searchQuery.trim().toLocaleLowerCase();
       const threads = query ? state.threads.filter((thread) => [
         thread.title,
@@ -1488,7 +1476,7 @@ export const useAppStore = defineStore("app", {
         thread.workspace,
         thread.workspacePath,
         state.searchBodyTextByThread[thread.id] ?? "",
-        timelineSearchText(state.messagesByThread[thread.id] ?? []),
+        timelineSearchText(session.messagesByThread[thread.id] ?? []),
       ].join("\n").toLocaleLowerCase().includes(query)) : state.threads;
       return [...threads].sort((left, right) => {
         const leftTime = Date.parse(left.modifiedAt || left.createdAt || "");
@@ -4517,28 +4505,10 @@ export const useAppStore = defineStore("app", {
       }
     },
     currentAssistant(threadId: string, create: boolean): TimelineMessage | undefined {
-      const messages = this.messagesByThread[threadId] ?? (this.messagesByThread[threadId] = []);
-      const activeID = this.activeAssistantByThread[threadId];
-      let assistant = messages.find((message) => message.id === activeID);
-      if (!assistant && create) {
-        assistant = { id: createID("assistant"), role: "assistant", text: "", thinking: "", timestamp: nowLabel(), timestampMs: Date.now(), streaming: true, tools: [] };
-        messages.push(assistant);
-        this.activeAssistantByThread[threadId] = assistant.id;
-      }
-      return assistant;
+      return useSessionStore().currentAssistant(threadId, create);
     },
     finishAssistant(threadId: string) {
-      const messages = this.messagesByThread[threadId] ?? [];
-      const activeID = this.activeAssistantByThread[threadId];
-      const activeIndex = messages.findIndex((message) => message.id === activeID);
-      for (let index = activeIndex; index >= 0; index -= 1) {
-        const message = messages[index];
-        if (message.role !== "assistant") break;
-        message.streaming = false;
-        message.activeExecution = undefined;
-        message.tools.forEach(finishTool);
-      }
-      delete this.activeAssistantByThread[threadId];
+      useSessionStore().finishAssistant(threadId);
     },
     async loadBootstrapState() {
       this.bootstrapLoading = true;
