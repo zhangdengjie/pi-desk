@@ -555,3 +555,20 @@ func TestCatalogPersistsWorkspaceDefaultModel(t *testing.T) {
 		t.Fatal("expected an unknown workspace to be rejected")
 	}
 }
+
+func TestCatalogAcceptsGoScheduleRuntimeStatuses(t *testing.T) {
+	root := t.TempDir()
+	catalog := NewCatalog(filepath.Join(root, "state.json"))
+	record, err := catalog.Add(root, "approve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, status := range []string{"missed", "skipped"} {
+		if err := catalog.SaveDesktop(DesktopRecord{ScheduledTasks: []ScheduledTaskRecord{{
+			ID: "schedule-" + status, Name: status, Prompt: "run", WorkspaceID: record.ID,
+			Frequency: "once", RunAt: "2026-11-10T00:00:00Z", Enabled: false, LastStatus: status,
+		}}}); err != nil {
+			t.Fatalf("status %s rejected: %v", status, err)
+		}
+	}
+}

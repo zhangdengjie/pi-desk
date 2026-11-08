@@ -54,6 +54,11 @@ func (service *ScheduleService) reconcile(ctx context.Context, value schedule.Sc
 		return value
 	}
 	latest := runs[len(runs)-1]
+	// A list request can race the moment between SetRuntime(started) and
+	// CreateRun. Do not settle the schedule against a Run older than the fire.
+	if value.LastRunAt != nil && latest.CreatedAt.Before(*value.LastRunAt) {
+		return value
+	}
 	switch latest.Status {
 	case task.StatusCompleted:
 		value.LastStatus = schedule.StatusCompleted

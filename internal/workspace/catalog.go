@@ -853,7 +853,7 @@ func validateDesktop(desktop DesktopRecord) error {
 			return fmt.Errorf("scheduled task %s requires a next run time while enabled", task.ID)
 		}
 		switch task.LastStatus {
-		case "", "started", "completed", "failed", "cancelled":
+		case "", "started", "completed", "failed", "cancelled", "missed", "skipped":
 		default:
 			return fmt.Errorf("scheduled task %s has an invalid last status", task.ID)
 		}
