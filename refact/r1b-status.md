@@ -269,3 +269,17 @@ frontend build                            ✅
   TestTapIgnoresStatusEventsBetweenRuns
   TestReconcileInterruptedRuns
 ```
+
+## 第十二刀：可读标题 + 事件 payload 悬浮
+
+```text
+Task 标题
+  TaskService.ListTasks / GetTask 同步 catalog thread title
+  只修复空标题或仍等于 legacy_thread_id 的旧标题
+  不覆盖用户已改过的标题，不改 UpdatedAt
+  新增 task.Store.UpdateTaskTitle
+
+事件列表
+  payload 预览仍保持单行省略
+  鼠标悬浮显示完整 payload 的浮层（可滚动）
+```
