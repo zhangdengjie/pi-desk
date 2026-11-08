@@ -1,7 +1,7 @@
 # R2 实施状态（进行中）
 
 - 分支：`feat/r2a-worktree-core`（已 `--no-ff` 合并进 `develop`，merge commit `1f75ce2`）
-- 最近提交：`cbbf66f`
+- 最近提交：`24156e4`
 - 日期：2026-11-09
 - 结论：**R2a 核心已落地，R2b 后端已落地；前端调度器切换与 bootstrap 尚未接完。**
 
@@ -40,7 +40,7 @@
   - 创建线程前调用 `WorktreeService.Create`，把 thread 的 `workspaceId/path`
     指向子 workspace；
   - 文件树、终端、Diff 继续走 `workspaceId + workspacePath`，因此自动指向 worktree。
-- bindings 已重新生成：18 services / 179 methods / 177 models。
+- bindings 已重新生成：18 services / 180 methods / 178 models。
 
 ### P4 调度器数据面
 
@@ -69,8 +69,12 @@
   - 失败时 `FinishRun(failed)` + Task failed + best-effort abort。
 - 开关：`PI_DESK_R2_SCHEDULER=1` 时才启动 Go scheduler；默认仍是前端定时器。
 - 启动时 `ReconcileInterruptedRuns` 已存在，Go scheduler 在其后启动。
-- `ScheduleService`（Wails）：`Enabled / ListSchedules / SaveSchedule / DeleteSchedule`；
-  前端 wrapper `services/schedules.ts` 已就绪，页面尚未切换。
+- `ScheduleService`（Wails）：`Enabled / ListSchedules / SaveSchedule / DeleteSchedule / RunNow`；
+  运行成功后先标 `started`，列表查询再按 Run 终态收敛 completed/failed/cancelled。
+- `ScheduledTasksPage` 已在 `BootstrapState.r2Scheduler` 时切到 Go：
+  - 新 schedule 先建占位 thread、`persistDesktopState`、`AdoptThread` 得到 Task；
+  - 保存/删除/启停/手动运行都走 `ScheduleService`；
+  - 旧前端 timer 在 Go 模式下不启动。
 - Worktree bootstrap：`internal/worktree` 已支持 `none / copy / symlink / command`，
   默认 none；copy 只允许显式 allowlist，symlink 不跟随删除，command 失败带输出。
   尚未接 `~/.pi-desk/config.json` 与设置页。
@@ -87,9 +91,9 @@ PI_DESK_R2_SCHEDULER=1    启动 Go scheduler；默认 0（前端定时器继续
 ## 3. 尚未完成
 
 ```text
-- ScheduledTasksPage 尚未切到 ScheduleService；Go 只处理启动时导入的 schedule。
-- ScheduleService 尚缺手动运行 / export legacy；Go 只处理已有 Task/Thread 的 schedule。
-- Go scheduler 默认未开启；需要前端切换 + 回滚导出后才能默认 1。
+- ScheduleService 尚缺 export legacy（回滚导出）；Go 只处理已有 Task/Thread 的 schedule。
+- Go scheduler 默认未开启；需要沙箱验收 + 回滚导出后才能默认 1。
+- 旧 `state.json` schedule 在 Go 模式下仍会被镜像写入，作为回滚快照；尚未做显式 export 命令。
 - worktree bootstrap 配置读取与设置页尚未接。
 - worktree 归档 GC、孤儿清理 UI、启动扫描尚未接。
 - 侧栏尚未把 worktree 子项折叠到父 workspace 下；目前是独立 workspace group。
