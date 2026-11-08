@@ -68,13 +68,28 @@ frontend/src/stores/app.ts
 
 `app.ts` 从 5,058 行降到 5,028 行；`app.test.ts` 与组件测试全绿。
 
+## 第四刀：workspace store
+
+```text
+frontend/src/stores/workspace.ts
+  threads / workspaces / workspaceApplications / workspaceApplication
+frontend/src/stores/app.ts
+  四个同名 getter；写入改走 workspace store
+测试：
+  直接赋值改为 useWorkspaceStore().field = ...
+  `$patch({threads/workspaces})` 统一走 patchApp() 适配器
+```
+
+`app.ts` 5,028 → 5,038 行；108 个测试文件全绿。
+
 ## 本刀边界（下一刀）
 
 ```text
 ✅ 只读数据通路：Task/Run/Event/Usage 都能看到
 ✅ message/tool/retry 的纯 reducer 与测试
 ✅ session live 状态拆出（messages / active assistant / waiting）
-⏳ workspace / usage / composer 状态继续从 app.ts 拆出
+✅ workspace / threads / workspaceApplications 拆出
+⏳ repository 引用、usage / composer 状态继续从 app.ts 拆出
 ⏳ useNormalizedEvents 灰度：工具卡 → 运行态 → 消息
 ⏳ 写操作：cancel / retry / archive
 ⏳ 历史导入 Task 的 Run 关联（当前只有下一次 Prompt 才产生 Run）
