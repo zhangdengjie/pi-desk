@@ -156,10 +156,47 @@ state stores
 ✅ Task Center cancel / retry（remote 暂不支持）
 ✅ 历史导入 Task 的 Run 关联
 ✅ 真机 A/B：PI_DESK_HARNESS=1 vs +PI_DESK_NORMALIZED_EVENTS=1，工具卡/消息/run 无异常
-⏳ Task Center archive
+✅ Task Center archive（未归档 / 已归档双视图）
+✅ retry 重放最后一条 user 消息的图片
 ```
 
 > 先做加法（Task Center），再做可测试的纯函数（message/tool/retry）；下一刀才是 5k 行 store 的结构拆分。
+
+## 第九刀：archive + retry 图片
+
+```text
+Task Center archive
+  migration 002: tasks.archived_at + 索引
+  TaskService.ArchiveTask / UnarchiveTask / ListArchivedTasks
+  归档只改可见性；Run / Event / Usage 全部保留
+  有 active Run 的 Task 拒绝归档
+  retry 归档任务时自动取消归档
+
+retry 图片
+  Snapshot 里的 image block 是 {mimeType, bytes, ref}，base64 已被剥掉
+  TaskService 通过 sessionindex.Image(ref) 还原 bytes，再填 PromptRequest.Images
+  image 无法还原时直接失败，不静默丢掉附件
+  仍受 SendPrompt 的图片数量 / 单图 / 总大小限制
+```
+
+前端：
+
+```text
+stores/tasks.ts       view=active|archived；archiveSelected / unarchiveSelected
+TaskCenterPage.vue   未归档 / 已归档 tab；归档 / 取消归档按钮
+i18n                 中英文案
+```
+
+验证：
+
+```text
+TMPDIR=/tmp go test ./...                       ✅
+go vet ./...                                    ✅
+cd frontend && npm run typecheck                ✅
+cd frontend && npm run test                     ✅ 109 files / 1289 tests
+cd frontend && npm run build                    ✅
+Wails 方法 169 / 绑定函数 157                    ✅
+```
 
 ## 真机 A/B（2026-11-08）
 
