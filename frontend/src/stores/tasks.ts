@@ -16,6 +16,8 @@ export const useTasksStore = defineStore("tasks", () => {
   const events = ref<TaskEventView[]>([]);
   const loading = ref(false);
   const eventsLoading = ref(false);
+  const actionLoading = ref(false);
+  const actionError = ref("");
   const error = ref("");
 
   const selectedTask = computed(() => tasks.value.find((task) => task.id === selectedTaskID.value) ?? null);
@@ -70,6 +72,29 @@ export const useTasksStore = defineStore("tasks", () => {
     await refreshEvents();
   }
 
+  async function runAction(action: "cancel" | "retry") {
+    if (!selectedTaskID.value || actionLoading.value) return;
+    actionLoading.value = true;
+    actionError.value = "";
+    try {
+      if (action === "cancel") await tasksService.cancelTask({ taskId: selectedTaskID.value });
+      else await tasksService.retryTask({ taskId: selectedTaskID.value });
+      await refresh();
+    } catch (cause) {
+      actionError.value = errorMessage(cause);
+    } finally {
+      actionLoading.value = false;
+    }
+  }
+
+  async function cancelSelected() {
+    await runAction("cancel");
+  }
+
+  async function retrySelected() {
+    await runAction("retry");
+  }
+
   async function refresh() {
     loading.value = true;
     error.value = "";
@@ -107,6 +132,8 @@ export const useTasksStore = defineStore("tasks", () => {
     events,
     loading,
     eventsLoading,
+    actionLoading,
+    actionError,
     error,
     selectedTask,
     selectedRun,
@@ -114,5 +141,7 @@ export const useTasksStore = defineStore("tasks", () => {
     select,
     selectRun,
     refreshEvents,
+    cancelSelected,
+    retrySelected,
   };
 });

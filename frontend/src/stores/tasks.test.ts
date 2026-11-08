@@ -6,6 +6,8 @@ const listTasks = vi.fn();
 const getTask = vi.fn();
 const listRunEvents = vi.fn();
 const enabled = vi.fn();
+const cancelTask = vi.fn();
+const retryTask = vi.fn();
 
 vi.mock("../services/tasks", () => ({
   tasksService: {
@@ -14,6 +16,8 @@ vi.mock("../services/tasks", () => ({
     getTask: (...args: unknown[]) => getTask(...args),
     listRunEvents: (...args: unknown[]) => listRunEvents(...args),
     getRunUsage: vi.fn(),
+    cancelTask: (...args: unknown[]) => cancelTask(...args),
+    retryTask: (...args: unknown[]) => retryTask(...args),
   },
 }));
 
@@ -56,6 +60,8 @@ describe("tasks store", () => {
     enabled.mockResolvedValue(true);
     listTasks.mockResolvedValue([task]);
     getTask.mockResolvedValue(detail);
+    cancelTask.mockResolvedValue(detail);
+    retryTask.mockResolvedValue(detail);
     listRunEvents.mockResolvedValue([{
       id: "evt_1",
       runId: "run_1",
@@ -87,6 +93,18 @@ describe("tasks store", () => {
     expect(store.tasks).toEqual([]);
     expect(store.detail).toBeNull();
     expect(listTasks).not.toHaveBeenCalled();
+  });
+
+  it("cancels and retries the selected task, then refreshes it", async () => {
+    const store = useTasksStore();
+    await store.refresh();
+    await store.cancelSelected();
+    expect(cancelTask).toHaveBeenCalledWith({ taskId: "task_1" });
+    expect(listTasks).toHaveBeenCalledTimes(2);
+
+    await store.retrySelected();
+    expect(retryTask).toHaveBeenCalledWith({ taskId: "task_1" });
+    expect(listTasks).toHaveBeenCalledTimes(3);
   });
 
   it("reloads events when a different run is selected", async () => {

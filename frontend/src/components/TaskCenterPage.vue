@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
-import { RefreshCw } from "lucide-vue-next";
+import { RefreshCw, RotateCcw, Square } from "lucide-vue-next";
 import type { TaskRunSummary, TaskUsageSummary } from "../../bindings/pi-desk/internal/domain";
 import { tr } from "../i18n";
 import { useTasksStore } from "../stores/tasks";
@@ -9,6 +9,8 @@ import { vSpin } from "../utils/spin";
 const tasksStore = useTasksStore();
 const detail = computed(() => tasksStore.detail);
 const selectedRun = computed(() => tasksStore.selectedRun);
+const canCancel = computed(() => Boolean(detail.value && ["running", "queued", "waiting_approval", "waiting_input"].includes(detail.value.status)));
+const canRetry = computed(() => Boolean(detail.value && ["failed", "cancelled"].includes(detail.value.status)));
 
 const statusKeys: Record<string, string> = {
   created: "taskCenter.status.created",
@@ -75,6 +77,7 @@ onMounted(() => {
     </header>
 
     <p v-if="tasksStore.error" class="tc-error">{{ tasksStore.error }}</p>
+    <p v-else-if="tasksStore.actionError" class="tc-error">{{ tasksStore.actionError }}</p>
     <p v-else-if="!tasksStore.enabled && !tasksStore.loading" class="tc-notice">{{ tr("taskCenter.disabled") }}</p>
 
     <div v-else class="task-center-body">
@@ -104,7 +107,17 @@ onMounted(() => {
               <h2>{{ detail.title }}</h2>
               <p class="task-detail-id">{{ detail.id }}</p>
             </div>
-            <span class="status-chip" :class="`is-${detail.status}`">{{ statusLabel(detail.status) }}</span>
+            <div class="task-actions">
+              <span class="status-chip" :class="`is-${detail.status}`">{{ statusLabel(detail.status) }}</span>
+              <button v-if="canCancel" class="tc-button is-danger" type="button" :disabled="tasksStore.actionLoading" @click="tasksStore.cancelSelected()">
+                <Square :size="13" />
+                <span>{{ tasksStore.actionLoading ? tr("taskCenter.working") : tr("taskCenter.cancel") }}</span>
+              </button>
+              <button v-if="canRetry" class="tc-button" type="button" :disabled="tasksStore.actionLoading" @click="tasksStore.retrySelected()">
+                <RotateCcw :size="13" />
+                <span>{{ tasksStore.actionLoading ? tr("taskCenter.working") : tr("taskCenter.retry") }}</span>
+              </button>
+            </div>
           </header>
 
           <dl class="task-meta">
@@ -217,6 +230,17 @@ onMounted(() => {
 .tc-button:disabled {
   cursor: default;
   opacity: 0.6;
+}
+
+.tc-button.is-danger {
+  color: var(--red, #e06c75);
+  border-color: var(--red, #e06c75);
+}
+
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .tc-error,
