@@ -14,6 +14,7 @@ import (
 	"pi-desk/internal/appdirs"
 	"pi-desk/internal/appservice"
 	"pi-desk/internal/domain"
+	"pi-desk/internal/eventbus"
 	"pi-desk/internal/piruntime"
 	"pi-desk/internal/remotessh"
 	"pi-desk/internal/repository"
@@ -261,7 +262,18 @@ func main() {
 			log.Printf("close remote workspace lifecycle: %v", shutdownErr)
 		}
 	}()
-	agentService := appservice.NewAgentService(locator, sessionIndex, remoteLifecycle, anchorRoot, browserService)
+	harness, harnessErr := appservice.StartHarness(context.Background(), filepath.Dir(statePath), catalog)
+	if harnessErr != nil {
+		log.Printf("harness disabled: %v", harnessErr)
+	}
+	if harness != nil {
+		defer harness.Close()
+	}
+	var eventSink func(piruntime.SessionEvent)
+	if harness != nil {
+		eventSink = harness.Handle
+	}
+	agentService := appservice.NewAgentService(locator, sessionIndex, remoteLifecycle, anchorRoot, browserService, eventSink)
 	defer func() {
 		if shutdownErr := agentService.ServiceShutdown(); shutdownErr != nil {
 			log.Printf("shutdown agent service: %v", shutdownErr)
@@ -309,6 +321,12 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
+
+	if harness != nil {
+		harness.SetEmitter(func(event eventbus.Event) {
+			app.Event.Emit("agent:event", event)
+		})
+	}
 
 	screens := app.Screen.GetAll()
 	windowState := centeredWindowState(defaultWindowWidth, defaultWindowHeight, screens)
