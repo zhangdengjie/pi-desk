@@ -2,7 +2,20 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import AppTopbar from "./AppTopbar.vue";
+
+// R1b workspace store split: tests still seed the app store by name. Route
+// workspace-owned fields to their new owner and patch the rest as before.
+function patchApp(store: any, partial: any) {
+  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
+  store.$patch(rest);
+  const workspace = useWorkspaceStore();
+  if (threads !== undefined) workspace.threads = threads;
+  if (workspaces !== undefined) workspace.workspaces = workspaces;
+  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
+  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
+}
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -18,7 +31,7 @@ describe("AppTopbar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0, sessionFile: "one.jsonl",
@@ -54,7 +67,7 @@ describe("AppTopbar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -72,7 +85,7 @@ describe("AppTopbar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0,
@@ -91,7 +104,7 @@ describe("AppTopbar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0, sessionFile: "one.jsonl",
@@ -110,7 +123,7 @@ describe("AppTopbar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [
         { id: "thread-1", title: "First", workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "idle", started: false, generation: 0 },
         { id: "thread-2", title: "Second", workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "idle", started: false, generation: 0 },

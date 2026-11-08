@@ -4,8 +4,21 @@ import { nextTick } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { tr } from "../i18n";
 import { type PanelTab, useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import InspectorPanel from "./InspectorPanel.vue";
 import { buildToolDiff } from "../utils/toolDiff";
+
+// R1b workspace store split: tests still seed the app store by name. Route
+// workspace-owned fields to their new owner and patch the rest as before.
+function patchApp(store: any, partial: any) {
+  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
+  store.$patch(rest);
+  const workspace = useWorkspaceStore();
+  if (threads !== undefined) workspace.threads = threads;
+  if (workspaces !== undefined) workspace.workspaces = workspaces;
+  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
+  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
+}
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -268,7 +281,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "pin", title: "Pin", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "pin",
     });
@@ -289,7 +302,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "tree", title: "Tree", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "tree",
       repositoryByWorkspace: { "d:/repo": { files: [{ path: "main.py", name: "main.py" }], git: { isRepository: false, files: [] } } },
@@ -323,7 +336,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "gutter", title: "Gutter", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "gutter",
     });
@@ -355,7 +368,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-session-diff", title: "Session diff", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -377,7 +390,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -456,7 +469,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-2", title: "Assets", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -504,7 +517,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       workspaces: [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }],
       threads: [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "thread-remote",
@@ -525,7 +538,7 @@ describe("InspectorPanel", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const thread = { id: "thread-doc", title: "Docs", workspace: "repo", workspacePath: "/repo", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
-    store.$patch({
+    patchApp(store, {
       threads: [thread],
       activeThreadId: "thread-doc",
       inspectorByThread: {
@@ -574,7 +587,7 @@ describe("InspectorPanel", () => {
     const store = useAppStore();
     const thread = { id: "thread-doc", title: "Docs", workspace: "repo", workspacePath: "/repo", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
     const other = { id: "thread-other", title: "Other", workspace: "repo", workspacePath: "/repo", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
-    store.$patch({
+    patchApp(store, {
       threads: [thread, other],
       activeThreadId: "thread-doc",
       inspectorByThread: {
@@ -624,7 +637,7 @@ describe("InspectorPanel", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const thread = { id: "thread-doc", title: "Docs", workspace: "repo", workspacePath: "/repo", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
-    store.$patch({
+    patchApp(store, {
       threads: [thread],
       activeThreadId: "thread-doc",
       inspectorByThread: {
@@ -665,7 +678,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-preview", title: "Preview", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -694,7 +707,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "thread-media", title: "Media", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "thread-media",
       ...panelState("thread-media", { kind: "file", path: "image.png", preview: {
@@ -721,7 +734,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "thread-sheet", title: "Workbook", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "thread-sheet",
       ...panelState("thread-sheet", { kind: "file", path: "reports/summary.xlsx", preview: {
@@ -759,7 +772,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-rollback", title: "Rollback", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -792,7 +805,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-created", title: "Created", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -825,7 +838,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const owned = useAppStore();
-    owned.$patch({
+    patchApp(owned, {
       threads: [{ id: "thread-expand", title: "Tree", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "thread-expand",
       repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } },
@@ -866,7 +879,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const owned = useAppStore();
-    owned.$patch({
+    patchApp(owned, {
       threads: [{ id: "thread-bulk", title: "Bulk", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "thread-bulk",
       repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } },
@@ -898,7 +911,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "thread-cap", title: "Cap", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "thread-cap",
       repositoryByWorkspace: { "d:/repo": { files: paths.map((path) => ({ path, name: path.split("/").pop() ?? path })), git: { isRepository: true, files: [] } } },
@@ -917,7 +930,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "thread-ignored", title: "Ignored", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "thread-ignored",
       repositoryByWorkspace: { "d:/repo": {
@@ -962,7 +975,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "thread-filter", title: "Filter", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "thread-filter",
       repositoryByWorkspace: { "d:/repo": { files: paths.map((path) => ({ path, name: path.split("/").pop() ?? path })), git: { isRepository: true, files: [] } } },
@@ -993,7 +1006,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "thread-deep", title: "Deep", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "thread-deep",
       repositoryByWorkspace: { "d:/repo": {
@@ -1023,7 +1036,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-outline", title: "Outline", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -1077,7 +1090,7 @@ describe("InspectorPanel", () => {
       if (!record) throw new Error("the markdown preview host is not observed");
       record.cb([{ contentRect: { width } } as unknown as ResizeObserverEntry], {} as ResizeObserver);
     };
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-drag", title: "Drag", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -1127,7 +1140,7 @@ describe("InspectorPanel", () => {
     const store = useAppStore();
     // No ResizeObserver in this environment, so the panel width is what the decision reads.
     store.inspectorWidth = 700;
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-rail", title: "Rail", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -1161,7 +1174,7 @@ describe("InspectorPanel", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     store.inspectorWidth = 700;
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-late", title: "Late", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -1189,7 +1202,7 @@ describe("InspectorPanel", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     store.inspectorWidth = 420;
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-float", title: "Float", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -1228,7 +1241,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-noheadings", title: "Plain", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -1254,7 +1267,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-find", title: "Find", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -1317,7 +1330,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-jump", title: "Jump", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -1365,7 +1378,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "thread-scroll", title: "Scroll", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "thread-scroll",
       repositoryByWorkspace: { "d:/repo": {
@@ -1399,7 +1412,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "thread-late", title: "Late", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "thread-late",
       repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } },

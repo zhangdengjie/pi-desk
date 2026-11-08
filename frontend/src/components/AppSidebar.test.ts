@@ -3,7 +3,20 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RuntimeState } from "../../bindings/pi-desk/internal/domain";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import AppSidebar from "./AppSidebar.vue";
+
+// R1b workspace store split: tests still seed the app store by name. Route
+// workspace-owned fields to their new owner and patch the rest as before.
+function patchApp(store: any, partial: any) {
+  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
+  store.$patch(rest);
+  const workspace = useWorkspaceStore();
+  if (threads !== undefined) workspace.threads = threads;
+  if (workspaces !== undefined) workspace.workspaces = workspaces;
+  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
+  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
+}
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -66,7 +79,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       bootstrap: {
         appVersion: "0.1.0",
         wailsVersion: "v3.1.0",
@@ -97,7 +110,7 @@ describe("AppSidebar", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const now = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [
         { id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" },
@@ -130,7 +143,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [
         { id: "workspace-a", name: "remote A", path: "", kind: "ssh", targetId: "target-a", remoteRoot: "/srv/a", trust: "approve" },
@@ -156,7 +169,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
       threads: [
@@ -191,8 +204,8 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.workspaces = [{ id: "repo", name: "repo", path: "D:\\repo", trust: "deny" }];
-    store.threads = Array.from({ length: 55 }, (_, index) => ({
+    useWorkspaceStore().workspaces = [{ id: "repo", name: "repo", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = Array.from({ length: 55 }, (_, index) => ({
       id: `task-${index}`, title: `Task ${index}`, workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
       status: "idle", started: false, generation: 0, modifiedAt: new Date(60_000 * (55 - index)).toISOString(),
     }));
@@ -217,8 +230,8 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.workspaces = [{ id: "repo", name: "repo", path: "D:\\repo", trust: "deny" }];
-    store.threads = Array.from({ length: 45 }, (_, index) => ({
+    useWorkspaceStore().workspaces = [{ id: "repo", name: "repo", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = Array.from({ length: 45 }, (_, index) => ({
       id: `task-${index}`, title: `Task ${index}`, workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
       status: "idle", started: false, generation: 0, archived: index === 44,
     }));
@@ -252,8 +265,8 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.workspaces = [{ id: "repo", name: "repo", path: "D:\\repo", trust: "deny" }];
-    store.threads = [{ id: "task", title: "Task", workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "running", started: true, generation: 1 }];
+    useWorkspaceStore().workspaces = [{ id: "repo", name: "repo", path: "D:\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{ id: "task", title: "Task", workspace: "repo", workspacePath: "D:\\repo", trust: "deny", status: "running", started: true, generation: 1 }];
     store.activeThreadId = "task";
     const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
     await wrapper.get(".thread-row").trigger("contextmenu");
@@ -274,7 +287,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       catalogReady: true,
       catalogError: "",
@@ -297,7 +310,7 @@ describe("AppSidebar", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const now = new Date().toISOString();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
       threads: [{
@@ -323,7 +336,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\\\repo", trust: "approve" }],
     });
@@ -345,7 +358,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
       threads: [{
@@ -396,7 +409,7 @@ describe("AppSidebar", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       activeThreadId: "t-quiet",
       workspaces: [
@@ -444,7 +457,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [{ id: "ws-a", name: "alpha", path: "/repo/a", kind: "local", trust: "approve" }],
       threads: [
@@ -474,7 +487,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
       threads: [{
@@ -508,7 +521,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
       threads: [{
@@ -528,7 +541,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\\\repo", trust: "approve" }],
     });
@@ -564,7 +577,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
       threads: [{
@@ -593,7 +606,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
       threads: [{
@@ -660,7 +673,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
       threads: [{
@@ -696,7 +709,7 @@ describe("AppSidebar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       catalogLoading: false,
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "deny" }],
       threads: [{

@@ -2,7 +2,9 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import RemoteReconnectDialog from "./RemoteReconnectDialog.vue";
+
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -15,11 +17,11 @@ describe("RemoteReconnectDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.workspaces = [{
+    useWorkspaceStore().workspaces = [{
       id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote",
       remoteRoot: "/srv/repo", trust: "approve",
     }];
-    store.threads = [{
+    useWorkspaceStore().threads = [{
       id: "thread-remote", title: "Remote task", workspace: "remote", workspaceId: "workspace-remote",
       workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0,
     }];

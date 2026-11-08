@@ -2,7 +2,20 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import ScheduledTasksPage from "./ScheduledTasksPage.vue";
+
+// R1b workspace store split: tests still seed the app store by name. Route
+// workspace-owned fields to their new owner and patch the rest as before.
+function patchApp(store: any, partial: any) {
+  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
+  store.$patch(rest);
+  const workspace = useWorkspaceStore();
+  if (threads !== undefined) workspace.threads = threads;
+  if (workspaces !== undefined) workspace.workspaces = workspaces;
+  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
+  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
+}
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -19,7 +32,7 @@ describe("ScheduledTasksPage", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "approve" }],
       scheduledTasks: [{
         id: "schedule-1",
@@ -57,8 +70,7 @@ describe("ScheduledTasksPage", () => {
   it("explains why creation is unavailable without a trusted local workspace", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
-    const store = useAppStore();
-    store.workspaces = [{ id: "remote-1", name: "remote", path: "", kind: "ssh", trust: "approve" }];
+    useWorkspaceStore().workspaces = [{ id: "remote-1", name: "remote", path: "", kind: "ssh", trust: "approve" }];
     const wrapper = mount(ScheduledTasksPage, { global: { plugins: [pinia] } });
 
     expect(wrapper.get(".scheduled-tasks-notice").text()).toContain("trust a local workspace");
@@ -69,7 +81,7 @@ describe("ScheduledTasksPage", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "approve" }],
       threads: [{
         id: "thread-1", title: "Current", workspace: "pi-desk", workspaceId: "workspace-1", workspacePath: "D:\\repo",
@@ -99,7 +111,7 @@ describe("ScheduledTasksPage", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "approve" }],
       knownRuntimeModels: [
         { provider: "anthropic", id: "claude", name: "Claude" },

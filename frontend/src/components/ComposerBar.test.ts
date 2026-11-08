@@ -2,9 +2,22 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import { prepareImage } from "../utils/imageAttachments";
 import { repositoryService } from "../services/repository";
 import ComposerBar from "./ComposerBar.vue";
+
+// R1b workspace store split: tests still seed the app store by name. Route
+// workspace-owned fields to their new owner and patch the rest as before.
+function patchApp(store: any, partial: any) {
+  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
+  store.$patch(rest);
+  const workspace = useWorkspaceStore();
+  if (threads !== undefined) workspace.threads = threads;
+  if (workspaces !== undefined) workspace.workspaces = workspaces;
+  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
+  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
+}
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -42,7 +55,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "run", title: "Run", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
       activeThreadId: "run",
     });
@@ -68,7 +81,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "menu", title: "Menu", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
       activeThreadId: "menu",
       repositoryByWorkspace: { "d:/repo": {
@@ -99,7 +112,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "caret", title: "Caret", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
       activeThreadId: "caret",
       repositoryByWorkspace: { "d:/repo": {
@@ -145,7 +158,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "fresh", title: "Fresh", workspace: "baby", workspaceId: "baby", workspacePath: "/repo/baby", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "fresh",
       // No `repositoryByWorkspace` entry at all: the shape of a brand-new task whose inspector never
@@ -164,11 +177,11 @@ describe("ComposerBar", () => {
     await write("@");
     expect(refresh).toHaveBeenCalledTimes(1);
     // While the list is in flight the composer has to say so rather than look dead.
-    store.$patch({ repositoryLoadingByWorkspace: { baby: true } });
+    patchApp(store, { repositoryLoadingByWorkspace: { baby: true } });
     await flushPromises();
     expect(wrapper.find(".composer-notice").text()).toContain("Listing");
 
-    store.$patch({ repositoryByWorkspace: { baby: { files: [{ path: "app/src/main.ts", name: "main.ts" }], git: { isRepository: true, files: [] } } } });
+    patchApp(store, { repositoryByWorkspace: { baby: { files: [{ path: "app/src/main.ts", name: "main.ts" }], git: { isRepository: true, files: [] } } } });
     await flushPromises();
     expect(wrapper.find(".file-completion-menu").exists()).toBe(true);
     expect(wrapper.find(".composer-notice").exists()).toBe(false);
@@ -176,7 +189,7 @@ describe("ComposerBar", () => {
     // A denied workspace must not even be asked for a list, and must explain the dead `@`.
     // `$patch` deep-merges, so clearing a bucket needs the direct write.
     store.repositoryByWorkspace = {};
-    store.$patch({ threads: [{ id: "fresh", title: "Fresh", workspace: "baby", workspaceId: "baby", workspacePath: "/repo/baby", trust: "deny", status: "idle", started: false, generation: 0 }] });
+    patchApp(store, { threads: [{ id: "fresh", title: "Fresh", workspace: "baby", workspaceId: "baby", workspacePath: "/repo/baby", trust: "deny", status: "idle", started: false, generation: 0 }] });
     await write("@main");
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(wrapper.find(".composer-notice").text()).toContain("not trusted");
@@ -185,7 +198,7 @@ describe("ComposerBar", () => {
 
   it("mentions a picked file and flags it when it is outside the workspace", async () => {
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "pick", title: "Pick", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
       activeThreadId: "pick",
     });
@@ -209,8 +222,8 @@ describe("ComposerBar", () => {
 
   it("disables the file picker for remote workspaces", async () => {
     const store = useAppStore();
-    store.workspaces = [{ id: "ws-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
-    store.threads = [{ id: "pick", title: "Pick", workspace: "remote", workspaceId: "ws-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
+    useWorkspaceStore().workspaces = [{ id: "ws-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "pick", title: "Pick", workspace: "remote", workspaceId: "ws-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];
     store.activeThreadId = "pick";
     const wrapper = mount(ComposerBar);
     await flushPromises();
@@ -226,7 +239,7 @@ describe("ComposerBar", () => {
     // drafts differ by a single trailing character on purpose - that is the case a minimal-patch
     // write would happily serve from the same element, and therefore the case that proves the `:key`.
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: ["first", "second"].map((id) => ({ id, title: id, workspace: "repo", workspacePath: "D:\\repo", trust: "approve" as const, status: "idle" as const, started: true, generation: 1 })),
       activeThreadId: "first",
       draftsByThread: { first: "draft", second: "draft!" },
@@ -247,7 +260,7 @@ describe("ComposerBar", () => {
 
   it("pastes file references into the queue editor selection", async () => {
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "paste", title: "Paste", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "running", started: true, generation: 1 }],
       activeThreadId: "paste",
       pendingPromptsByThread: { paste: [{ id: "queued", text: "Review old please", images: [], createdAt: "2026-09-04T00:00:00Z" }] },
@@ -267,7 +280,7 @@ describe("ComposerBar", () => {
 
   it("pastes Explorer files at the caret even when the browser exposes no File objects", async () => {
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "paste", title: "Paste", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
       activeThreadId: "paste", draftsByThread: { paste: "Review:" },
     });
@@ -289,7 +302,7 @@ describe("ComposerBar", () => {
 
   it("does not overwrite a newer draft or insert a delayed paste into another task", async () => {
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "paste", title: "Paste", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
       activeThreadId: "paste", draftsByThread: { paste: "original" },
     });
@@ -317,7 +330,7 @@ describe("ComposerBar", () => {
 
   it("keeps plain path text editable and surfaces a host rejection without inserting files", async () => {
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "paste", title: "Paste", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
       activeThreadId: "paste",
     });
@@ -336,7 +349,7 @@ describe("ComposerBar", () => {
 
   it("disables sending while a history operation is active", async () => {
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "thread", title: "Task", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
       activeThreadId: "thread",
       draftsByThread: { thread: "Do not send during deletion" },
@@ -352,7 +365,7 @@ describe("ComposerBar", () => {
 
   it("shows a status banner while the session is compacting", () => {
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "thread", title: "Task", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "running", started: true, generation: 1 }],
       activeThreadId: "thread",
       sessionOperationByThread: { thread: "Compacting" },
@@ -371,7 +384,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "running", started: true, generation: 1,
@@ -449,7 +462,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-todo", title: "Todo", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "running", started: true, generation: 1,
@@ -490,7 +503,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-commands", title: "Commands", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
@@ -542,7 +555,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-local-commands", title: "Commands", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
@@ -573,7 +586,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-command-button", title: "Commands", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
@@ -614,7 +627,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-multiple-commands", title: "Commands", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
@@ -646,7 +659,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-desktop-command-button", title: "Commands", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
@@ -676,7 +689,7 @@ describe("ComposerBar", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const originalImage = { id: "original-image", name: "original.png", data: "b3JpZ2luYWw=", mimeType: "image/png", previewUrl: "data:image/png;base64,b3JpZ2luYWw=" };
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "running", started: true, generation: 1,
@@ -715,7 +728,7 @@ describe("ComposerBar", () => {
     const store = useAppStore();
     const queuedImage = { id: "queued-image", name: "queued.png", data: "cXVldWVk", mimeType: "image/png", previewUrl: "data:image/png;base64,cXVldWVk" };
     const draftImage = { id: "draft-image", name: "draft.png", data: "ZHJhZnQ=", mimeType: "image/png", previewUrl: "data:image/png;base64,ZHJhZnQ=" };
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-move-queue", title: "Queue", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "running", started: true, generation: 1,
@@ -748,7 +761,7 @@ describe("ComposerBar", () => {
       id: "input-image", name: "diagram.png", data: "ZGlhZ3JhbQ==", mimeType: "image/png",
       previewUrl: "data:image/png;base64,ZGlhZ3JhbQ==",
     };
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-image", title: "Image", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
@@ -784,7 +797,7 @@ describe("ComposerBar", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const longText = "执行到一半".repeat(400);
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "running", started: true, generation: 1,
@@ -815,7 +828,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "running", started: true, generation: 1,
@@ -836,7 +849,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-keyboard", title: "Keyboard", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
@@ -870,7 +883,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-shift", title: "Shift", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
@@ -898,7 +911,7 @@ describe("ComposerBar", () => {
     // the ProseMirror surface and are gone on purpose — Pi parses the same characters downstream,
     // and `MarkdownEditor.vue` still ships for any surface that wants the rendering.
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "literal", title: "Literal", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
       activeThreadId: "literal",
       draftsByThread: { literal: "```ts\nconst a = 1;\n```" },
@@ -919,7 +932,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "starting", started: false, generation: 0,
@@ -937,7 +950,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: true, generation: 1,
@@ -965,7 +978,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: true, generation: 1,
@@ -993,7 +1006,7 @@ describe("ComposerBar", () => {
     const store = useAppStore();
     const gpt = { id: "gpt-5.6-sol", name: "GPT 5.6 Sol", provider: "openai", contextWindow: 200_000 };
     const grok = { id: "grok-4.6", name: "Grok 4.6", provider: "grok", contextWindow: 1_000_000 };
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-model-menu", title: "Models", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
@@ -1051,7 +1064,7 @@ describe("ComposerBar", () => {
     const models = Array.from({ length: 8 }, (_, index) => ({
       id: `model-${index}`, name: `Model ${index}`, provider: "openai", contextWindow: 200_000,
     }));
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-model-scroll", title: "Models", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
@@ -1096,7 +1109,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-stats", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
@@ -1161,7 +1174,7 @@ describe("ComposerBar", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,

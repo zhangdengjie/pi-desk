@@ -2,7 +2,20 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import TerminalPane from "./TerminalPane.vue";
+
+// R1b workspace store split: tests still seed the app store by name. Route
+// workspace-owned fields to their new owner and patch the rest as before.
+function patchApp(store: any, partial: any) {
+  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
+  store.$patch(rest);
+  const workspace = useWorkspaceStore();
+  if (threads !== undefined) workspace.threads = threads;
+  if (workspaces !== undefined) workspace.workspaces = workspaces;
+  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
+  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
+}
 
 const terminalHarness = vi.hoisted(() => ({
   dataHandler: undefined as ((data: string) => void) | undefined,
@@ -111,7 +124,7 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Pooled", workspace: "repo", workspacePath: "/repo", trust: "approve",
         status: "idle", started: true, generation: 0,
@@ -163,7 +176,7 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Replay", workspace: "repo", workspacePath: "/repo", trust: "approve",
         status: "idle", started: true, generation: 0,
@@ -203,7 +216,7 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Replay", workspace: "repo", workspacePath: "/repo", trust: "approve",
         status: "idle", started: true, generation: 0,
@@ -241,7 +254,7 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Stale", workspace: "repo", workspacePath: "/repo", trust: "approve",
         status: "idle", started: true, generation: 0,
@@ -281,7 +294,7 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Terminal", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -322,7 +335,7 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Terminal", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -363,7 +376,7 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Terminal", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -395,7 +408,7 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       workspaces: [{
         id: "workspace-0123456789abcdef0123456789abcdef", name: "repo", path: "", kind: "ssh",
         targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve",
@@ -426,7 +439,7 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       workspaces: [{ id: "workspace-remote", name: "repo", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }],
       threads: [
         { id: "thread-cold", title: "Cold", workspace: "repo", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 },
@@ -456,7 +469,7 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       workspaces: [{ id: "workspace-remote", name: "repo", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }],
       threads: [
         { id: "thread-cold", title: "Cold", workspace: "repo", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 },
@@ -485,7 +498,7 @@ describe("TerminalPane", () => {
     const store = useAppStore();
     let finish!: (state: { threadId: string; running: boolean; sequence: number; shell: string }) => void;
     terminalMocks.snapshot.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
-    store.$patch({
+    patchApp(store, {
       workspaces: [
         { id: "workspace-local", name: "local", path: "D:\\repo", trust: "approve" },
         { id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" },
@@ -512,7 +525,7 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       workspaces: [{ id: "workspace-remote", name: "repo", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }],
       threads: [{ id: "thread-stale", title: "Stale", workspace: "repo", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }],
       activeThreadId: "thread-stale",
@@ -532,7 +545,7 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       workspaces: [{ id: "workspace-remote", name: "repo", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }],
       threads: [{ id: "thread-failed", title: "Failed", workspace: "repo", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }],
       activeThreadId: "thread-failed",

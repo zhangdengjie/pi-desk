@@ -4,8 +4,21 @@ import { nextTick } from "vue";
 import { describe, expect, it, vi } from "vitest";
 import { RuntimeState } from "../../bindings/pi-desk/internal/domain";
 import { useAppStore } from "../stores/app";
+import { useWorkspaceStore } from "../stores/workspace";
 import SettingsDialog from "./SettingsDialog.vue";
 import { applyStreamTuning, resetStreamTuning } from "../utils/streamTuning";
+
+// R1b workspace store split: tests still seed the app store by name. Route
+// workspace-owned fields to their new owner and patch the rest as before.
+function patchApp(store: any, partial: any) {
+  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
+  store.$patch(rest);
+  const workspace = useWorkspaceStore();
+  if (threads !== undefined) workspace.threads = threads;
+  if (workspaces !== undefined) workspace.workspaces = workspaces;
+  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
+  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
+}
 
 const modelConfigMocks = vi.hoisted(() => ({ selectable: vi.fn() }));
 const desktopMocks = vi.hoisted(() => ({ getBootstrapState: vi.fn(), maintainPi: vi.fn(), exportDiagnostics: vi.fn() }));
@@ -222,7 +235,7 @@ describe("SettingsDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{
         id: "thread-1", title: "Runtime audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
@@ -273,7 +286,7 @@ describe("SettingsDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       bootstrap: {
         productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3", workingDirectory: "D:\\repo",
         runtime: { state: RuntimeState.RuntimeReady, command: "C:\\tools\\pi.cmd", version: "0.84.0" },
@@ -308,7 +321,7 @@ describe("SettingsDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       bootstrap: {
         productName: "Pi Desk", appVersion: "1.0.3", wailsVersion: "v3", workingDirectory: "D:\\repo",
         runtime: { state: RuntimeState.RuntimeReady, command: "C:\\tools\\pi.cmd", version: "0.87.0" },
@@ -330,7 +343,7 @@ describe("SettingsDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({
+    patchApp(store, {
       threads: [{ id: "running-thread", title: "Running", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "running", started: true, generation: 1 }],
       activeThreadId: "running-thread",
       bootstrap: {

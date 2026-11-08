@@ -1,5 +1,6 @@
 import { defineStore } from "pinia";
 import { useSessionStore } from "./session";
+import { useWorkspaceStore } from "./workspace";
 import { createID, formatMessageTime, nowLabel } from "../utils/ids";
 import { RuntimeState, type BootstrapState, type DesktopState, type ProviderEnvIssue, type SessionSnapshot, type UserConfigView, type WorkspaceApplication, type WorkspaceSummary as HostWorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
 import { agentService, onPiEvent, type PiSessionEvent, type SessionBranches } from "../services/agent";
@@ -201,6 +202,7 @@ export interface ThreadSummary {
   messageCount?: number;
   firstMessage?: string;
   parentSessionFile?: string;
+  composerJson?: string;
   unread?: boolean;
   archived?: boolean;
   error?: string;
@@ -1106,12 +1108,8 @@ export const useAppStore = defineStore("app", {
     sessionSyncError: "",
     desktopStateReady: false,
     bootstrap: null as BootstrapState | null,
-    workspaces: [] as WorkspaceSummary[],
-    workspaceApplications: [] as WorkspaceApplication[],
     workspaceApplicationsLoading: true,
-    workspaceApplication: "" as string,
     workspaceApplicationError: "",
-    threads: [] as ThreadSummary[],
     scheduledTasks: [] as ScheduledTask[],
     scheduledTaskRunningByID: {} as Record<string, boolean>,
     activeThreadId: "",
@@ -1236,6 +1234,18 @@ export const useAppStore = defineStore("app", {
     updateCheckResult: null as import("../../bindings/pi-desk/internal/domain").UpdateCheckResult | null,
   }),
   getters: {
+    threads(): ThreadSummary[] {
+      return useWorkspaceStore().threads;
+    },
+    workspaces(): WorkspaceSummary[] {
+      return useWorkspaceStore().workspaces;
+    },
+    workspaceApplications(): WorkspaceApplication[] {
+      return useWorkspaceStore().workspaceApplications;
+    },
+    workspaceApplication(): string {
+      return useWorkspaceStore().workspaceApplication;
+    },
     messagesByThread(): Record<string, TimelineMessage[]> {
       return useSessionStore().messagesByThread;
     },
@@ -1246,7 +1256,7 @@ export const useAppStore = defineStore("app", {
       return useSessionStore().waitingForOutputByThread;
     },
     activeThread(state): ThreadSummary | undefined {
-      return state.threads.find((thread) => thread.id === state.activeThreadId);
+      return useWorkspaceStore().threads.find((thread) => thread.id === state.activeThreadId);
     },
     // App.vue must NOT key the dialog's existence off the head slot: clearing it synchronously on
     // click unmounted the scroll container, so a menu re-render lost the list's scroll offset and
@@ -1258,18 +1268,18 @@ export const useAppStore = defineStore("app", {
     // The native picker runs on this machine, so an SSH workspace would produce a local path the
     // remote Pi cannot read; the composer button is disabled for those.
     activeWorkspaceIsRemote(state): boolean {
-      return workspaceForThread(state.workspaces, state.threads.find((item) => item.id === state.activeThreadId))?.kind === "ssh";
+      return workspaceForThread(useWorkspaceStore().workspaces, useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId))?.kind === "ssh";
     },
     activeWorkspace(state): WorkspaceSummary | undefined {
-      return workspaceForThread(state.workspaces, state.threads.find((item) => item.id === state.activeThreadId));
+      return workspaceForThread(useWorkspaceStore().workspaces, useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId));
     },
     remoteReconnectThread(state): ThreadSummary | undefined {
-      return state.threads.find((thread) => thread.id === state.remoteReconnectThreadId);
+      return useWorkspaceStore().threads.find((thread) => thread.id === state.remoteReconnectThreadId);
     },
-    activeWorkspaceApplication(state): WorkspaceApplication | undefined {
-      return state.workspaceApplications.find((application) => application.id === state.workspaceApplication)
-        ?? state.workspaceApplications.find((application) => application.id === "file-manager")
-        ?? state.workspaceApplications[0];
+    activeWorkspaceApplication(): WorkspaceApplication | undefined {
+      return useWorkspaceStore().workspaceApplications.find((application) => application.id === useWorkspaceStore().workspaceApplication)
+        ?? useWorkspaceStore().workspaceApplications.find((application) => application.id === "file-manager")
+        ?? useWorkspaceStore().workspaceApplications[0];
     },
     activeMessages(state): TimelineMessage[] {
       return useSessionStore().messagesByThread[state.activeThreadId] ?? [];
@@ -1293,7 +1303,7 @@ export const useAppStore = defineStore("app", {
       return state.promptCacheByThread[state.activeThreadId];
     },
     activeModels(state): PiModel[] {
-      const thread = state.threads.find((candidate) => candidate.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((candidate) => candidate.id === state.activeThreadId);
       if (!thread) return [];
       const current = state.sessionStateByThread[state.activeThreadId]?.model;
       return mergeModelCatalog(
@@ -1363,27 +1373,27 @@ export const useAppStore = defineStore("app", {
       };
     },
     activeRepository(state): RepositorySnapshot | undefined {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
       return thread ? state.repositoryByWorkspace[repositoryKey(thread)] : undefined;
     },
     activeRepositoryTreeKey(state): string {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
       return thread ? repositoryKey(thread) : "";
     },
     activeRepositoryTreeExpanded(state): Record<string, boolean> {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
       return (thread && state.repositoryTreeExpandedByWorkspace[repositoryKey(thread)]) || {};
     },
     activeRepositoryLoading(state): boolean {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
       return thread ? Boolean(state.repositoryLoadingByWorkspace[repositoryKey(thread)]) : false;
     },
     activeRepositoryError(state): string {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
       return thread ? state.repositoryErrorByWorkspace[repositoryKey(thread)] ?? "" : "";
     },
     activeRepositoryStale(state): boolean {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
       return thread ? Boolean(state.repositoryStaleByWorkspace[repositoryKey(thread)]) : false;
     },
     activePanel(state): ThreadPanel | undefined {
@@ -1453,31 +1463,31 @@ export const useAppStore = defineStore("app", {
       return supportsContextEdits(state.bootstrap?.runtime.version) && !state.sessionMutationErrorByThread[state.activeThreadId];
     },
     activeWorkspaceTrustUpdating(state): boolean {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
       return Boolean(thread && state.workspaceTrustUpdatingPath === pathKey(thread.workspacePath));
     },
     activeWorkspaceTrustBusy(state): boolean {
-      const thread = state.threads.find((item) => item.id === state.activeThreadId);
+      const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
       if (!thread) return false;
       const workspaceKey = pathKey(thread.workspacePath);
-      return state.threads.some((item) => pathKey(item.workspacePath) === workspaceKey
+      return useWorkspaceStore().threads.some((item) => pathKey(item.workspacePath) === workspaceKey
         && (item.status === "running" || item.status === "starting" || Boolean(state.bashRunningByThread[item.id])));
     },
     piMaintenanceBusy(state): boolean {
-      return state.threads.some((thread) => thread.started
+      return useWorkspaceStore().threads.some((thread) => thread.started
         && (thread.status === "running" || thread.status === "starting" || Boolean(state.bashRunningByThread[thread.id])));
     },
     filteredThreads(state): ThreadSummary[] {
       const session = useSessionStore();
       const query = state.searchQuery.trim().toLocaleLowerCase();
-      const threads = query ? state.threads.filter((thread) => [
+      const threads = query ? useWorkspaceStore().threads.filter((thread) => [
         thread.title,
         thread.firstMessage ?? "",
         thread.workspace,
         thread.workspacePath,
         state.searchBodyTextByThread[thread.id] ?? "",
         timelineSearchText(session.messagesByThread[thread.id] ?? []),
-      ].join("\n").toLocaleLowerCase().includes(query)) : state.threads;
+      ].join("\n").toLocaleLowerCase().includes(query)) : useWorkspaceStore().threads;
       return [...threads].sort((left, right) => {
         const leftTime = Date.parse(left.modifiedAt || left.createdAt || "");
         const rightTime = Date.parse(right.modifiedAt || right.createdAt || "");
@@ -1820,7 +1830,7 @@ export const useAppStore = defineStore("app", {
         this.workspaceApplicationError = tr("topbar.workspaceUnavailable");
         return false;
       }
-      this.workspaceApplication = application.id;
+      useWorkspaceStore().workspaceApplication = application.id;
       this.scheduleDesktopStateSave();
       try {
         await catalogService.openWorkspaceWith(workspace.id, application.id);
@@ -1908,7 +1918,7 @@ export const useAppStore = defineStore("app", {
       }
       if (!workspace.discovered) await catalogService.removeWorkspace(id);
       for (const thread of removedThreads) this.removeThreadState(thread.id);
-      this.workspaces = this.workspaces.filter((item) => item.id !== id);
+      useWorkspaceStore().workspaces = this.workspaces.filter((item) => item.id !== id);
       this.scheduledTasks = this.scheduledTasks.filter((task) => task.workspaceId !== id);
       delete this.remoteReadyByWorkspace[id];
       this.scheduleDesktopStateSave();
@@ -4668,15 +4678,15 @@ export const useAppStore = defineStore("app", {
       this.hiddenSlashCommands = desktop.preferences.hiddenSlashCommands || "";
       this.updateChecksEnabled = desktop.preferences.updateChecksEnabled ?? true;
       this.closeToTray = true;
-      this.workspaceApplication = desktop.preferences.workspaceApplication || "";
+      useWorkspaceStore().workspaceApplication = desktop.preferences.workspaceApplication || "";
     },
     async loadWorkspaceApplications() {
       this.workspaceApplicationsLoading = true;
       this.workspaceApplicationError = "";
       try {
-        this.workspaceApplications = await catalogService.listWorkspaceApplications();
+        useWorkspaceStore().workspaceApplications = await catalogService.listWorkspaceApplications();
       } catch (error) {
-        this.workspaceApplications = [];
+        useWorkspaceStore().workspaceApplications = [];
         this.workspaceApplicationError = errorMessage(error);
       } finally {
         this.workspaceApplicationsLoading = false;
@@ -4704,7 +4714,7 @@ export const useAppStore = defineStore("app", {
             this.desktopStateReady = true;
           });
         const [[catalogWorkspaces, sessions], desktop] = await Promise.all([catalogPromise, desktopPromise]);
-        this.workspaces = catalogWorkspaces.map((workspace) => ({
+        useWorkspaceStore().workspaces = catalogWorkspaces.map((workspace) => ({
           ...workspace,
           trust: workspace.trust as "approve" | "deny",
           discovered: false,
@@ -4801,7 +4811,7 @@ export const useAppStore = defineStore("app", {
             drafts.set(saved.id, saved.draft ?? "");
           }
         }
-        this.threads = historicalThreads;
+        useWorkspaceStore().threads = historicalThreads;
         this.scheduledTasks = (desktop.scheduledTasks ?? []).map((task) => {
           const hasExecutionSettings = Boolean(task.modelProvider && task.modelId && task.thinkingLevel);
           return {
@@ -4838,7 +4848,7 @@ export const useAppStore = defineStore("app", {
           catalogService.listWorkspaces(),
           catalogService.listSessions() as Promise<CatalogSession[]>,
         ]);
-        this.workspaces = catalogWorkspaces.map((workspace) => ({
+        useWorkspaceStore().workspaces = catalogWorkspaces.map((workspace) => ({
           ...workspace,
           trust: workspace.trust as "approve" | "deny",
           discovered: false,
