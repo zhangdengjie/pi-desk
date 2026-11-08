@@ -40,7 +40,7 @@
   - 创建线程前调用 `WorktreeService.Create`，把 thread 的 `workspaceId/path`
     指向子 workspace；
   - 文件树、终端、Diff 继续走 `workspaceId + workspacePath`，因此自动指向 worktree。
-- bindings 已重新生成：17 services / 175 methods / 174 models。
+- bindings 已重新生成：18 services / 179 methods / 177 models。
 
 ### P4 调度器数据面
 
@@ -69,6 +69,11 @@
   - 失败时 `FinishRun(failed)` + Task failed + best-effort abort。
 - 开关：`PI_DESK_R2_SCHEDULER=1` 时才启动 Go scheduler；默认仍是前端定时器。
 - 启动时 `ReconcileInterruptedRuns` 已存在，Go scheduler 在其后启动。
+- `ScheduleService`（Wails）：`Enabled / ListSchedules / SaveSchedule / DeleteSchedule`；
+  前端 wrapper `services/schedules.ts` 已就绪，页面尚未切换。
+- Worktree bootstrap：`internal/worktree` 已支持 `none / copy / symlink / command`，
+  默认 none；copy 只允许显式 allowlist，symlink 不跟随删除，command 失败带输出。
+  尚未接 `~/.pi-desk/config.json` 与设置页。
 
 ## 2. 开关
 
@@ -83,9 +88,9 @@ PI_DESK_R2_SCHEDULER=1    启动 Go scheduler；默认 0（前端定时器继续
 
 ```text
 - ScheduledTasksPage 尚未切到 ScheduleService；Go 只处理启动时导入的 schedule。
-- ScheduleService（保存/删除/手动运行/export）尚未实现。
+- ScheduleService 尚缺手动运行 / export legacy；Go 只处理已有 Task/Thread 的 schedule。
 - Go scheduler 默认未开启；需要前端切换 + 回滚导出后才能默认 1。
-- worktree bootstrap（none/copy/symlink/command）尚未实现。
+- worktree bootstrap 配置读取与设置页尚未接。
 - worktree 归档 GC、孤儿清理 UI、启动扫描尚未接。
 - 侧栏尚未把 worktree 子项折叠到父 workspace 下；目前是独立 workspace group。
 - Worktree 与 Task/Run 的绑定使用 thread id（首个 Prompt 后 Task id 才生成），
