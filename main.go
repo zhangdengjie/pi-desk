@@ -13,6 +13,7 @@ import (
 
 	"pi-desk/internal/appdirs"
 	"pi-desk/internal/appservice"
+	"pi-desk/internal/buildinfo"
 	"pi-desk/internal/domain"
 	"pi-desk/internal/eventbus"
 	"pi-desk/internal/piruntime"
@@ -348,7 +349,7 @@ func main() {
 		MinWidth:        minimumWindowWidth,
 		MinHeight:       minimumWindowHeight,
 		Frameless:       runtime.GOOS == "windows",
-		DevToolsEnabled: true,
+		DevToolsEnabled: buildinfo.DevTools,
 		Hidden:          restoreMaximized && runtime.GOOS == "windows",
 		Mac: application.MacWindow{
 			InvisibleTitleBarHeight: 46,
