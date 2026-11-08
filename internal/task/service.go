@@ -331,6 +331,12 @@ func (s *Service) GetRun(ctx context.Context, id string) (Run, error) {
 	return s.store.GetRun(ctx, id)
 }
 
+// UpdateRun persists a Run after the caller has filled in session/model
+// metadata that is not known at CreateRun time.
+func (s *Service) UpdateRun(ctx context.Context, run Run) error {
+	return s.store.UpdateRun(ctx, run)
+}
+
 func (s *Service) ListRuns(ctx context.Context, taskID string) ([]Run, error) {
 	return s.store.ListRuns(ctx, taskID)
 }

@@ -20,6 +20,9 @@ type WorkspaceSummary struct {
 	DefaultModelProvider string `json:"defaultModelProvider,omitempty"`
 	DefaultModelID       string `json:"defaultModelId,omitempty"`
 	DefaultThinking      string `json:"defaultThinking,omitempty"`
+	ParentWorkspaceID    string `json:"parentWorkspaceId,omitempty"`
+	WorktreeBranch       string `json:"worktreeBranch,omitempty"`
+	WorktreeTaskID       string `json:"worktreeTaskId,omitempty"`
 }
 
 type RemoteAliasSummary struct {

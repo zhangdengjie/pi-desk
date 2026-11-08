@@ -91,6 +91,8 @@ func (service *DesktopService) GetBootstrapState() domain.BootstrapState {
 		NormalizedEvents:         os.Getenv("PI_DESK_NORMALIZED_EVENTS") == "1",
 		HarnessEnabled:           HarnessEnabled(),
 		NormalizedEventsDisabled: os.Getenv("PI_DESK_NORMALIZED_EVENTS") == "0",
+		R2Worktree:               R2WorktreeEnabled(),
+		R2Scheduler:              R2SchedulerEnabled(),
 	}
 	if service.catalog != nil {
 		if window, err := service.catalog.Window(); err == nil {

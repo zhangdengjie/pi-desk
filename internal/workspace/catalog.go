@@ -45,8 +45,16 @@ type Record struct {
 	// per-model (a model without reasoning offers none), so it is stored as a pair and cleared
 	// together - a level remembered against the wrong model is a silent downgrade.
 	DefaultThinking string
-	AddedAt         time.Time
-	LastOpenedAt    time.Time
+	// ParentWorkspaceID marks a linked worktree workspace. Empty means a normal,
+	// user-added workspace. Worktree trust is derived from the parent; it is never
+	// an independent truth source.
+	ParentWorkspaceID string
+	// WorktreeBranch and WorktreeTaskID are the git branch and Task binding that
+	// created this workspace. They are display/cleanup metadata, not access rules.
+	WorktreeBranch string
+	WorktreeTaskID string
+	AddedAt        time.Time
+	LastOpenedAt   time.Time
 }
 
 type ThreadRecord struct {
@@ -255,6 +263,13 @@ func (catalog *Catalog) Add(path, trust string) (Record, error) {
 		}
 		records[index].Trust = trust
 		records[index].LastOpenedAt = now
+		// Worktree trust is a read-only derivation of its parent. Propagate the
+		// parent update so a child cannot keep a stale approve/deny state.
+		for child := range records {
+			if records[child].ParentWorkspaceID == records[index].ID {
+				records[child].Trust = trust
+			}
+		}
 		if err := catalog.saveLocked(records, catalog.desktop); err != nil {
 			return Record{}, err
 		}
@@ -340,21 +355,47 @@ func (catalog *Catalog) RemoveAfter(id string, beforeRemove func(Record) error) 
 		return err
 	}
 	records := slices.Clone(catalog.records)
-	index := slices.IndexFunc(records, func(record Record) bool { return record.ID == id })
-	if index < 0 {
+	if !slices.ContainsFunc(records, func(record Record) bool { return record.ID == id }) {
 		return errors.New("workspace not found")
 	}
-	removed := records[index]
-	records = slices.Delete(records, index, index+1)
-	desktop := catalog.desktop
-	desktop.Threads = slices.DeleteFunc(slices.Clone(desktop.Threads), func(thread ThreadRecord) bool {
-		if thread.WorkspaceID == removed.ID {
+	removedIDs := map[string]struct{}{id: {}}
+	for changed := true; changed; {
+		changed = false
+		for _, record := range records {
+			if _, already := removedIDs[record.ID]; already {
+				continue
+			}
+			if _, parentRemoved := removedIDs[record.ParentWorkspaceID]; parentRemoved {
+				removedIDs[record.ID] = struct{}{}
+				changed = true
+			}
+		}
+	}
+	removed := make([]Record, 0, len(removedIDs))
+	records = slices.DeleteFunc(records, func(record Record) bool {
+		if _, ok := removedIDs[record.ID]; ok {
+			removed = append(removed, record)
 			return true
 		}
-		return removed.Location.Kind == KindLocal && thread.WorkspaceID == "" && pathKey(thread.WorkspacePath) == pathKey(removed.Path)
+		return false
+	})
+	removedPaths := make(map[string]struct{}, len(removed))
+	for _, record := range removed {
+		if record.Location.Kind == KindLocal && record.Path != "" {
+			removedPaths[pathKey(record.Path)] = struct{}{}
+		}
+	}
+	desktop := catalog.desktop
+	desktop.Threads = slices.DeleteFunc(slices.Clone(desktop.Threads), func(thread ThreadRecord) bool {
+		if _, ok := removedIDs[thread.WorkspaceID]; ok {
+			return true
+		}
+		_, pathRemoved := removedPaths[pathKey(thread.WorkspacePath)]
+		return thread.WorkspaceID == "" && pathRemoved
 	})
 	desktop.ScheduledTasks = slices.DeleteFunc(slices.Clone(desktop.ScheduledTasks), func(task ScheduledTaskRecord) bool {
-		return task.WorkspaceID == removed.ID
+		_, ok := removedIDs[task.WorkspaceID]
+		return ok
 	})
 	if desktop.ActiveThreadID != "" && !slices.ContainsFunc(desktop.Threads, func(thread ThreadRecord) bool {
 		return thread.ID == desktop.ActiveThreadID
@@ -362,8 +403,10 @@ func (catalog *Catalog) RemoveAfter(id string, beforeRemove func(Record) error) 
 		desktop.ActiveThreadID = ""
 	}
 	if beforeRemove != nil {
-		if err := beforeRemove(removed); err != nil {
-			return err
+		for _, record := range removed {
+			if err := beforeRemove(record); err != nil {
+				return err
+			}
 		}
 	}
 	if err := catalog.saveLocked(records, desktop); err != nil {
@@ -649,6 +692,27 @@ func (catalog *Catalog) loadLocked() error {
 		}
 		records = append(records, record)
 	}
+	recordsByID := make(map[string]Record, len(records))
+	for _, record := range records {
+		recordsByID[record.ID] = record
+	}
+	trustChanged := false
+	for index := range records {
+		if records[index].ParentWorkspaceID == "" {
+			continue
+		}
+		parent, ok := recordsByID[records[index].ParentWorkspaceID]
+		if !ok {
+			return fmt.Errorf("workspace %s references unknown parent %s", records[index].ID, records[index].ParentWorkspaceID)
+		}
+		if parent.ParentWorkspaceID != "" {
+			return errors.New("nested worktrees are not supported")
+		}
+		if records[index].Trust != parent.Trust {
+			records[index].Trust = parent.Trust
+			trustChanged = true
+		}
+	}
 	desktop := state.Desktop
 	desktop.Threads = cloneThreads(state.Desktop.Threads)
 	desktop.ScheduledTasks = slices.Clone(state.Desktop.ScheduledTasks)
@@ -663,7 +727,7 @@ func (catalog *Catalog) loadLocked() error {
 	catalog.records = records
 	catalog.targets = targets
 	catalog.desktop = desktop
-	if state.Version < stateVersion {
+	if state.Version < stateVersion || trustChanged {
 		if err := catalog.saveStateLocked(records, targets, desktop); err != nil {
 			return fmt.Errorf("migrate workspace catalog to version %d: %w", stateVersion, err)
 		}

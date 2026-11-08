@@ -12,6 +12,7 @@ import (
 
 	"pi-desk/internal/eventbus"
 	"pi-desk/internal/piruntime"
+	"pi-desk/internal/schedule"
 	"pi-desk/internal/storage/sqlite"
 	"pi-desk/internal/task"
 	"pi-desk/internal/workspace"
@@ -37,6 +38,7 @@ type Harness struct {
 	store     *sqlite.Store
 	tap       *eventbus.Tap
 	service   *task.Service
+	schedules *schedule.Service
 	closeOnce sync.Once
 }
 
@@ -67,9 +69,33 @@ func StartHarness(ctx context.Context, dataDir string, catalog *workspace.Catalo
 	} else if repaired > 0 {
 		log.Printf("harness: marked %d interrupted run(s) failed", repaired)
 	}
+	schedules := schedule.NewService(store)
+	if created, skipped, importErr := importLegacySchedules(ctx, schedules, service, catalog); importErr != nil {
+		log.Printf("harness: import legacy schedules: %v", importErr)
+	} else if created > 0 || skipped > 0 {
+		log.Printf("harness: imported %d legacy schedule(s), skipped %d", created, skipped)
+	}
 	tap := eventbus.NewTap(service, store)
 	tap.Start(ctx)
-	return &Harness{store: store, tap: tap, service: service}, nil
+	return &Harness{store: store, tap: tap, service: service, schedules: schedules}, nil
+}
+
+// Schedules exposes the schedule service for the Wails ScheduleService and the
+// Go runtime. It is nil when the harness is disabled.
+func (harness *Harness) Schedules() *schedule.Service {
+	if harness == nil {
+		return nil
+	}
+	return harness.schedules
+}
+
+// Tasks exposes the Task store for the Go scheduler and future Task Center
+// commands. It is nil when the harness is disabled.
+func (harness *Harness) Tasks() *task.Service {
+	if harness == nil {
+		return nil
+	}
+	return harness.service
 }
 
 func (harness *Harness) SetEmitter(emitter func(eventbus.Event)) {

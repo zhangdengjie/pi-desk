@@ -19,8 +19,10 @@ import (
 	"pi-desk/internal/piruntime"
 	"pi-desk/internal/remotessh"
 	"pi-desk/internal/repository"
+	"pi-desk/internal/scheduler"
 	"pi-desk/internal/sessionindex"
 	"pi-desk/internal/workspace"
+	"pi-desk/internal/worktree"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -283,6 +285,16 @@ func main() {
 	piMaintenanceService := appservice.NewPiMaintenanceService(locator, agentService)
 	catalogService := appservice.NewCatalogService(catalog, sessionIndex, remoteCatalog)
 	taskService := appservice.NewTaskService(harness, agentService, sessionIndex, sessionIndex, catalog)
+	scheduleService := appservice.NewScheduleService(harness.Schedules())
+	worktreeService := appservice.NewWorktreeService(worktree.New(nil), catalog)
+	if harness != nil && appservice.R2SchedulerEnabled() {
+		runner := appservice.NewScheduledRunner(harness.Tasks(), catalog, catalog, agentService)
+		taskScheduler := scheduler.New(harness.Schedules(), runner, scheduler.Options{})
+		schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
+		defer schedulerCancel()
+		go taskScheduler.Run(schedulerCtx)
+		log.Printf("harness: Go scheduler enabled")
+	}
 
 	app := application.New(application.Options{
 		Name:           instanceTitle(),
@@ -300,6 +312,8 @@ func main() {
 			application.NewService(mcpConfigService),
 			application.NewService(catalogService),
 			application.NewService(taskService),
+			application.NewService(scheduleService),
+			application.NewService(worktreeService),
 			application.NewService(remoteWorkspaceService),
 			application.NewService(orphanSessionService),
 			application.NewService(repositoryService),

@@ -87,6 +87,9 @@ type stateWorkspaceRecord struct {
 	DefaultModelProvider string        `json:"defaultModelProvider,omitempty"`
 	DefaultModelID       string        `json:"defaultModelId,omitempty"`
 	DefaultThinking      string        `json:"defaultThinking,omitempty"`
+	ParentWorkspaceID    string        `json:"parentWorkspaceId,omitempty"`
+	WorktreeBranch       string        `json:"worktreeBranch,omitempty"`
+	WorktreeTaskID       string        `json:"worktreeTaskId,omitempty"`
 	AddedAt              time.Time     `json:"addedAt"`
 	LastOpenedAt         time.Time     `json:"lastOpenedAt"`
 }
@@ -107,8 +110,9 @@ func stateRecordFromRecord(record Record) (stateWorkspaceRecord, error) {
 	return stateWorkspaceRecord{
 		ID: record.ID, Name: record.Name, Location: location, Trust: record.Trust,
 		DefaultModelProvider: record.DefaultModelProvider, DefaultModelID: record.DefaultModelID,
-		DefaultThinking: record.DefaultThinking,
-		AddedAt:         record.AddedAt, LastOpenedAt: record.LastOpenedAt,
+		DefaultThinking:   record.DefaultThinking,
+		ParentWorkspaceID: record.ParentWorkspaceID, WorktreeBranch: record.WorktreeBranch, WorktreeTaskID: record.WorktreeTaskID,
+		AddedAt: record.AddedAt, LastOpenedAt: record.LastOpenedAt,
 	}, nil
 }
 
@@ -116,8 +120,9 @@ func (record stateWorkspaceRecord) toRecord(version int) (Record, error) {
 	result := Record{
 		ID: record.ID, Name: record.Name, Trust: record.Trust,
 		DefaultModelProvider: record.DefaultModelProvider, DefaultModelID: record.DefaultModelID,
-		DefaultThinking: record.DefaultThinking,
-		AddedAt:         record.AddedAt, LastOpenedAt: record.LastOpenedAt,
+		DefaultThinking:   record.DefaultThinking,
+		ParentWorkspaceID: record.ParentWorkspaceID, WorktreeBranch: record.WorktreeBranch, WorktreeTaskID: record.WorktreeTaskID,
+		AddedAt: record.AddedAt, LastOpenedAt: record.LastOpenedAt,
 	}
 	if version < 6 {
 		if strings.TrimSpace(record.Path) == "" {
@@ -164,6 +169,22 @@ func validateRecord(record Record) error {
 	}
 	if record.DefaultThinking != "" && (record.DefaultModelProvider == "" || !validScheduledThinkingLevel(record.DefaultThinking)) {
 		return errors.New("workspace default thinking level is invalid")
+	}
+	if record.ParentWorkspaceID != "" {
+		if !validIdentity("workspace", record.ParentWorkspaceID) {
+			return errors.New("workspace parent identity is invalid")
+		}
+		if record.Location.Kind != KindLocal {
+			return errors.New("worktree workspace must be local")
+		}
+		if strings.TrimSpace(record.WorktreeBranch) == "" || len(record.WorktreeBranch) > 200 {
+			return errors.New("worktree branch is invalid")
+		}
+		if strings.TrimSpace(record.WorktreeTaskID) == "" || len(record.WorktreeTaskID) > 200 {
+			return errors.New("worktree task id is invalid")
+		}
+	} else if record.WorktreeBranch != "" || record.WorktreeTaskID != "" {
+		return errors.New("worktree metadata requires a parent workspace")
 	}
 	switch record.Location.Kind {
 	case KindLocal:

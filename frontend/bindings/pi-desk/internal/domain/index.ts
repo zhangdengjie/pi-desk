@@ -114,6 +114,9 @@ export type {
     ResumeRemoteWorkspaceRequest,
     RevealTuning,
     RollbackSessionFileRequest,
+    ScheduleIDRequest,
+    ScheduleSaveRequest,
+    ScheduleSummary,
     ScheduledTaskState,
     ScrollTuning,
     SelectableModel,
@@ -172,5 +175,11 @@ export type {
     WorkspaceApplication,
     WorkspaceDefaultsRequest,
     WorkspaceRequest,
-    WorkspaceSummary
+    WorkspaceSummary,
+    WorktreeCreateRequest,
+    WorktreeListRequest,
+    WorktreePruneResult,
+    WorktreeRemoveResult,
+    WorktreeRequest,
+    WorktreeSummary
 } from "./models.js";
