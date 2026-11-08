@@ -127,20 +127,36 @@ FinishRun(failed/cancelled) 同步收敛 Task 状态
 
 Task Center 详情页新增 Cancel / Retry 按钮；Wails 方法 166，绑定函数 154。
 
+## 第八刀：normalized message + 状态继续拆 + 历史 Run
+
+```text
+normalized message.started / message.delta / message.completed
+  app.ts 抽出 applyMessageStart / applyMessageUpdate / applyMessageEnd
+  flag on 时 raw message_* 跳过
+
+state stores
+  stores/repository.ts  repositoryByWorkspace / treeExpanded / stale / generation
+  stores/usage.ts       sessionStats / promptCache / compaction estimates
+  stores/composer.ts    drafts / attachments / pendingPrompts / queue / pending model
+
+历史 Task Run
+  ImportLegacy 为带 sessionPath 的旧 thread 建一条 completed/failed Run
+  已导入的 Task 也会在下次启动时补齐缺失的 legacy Run
+```
+
+`app.ts` 5,127 行；109 个测试文件 / 1285 tests 全绿。
+
 ## 本刀边界（下一刀）
 
 ```text
 ✅ 只读数据通路：Task/Run/Event/Usage 都能看到
 ✅ message/tool/retry 的纯 reducer 与测试
-✅ session live 状态拆出（messages / active assistant / waiting）
-✅ workspace / threads / workspaceApplications 拆出
-✅ normalized tool + run 事件（flag 默认 false）
+✅ session / workspace / repository / usage / composer 状态已拆
+✅ normalized tool + run + message 事件（flag 默认 false）
 ✅ Task Center cancel / retry（remote 暂不支持）
-⏳ normalized message 事件
-⏳ repository 引用、usage / composer 状态继续从 app.ts 拆出
-⏳ useNormalizedEvents 灰度：工具卡 → 运行态 → 消息
-⏳ 写操作：cancel / retry / archive
-⏳ 历史导入 Task 的 Run 关联（当前只有下一次 Prompt 才产生 Run）
+✅ 历史导入 Task 的 Run 关联
+⏳ useNormalizedEvents 真机灰度（flag 仍默认 false）
+⏳ Task Center archive
 ```
 
 > 先做加法（Task Center），再做可测试的纯函数（message/tool/retry）；下一刀才是 5k 行 store 的结构拆分。
