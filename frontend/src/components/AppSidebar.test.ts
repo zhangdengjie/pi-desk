@@ -69,7 +69,7 @@ describe("AppSidebar", () => {
     store.$patch({
       bootstrap: {
         appVersion: "0.1.0",
-        wailsVersion: "v3.0.0-beta.16",
+        wailsVersion: "v3.1.0",
         workingDirectory: "D:\\repo",
         runtime: { state: RuntimeState.RuntimeReady, version: "0.83.0", command: "pi.cmd" },
       },

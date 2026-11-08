@@ -312,7 +312,7 @@ describe("app store", () => {
     mocks.getBootstrapState.mockResolvedValue({
       productName: "Pi Desk",
       appVersion: "0.1.0",
-      wailsVersion: "v3.0.0-beta.16",
+      wailsVersion: "v3.1.0",
       workingDirectory: "D:\\work\\repo",
       runtime: { state: "checking", message: "Pi runtime check is pending" },
     });
@@ -522,7 +522,7 @@ describe("app store", () => {
   it("does not replace a live runtime with a stale failed probe", async () => {
     const store = useAppStore();
     store.bootstrap = {
-      productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3.0.0-beta.16",
+      productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3.1.0",
       workingDirectory: "D:\\work\\repo", runtime: { state: RuntimeState.RuntimeReady, version: "0.83.0", command: "pi.cmd" },
       window: { x: 0, y: 0, width: 0, height: 0, maximized: false, valid: false },
     };
@@ -538,7 +538,7 @@ describe("app store", () => {
   it("names the environment variable behind an invisible provider", () => {
     const store = useAppStore();
     store.bootstrap = {
-      productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3.0.0-beta.16",
+      productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3.1.0",
       workingDirectory: "D:\\work\\repo", runtime: { state: RuntimeState.RuntimeChecking },
       window: { x: 0, y: 0, width: 0, height: 0, maximized: false, valid: false },
       providerEnvIssues: [{ provider: "bailian", variable: "DASHSCOPE_API_KEY" }],
