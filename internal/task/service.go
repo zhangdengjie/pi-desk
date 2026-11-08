@@ -140,6 +140,11 @@ func (s *Service) FinishRun(ctx context.Context, runID string, status Status, me
 	if err := s.store.UpdateRun(ctx, run); err != nil {
 		return Run{}, err
 	}
+	if status == StatusFailed || status == StatusCancelled {
+		if value, getErr := s.store.GetTask(ctx, run.TaskID); getErr == nil && CanTransitionTask(value.Status, status) {
+			_ = s.store.UpdateTaskStatus(ctx, value.ID, status, now, nil)
+		}
+	}
 	return run, nil
 }
 
@@ -175,6 +180,11 @@ func (s *Service) EnsureChatTask(ctx context.Context, threadID, title string) (T
 	}
 	task, err := s.store.FindTaskByLegacyThreadID(ctx, threadID)
 	if err == nil {
+		if task.Status == StatusFailed || task.Status == StatusCancelled {
+			if reopened, reopenErr := s.TransitionTask(ctx, task.ID, StatusQueued); reopenErr == nil {
+				return reopened, nil
+			}
+		}
 		return task, nil
 	}
 	if !errors.Is(err, ErrNotFound) {

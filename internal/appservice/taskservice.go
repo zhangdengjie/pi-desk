@@ -2,6 +2,7 @@ package appservice
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -9,21 +10,39 @@ import (
 
 	"pi-desk/internal/domain"
 	"pi-desk/internal/task"
+	"pi-desk/internal/workspace"
 )
 
-// TaskService exposes the R1a Task/Run records to the Task Center. It is
-// read-only in R1b; cancel/retry/archive are added after the UI has proven the
-// read path.
+// TaskService exposes the R1a Task/Run records to the Task Center and owns the
+// two write actions the UI needs: cancel the active run, or retry a failed /
+// cancelled task from its last user prompt.
 type TaskService struct {
-	service *task.Service
-	store   task.Store
+	service  *task.Service
+	store    task.Store
+	agent    TaskAgent
+	messages TaskMessageSource
+	threads  TaskThreadSource
 }
 
-func NewTaskService(harness *Harness) *TaskService {
+type TaskAgent interface {
+	Abort(domain.ThreadRequest) (domain.CommandResult, error)
+	StartSession(domain.StartSessionRequest) (domain.LiveSession, error)
+	SendPrompt(domain.PromptRequest) (domain.CommandResult, error)
+}
+
+type TaskMessageSource interface {
+	Messages(path string) ([]json.RawMessage, error)
+}
+
+type TaskThreadSource interface {
+	Desktop() (workspace.DesktopRecord, error)
+}
+
+func NewTaskService(harness *Harness, agent TaskAgent, messages TaskMessageSource, threads TaskThreadSource) *TaskService {
 	if harness == nil {
-		return &TaskService{}
+		return &TaskService{agent: agent, messages: messages, threads: threads}
 	}
-	return &TaskService{service: harness.service, store: harness.store}
+	return &TaskService{service: harness.service, store: harness.store, agent: agent, messages: messages, threads: threads}
 }
 
 func (service *TaskService) Enabled() bool {
@@ -133,6 +152,177 @@ func (service *TaskService) GetRunUsage(request domain.TaskRunRequest) (domain.T
 		return domain.TaskUsageSummary{}, fmt.Errorf("get run usage: %w", err)
 	}
 	return *usageSummary(usage), nil
+}
+
+func (service *TaskService) CancelTask(request domain.TaskRequest) (domain.TaskDetail, error) {
+	if service.service == nil {
+		return domain.TaskDetail{}, errors.New("task data is disabled; start Pi Desk with PI_DESK_HARNESS=1")
+	}
+	taskID := strings.TrimSpace(request.TaskID)
+	if taskID == "" {
+		return domain.TaskDetail{}, errors.New("task id is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	value, err := service.service.GetTask(ctx, taskID)
+	if err != nil {
+		return domain.TaskDetail{}, err
+	}
+	runs, err := service.service.ListRuns(ctx, taskID)
+	if err != nil {
+		return domain.TaskDetail{}, err
+	}
+	active := make([]task.Run, 0)
+	for _, run := range runs {
+		if run.Status == task.StatusQueued || run.Status == task.StatusRunning ||
+			run.Status == task.StatusWaitingApproval || run.Status == task.StatusWaitingInput {
+			active = append(active, run)
+		}
+	}
+	threadID := strings.TrimSpace(value.LegacyThreadID)
+	for _, run := range active {
+		if run.Status == task.StatusRunning && service.agent != nil && threadID != "" {
+			if _, err := service.agent.Abort(domain.ThreadRequest{ThreadID: threadID}); err != nil && !isThreadNotRunning(err) {
+				return domain.TaskDetail{}, fmt.Errorf("abort run: %w", err)
+			}
+		}
+	}
+	for _, run := range active {
+		if _, err := service.service.FinishRun(ctx, run.ID, task.StatusCancelled, "cancelled from Task Center"); err != nil && !errors.Is(err, task.ErrInvalidTransition) {
+			return domain.TaskDetail{}, err
+		}
+	}
+	if !task.IsTerminal(value.Status) {
+		if _, err := service.service.TransitionTask(ctx, value.ID, task.StatusCancelled); err != nil && !errors.Is(err, task.ErrInvalidTransition) {
+			return domain.TaskDetail{}, err
+		}
+	}
+	return service.GetTask(request)
+}
+
+func (service *TaskService) RetryTask(request domain.TaskRequest) (domain.TaskDetail, error) {
+	if service.service == nil {
+		return domain.TaskDetail{}, errors.New("task data is disabled; start Pi Desk with PI_DESK_HARNESS=1")
+	}
+	if service.agent == nil || service.messages == nil || service.threads == nil {
+		return domain.TaskDetail{}, errors.New("task retry is unavailable in this build")
+	}
+	taskID := strings.TrimSpace(request.TaskID)
+	if taskID == "" {
+		return domain.TaskDetail{}, errors.New("task id is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	value, err := service.service.GetTask(ctx, taskID)
+	if err != nil {
+		return domain.TaskDetail{}, err
+	}
+	if value.Status != task.StatusFailed && value.Status != task.StatusCancelled {
+		return domain.TaskDetail{}, errors.New("only failed or cancelled tasks can be retried")
+	}
+	threadID := strings.TrimSpace(value.LegacyThreadID)
+	if threadID == "" {
+		return domain.TaskDetail{}, errors.New("task has no thread binding")
+	}
+	desktop, err := service.threads.Desktop()
+	if err != nil {
+		return domain.TaskDetail{}, err
+	}
+	var thread *workspace.ThreadRecord
+	for index := range desktop.Threads {
+		if desktop.Threads[index].ID == threadID {
+			thread = &desktop.Threads[index]
+			break
+		}
+	}
+	if thread == nil || strings.TrimSpace(thread.SessionPath) == "" {
+		return domain.TaskDetail{}, errors.New("task has no resumable session")
+	}
+	if strings.TrimSpace(thread.WorkspacePath) == "" {
+		return domain.TaskDetail{}, errors.New("retry is not supported for remote workspaces yet")
+	}
+	messages, err := service.messages.Messages(thread.SessionPath)
+	if err != nil {
+		return domain.TaskDetail{}, err
+	}
+	prompt, err := lastUserPrompt(messages)
+	if err != nil {
+		return domain.TaskDetail{}, err
+	}
+
+	value, err = service.service.TransitionTask(ctx, value.ID, task.StatusQueued)
+	if err != nil {
+		return domain.TaskDetail{}, err
+	}
+	run, err := service.service.CreateRun(ctx, value.ID, "pi")
+	if err != nil {
+		return domain.TaskDetail{}, err
+	}
+	run.SessionPath = thread.SessionPath
+	if err := service.store.UpdateRun(ctx, run); err != nil {
+		return domain.TaskDetail{}, err
+	}
+	if _, err := service.agent.StartSession(domain.StartSessionRequest{
+		ThreadID: thread.ID, Workspace: thread.WorkspacePath, SessionPath: thread.SessionPath,
+		SessionName: thread.Title, Trust: thread.Trust,
+	}); err != nil {
+		service.failRetry(ctx, run.ID, value.ID, err)
+		return domain.TaskDetail{}, err
+	}
+	if _, err := service.service.StartRun(ctx, run.ID); err != nil {
+		return domain.TaskDetail{}, err
+	}
+	if _, err := service.agent.SendPrompt(domain.PromptRequest{ThreadID: thread.ID, Message: prompt}); err != nil {
+		service.failRetry(ctx, run.ID, value.ID, err)
+		return domain.TaskDetail{}, err
+	}
+	return service.GetTask(request)
+}
+
+func (service *TaskService) failRetry(ctx context.Context, runID, taskID string, cause error) {
+	_, _ = service.service.FinishRun(ctx, runID, task.StatusFailed, cause.Error())
+	_, _ = service.service.TransitionTask(ctx, taskID, task.StatusFailed)
+}
+
+func lastUserPrompt(messages []json.RawMessage) (string, error) {
+	for index := len(messages) - 1; index >= 0; index-- {
+		var envelope struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		}
+		if err := json.Unmarshal(messages[index], &envelope); err != nil || envelope.Role != "user" {
+			continue
+		}
+		if text := contentPlainText(envelope.Content); strings.TrimSpace(text) != "" {
+			return text, nil
+		}
+	}
+	return "", errors.New("no user prompt is available to retry")
+}
+
+func contentPlainText(raw json.RawMessage) string {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return text
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &parts) != nil {
+		return ""
+	}
+	var builder strings.Builder
+	for _, part := range parts {
+		if part.Type == "text" {
+			builder.WriteString(part.Text)
+		}
+	}
+	return builder.String()
+}
+
+func isThreadNotRunning(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "not running")
 }
 
 func taskSummary(value task.Task) domain.TaskSummary {

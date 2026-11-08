@@ -19,6 +19,9 @@ func CanTransitionTask(from, to Status) bool {
 		return to == StatusRunning || to == StatusFailed || to == StatusCancelled
 	case StatusPaused:
 		return to == StatusRunning || to == StatusCancelled
+	case StatusFailed, StatusCancelled:
+		// Explicit retry reopens a terminal task for one new Run.
+		return to == StatusQueued
 	default:
 		return false
 	}

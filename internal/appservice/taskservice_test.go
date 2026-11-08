@@ -2,6 +2,7 @@ package appservice
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"pi-desk/internal/domain"
 	"pi-desk/internal/storage/sqlite"
 	"pi-desk/internal/task"
+	"pi-desk/internal/workspace"
 )
 
 func TestTaskServiceReadModels(t *testing.T) {
@@ -72,7 +74,7 @@ func TestTaskServiceReadModels(t *testing.T) {
 }
 
 func TestTaskServiceDisabled(t *testing.T) {
-	service := NewTaskService(nil)
+	service := NewTaskService(nil, nil, nil, nil)
 	if service.Enabled() {
 		t.Fatal("nil harness should be disabled")
 	}
@@ -82,5 +84,125 @@ func TestTaskServiceDisabled(t *testing.T) {
 	}
 	if _, err := service.GetTask(domain.TaskRequest{TaskID: "task_1"}); err == nil {
 		t.Fatal("disabled GetTask should fail")
+	}
+}
+
+type fakeTaskAgent struct {
+	aborted []domain.ThreadRequest
+	started []domain.StartSessionRequest
+	prompts []domain.PromptRequest
+}
+
+func (agent *fakeTaskAgent) Abort(request domain.ThreadRequest) (domain.CommandResult, error) {
+	agent.aborted = append(agent.aborted, request)
+	return domain.CommandResult{}, nil
+}
+
+func (agent *fakeTaskAgent) StartSession(request domain.StartSessionRequest) (domain.LiveSession, error) {
+	agent.started = append(agent.started, request)
+	return domain.LiveSession{ThreadID: request.ThreadID, Generation: 1}, nil
+}
+
+func (agent *fakeTaskAgent) SendPrompt(request domain.PromptRequest) (domain.CommandResult, error) {
+	agent.prompts = append(agent.prompts, request)
+	return domain.CommandResult{}, nil
+}
+
+type fakeMessages struct {
+	messages []json.RawMessage
+}
+
+func (source fakeMessages) Messages(string) ([]json.RawMessage, error) {
+	return source.messages, nil
+}
+
+type fakeThreads struct {
+	desktop workspace.DesktopRecord
+}
+
+func (source fakeThreads) Desktop() (workspace.DesktopRecord, error) {
+	return source.desktop, nil
+}
+
+func TestTaskServiceCancelsActiveRun(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "pi-desk.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	workspaceService := task.NewService(store)
+	agent := &fakeTaskAgent{}
+	service := &TaskService{service: workspaceService, store: store, agent: agent}
+	ctx := context.Background()
+	created, err := workspaceService.CreateTask(ctx, task.CreateTaskInput{
+		Title: "Cancel me", Origin: task.OriginChat, LegacyThreadID: "thread-cancel",
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	run, err := workspaceService.CreateRun(ctx, created.ID, "pi")
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if _, err := workspaceService.StartRun(ctx, run.ID); err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+
+	detail, err := service.CancelTask(domain.TaskRequest{TaskID: created.ID})
+	if err != nil {
+		t.Fatalf("cancel task: %v", err)
+	}
+	if len(agent.aborted) != 1 || agent.aborted[0].ThreadID != "thread-cancel" {
+		t.Fatalf("aborted = %+v", agent.aborted)
+	}
+	if detail.Status != string(task.StatusCancelled) || len(detail.Runs) != 1 || detail.Runs[0].Status != string(task.StatusCancelled) {
+		t.Fatalf("detail = %+v", detail)
+	}
+}
+
+func TestTaskServiceRetriesFailedRunFromLastUserPrompt(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "pi-desk.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	workspaceService := task.NewService(store)
+	agent := &fakeTaskAgent{}
+	service := &TaskService{
+		service: workspaceService, store: store, agent: agent,
+		messages: fakeMessages{messages: []json.RawMessage{json.RawMessage(`{"role":"user","content":[{"type":"text","text":"retry me"}]}`)}},
+		threads: fakeThreads{desktop: workspace.DesktopRecord{Threads: []workspace.ThreadRecord{{
+			ID: "thread-retry", Title: "Retry", WorkspacePath: "/repo", Trust: "approve", SessionPath: "/tmp/retry.jsonl",
+		}}}},
+	}
+	ctx := context.Background()
+	created, err := workspaceService.CreateTask(ctx, task.CreateTaskInput{
+		Title: "Retry me", Origin: task.OriginChat, LegacyThreadID: "thread-retry",
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	run, err := workspaceService.CreateRun(ctx, created.ID, "pi")
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if _, err := workspaceService.StartRun(ctx, run.ID); err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if _, err := workspaceService.FinishRun(ctx, run.ID, task.StatusFailed, "boom"); err != nil {
+		t.Fatalf("finish run: %v", err)
+	}
+	detail, err := service.RetryTask(domain.TaskRequest{TaskID: created.ID})
+	if err != nil {
+		t.Fatalf("retry task: %v", err)
+	}
+	if len(agent.started) != 1 || agent.started[0].SessionPath != "/tmp/retry.jsonl" {
+		t.Fatalf("started = %+v", agent.started)
+	}
+	if len(agent.prompts) != 1 || agent.prompts[0].Message != "retry me" {
+		t.Fatalf("prompts = %+v", agent.prompts)
+	}
+	if detail.Status != string(task.StatusRunning) || len(detail.Runs) != 2 || detail.Runs[1].Status != string(task.StatusRunning) {
+		t.Fatalf("detail = %+v", detail)
 	}
 }
