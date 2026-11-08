@@ -71,6 +71,21 @@ describe("NewTaskDialog", () => {
     await vi.waitFor(() => expect(store.createThread).toHaveBeenCalledWith("D:\\work\\new-repo", "approve"));
   });
 
+  it("passes the isolate option when the R2 worktree switch is on", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({ newTaskOpen: true, bootstrap: { workingDirectory: "D:\\work\\repo", r2Worktree: true } });
+    store.createThread = vi.fn().mockImplementation(async () => { store.activeThreadId = "thread-isolated"; });
+    store.startThreadInBackground = vi.fn();
+    const wrapper = mount(NewTaskDialog, { global: { plugins: [pinia] } });
+    await wrapper.get("#workspace-path").setValue("D:\\work\\repo");
+    await wrapper.get('input[type="checkbox"]').setValue(true);
+    await wrapper.get("footer .primary").trigger("click");
+
+    await vi.waitFor(() => expect(store.createThread).toHaveBeenCalledWith("D:\\work\\repo", "approve", { isolate: true }));
+  });
+
   it("preserves the saved access mode when opening an existing workspace", () => {
     const pinia = createPinia();
     setActivePinia(pinia);

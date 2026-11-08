@@ -12,6 +12,7 @@ import { catalogService } from "../services/catalog";
 import { checkForUpdates, checkRuntime as checkRuntimeStatus, getBootstrapState, notifyDesktop, readUserConfig, writeUserConfig } from "../services/desktop";
 import { repositoryService, type RepositoryFileDiff, type RepositoryFilePreview, type RepositorySnapshot, type RepositoryWorkspaceReference, type SessionFileChange } from "../services/repository";
 import { remoteWorkspaceService } from "../services/remoteWorkspaces";
+import { worktreeService } from "../services/worktrees";
 import { onTerminalEvent, terminalService, type TerminalEvent } from "../services/terminal";
 import { browserService, type BrowserEvent } from "../services/browser";
 import { modelConfigService } from "../services/modelconfig";
@@ -1761,7 +1762,7 @@ export const useAppStore = defineStore("app", {
       }
       await this.createRemoteThread(workspace);
     },
-    async createThread(path: string, trust: "approve" | "deny") {
+    async createThread(path: string, trust: "approve" | "deny", options: { isolate?: boolean; baseRef?: string } = {}) {
       const workspacePath = path.trim();
       if (!workspacePath) throw new Error("Choose a workspace folder");
       await this.refreshConfiguredModels();
@@ -1778,13 +1779,26 @@ export const useAppStore = defineStore("app", {
         if (pathKey(existing.workspacePath) === pathKey(normalized.path)) existing.trust = normalized.trust;
       }
       const threadID = createID("thread");
+      let threadWorkspace = normalized;
+      let threadLabel = normalized.name;
+      if (options.isolate) {
+        const created = await worktreeService.create({ workspaceId: normalized.id, taskId: threadID, baseRef: options.baseRef });
+        const catalogWorkspaces = await catalogService.listWorkspaces();
+        const child = catalogWorkspaces.find((workspace) => workspace.id === created.workspaceId);
+        if (!child) throw new Error("The isolated workspace was not registered");
+        threadWorkspace = { ...child, trust: child.trust as "approve" | "deny", discovered: false };
+        const childIndex = this.workspaces.findIndex((item) => item.id === child.id);
+        if (childIndex >= 0) this.workspaces[childIndex] = threadWorkspace;
+        else this.workspaces.unshift(threadWorkspace);
+        threadLabel = `${normalized.name} · ${created.slug}`;
+      }
       const thread: ThreadSummary = {
         id: threadID,
         title: "New task",
-        workspace: normalized.name,
-        workspaceId: normalized.id,
-        workspacePath: normalized.path,
-        trust: normalized.trust,
+        workspace: threadLabel,
+        workspaceId: threadWorkspace.id,
+        workspacePath: threadWorkspace.path,
+        trust: threadWorkspace.trust,
         status: "idle",
         started: false,
         generation: 0,

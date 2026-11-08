@@ -22,6 +22,7 @@ const remoteAlias = ref("");
 const remoteRoot = ref("");
 const loadLocalSkills = ref(true);
 const loadLocalPlugins = ref(false);
+const isolate = ref(false);
 const remoteNameCustomized = ref(false);
 const remoteAliasOpen = ref(false);
 const remoteAliasActiveIndex = ref(-1);
@@ -180,6 +181,7 @@ watch(() => appStore.newTaskOpen, (open) => {
   remoteRoot.value = "";
   loadLocalSkills.value = true;
   loadLocalPlugins.value = false;
+  isolate.value = false;
   remoteNameCustomized.value = false;
   closeRemoteAliasPicker();
   candidate.value = undefined;
@@ -219,7 +221,11 @@ async function browse() {
 }
 
 async function createLocal() {
-  await appStore.createThread(workspacePath.value, trust.value);
+  if (isolate.value && appStore.bootstrap?.r2Worktree) {
+    await appStore.createThread(workspacePath.value, trust.value, { isolate: true });
+  } else {
+    await appStore.createThread(workspacePath.value, trust.value);
+  }
   if (appStore.activeThreadId) appStore.startThreadInBackground(appStore.activeThreadId);
 }
 
@@ -334,6 +340,10 @@ async function create() {
             <label :class="[ui.listItem, { 'is-selected': trust === 'deny' }]"><input v-model="trust" type="radio" value="deny" /><ShieldOff :size="18" /><span><strong>{{ tr("newTask.restricted") }}</strong><small>{{ tr("newTask.restrictedHelp") }}</small></span></label>
             <label :class="[ui.listItem, { 'is-selected': trust === 'approve' }]"><input v-model="trust" type="radio" value="approve" /><ShieldCheck :size="18" /><span><strong>{{ tr("newTask.trusted") }}</strong><small>{{ tr("newTask.trustedHelp") }}</small></span></label>
           </fieldset>
+          <label v-if="appStore.bootstrap?.r2Worktree" class="checkbox-row">
+            <input v-model="isolate" type="checkbox" />
+            <span>{{ tr("newTask.isolate") }}<small>{{ tr("newTask.isolateHelp") }}</small></span>
+          </label>
         </template>
 
         <template v-else>
