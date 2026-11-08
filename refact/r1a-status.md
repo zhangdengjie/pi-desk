@@ -3,7 +3,7 @@
 - 日期：2026-11-08
 - 分支：`feat/r1a-go-data-plane`
 - 基线：`develop` @ `2224f42` + Wails v3.1 合并 `20e2769`
-- 开关：`PI_DESK_HARNESS=1`（默认关闭，关闭时现有聊天路径不变）
+- 开关：`PI_DESK_HARNESS=1`（R1a 当时默认关闭；R1b 后改为默认开启，`=0` 关闭）
 
 ## 已交付
 

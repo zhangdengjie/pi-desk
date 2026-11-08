@@ -2,7 +2,7 @@
 
 - 日期：2026-11-08
 - 分支：`feat/r1a-go-data-plane`
-- 前提：`PI_DESK_HARNESS=1`；否则 Task Center 显示 disabled，不影响现有聊天。
+- 前提：R1b 收尾后默认开启；`PI_DESK_HARNESS=0` 时 Task Center 显示 disabled，不影响现有聊天。
 
 ## 已交付
 
@@ -32,7 +32,7 @@ TMPDIR=/tmp go test ./...
 cd frontend && npm run typecheck && npm run test && npm run build
 ```
 
-烟测（`PI_DESK_HARNESS=1` + 沙箱）：
+烟测（当时用 `PI_DESK_HARNESS=1` + 沙箱；现在默认开启）：
 
 ```text
 harness: imported 425/425 legacy threads
@@ -93,7 +93,7 @@ frontend/src/stores/app.ts
   flag on 时 raw tool_execution_* 分支直接跳过
 ```
 
-前提：Go 侧 `PI_DESK_HARNESS=1` 才会发 `agent:event`。当前只迁移工具卡，message/run 仍走 `pi:event`。
+前提：Go 侧 data plane 开启才会发 `agent:event`（现在默认开启）。当时只迁移工具卡，message/run 仍走 `pi:event`。
 
 验证：109 个前端测试文件 / 1282 tests 通过；`useNormalizedEvents` 默认 false。
 

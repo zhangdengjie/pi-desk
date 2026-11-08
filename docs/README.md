@@ -8,7 +8,7 @@
 
 | 维度 | 事实 | 怎么复算 |
 |---|---|---|
-| 规模 | Go **276 文件 / 64,137 行**（含测试；剔掉 `_test.go` = 165 / 39,964） | `find . -name '*.go' \| wc -l`（再加 `-not -name '*_test.go'` 得前者） |
+| 规模 | Go **276 文件 / 64,158 行**（含测试；剔掉 `_test.go` = 165 / 39,970） | `find . -name '*.go' \| wc -l`（再加 `-not -name '*_test.go'` 得前者） |
 | 前端 | 手写 TS（排除 test）**85 / 14,652**；components **53 个 `.vue` / 16,469 行**；CSS **6 / 14,386**；生成绑定 **157 个函数** | `find frontend/src -name '*.ts' -not -name '*.test.ts' \| wc -l`；`ls frontend/src/components/*.vue \| wc -l` |
 | 提交史 | 386 个 commit，HEAD `abc2726` | `git rev-list --count HEAD` |
 | 桌面框架 | `github.com/wailsapp/wails/v3 v3.1.0`（stable 线） | `grep wails go.mod` |
