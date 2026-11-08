@@ -681,7 +681,8 @@ func workspaceSummary(record workspace.Record) domain.WorkspaceSummary {
 		ID: record.ID, Name: record.Name, Path: record.Path, Kind: string(record.Location.Kind),
 		Trust: record.Trust, AddedAt: record.AddedAt, LastOpenedAt: record.LastOpenedAt,
 		DefaultModelProvider: record.DefaultModelProvider, DefaultModelID: record.DefaultModelID,
-		DefaultThinking: record.DefaultThinking,
+		DefaultThinking:   record.DefaultThinking,
+		ParentWorkspaceID: record.ParentWorkspaceID, WorktreeBranch: record.WorktreeBranch, WorktreeTaskID: record.WorktreeTaskID,
 	}
 	if record.Location.Kind == workspace.KindSSH {
 		summary.TargetID = record.Location.SSH.TargetID
