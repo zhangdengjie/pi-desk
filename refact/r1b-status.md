@@ -111,6 +111,22 @@ normalized run.started / run.updated / run.completed / run.cancelled / run.faile
 
 `app.ts` 5,107 行；109 个测试文件 / 1283 tests 全绿。
 
+## 第七刀：Task Center cancel / retry
+
+```text
+TaskService.CancelTask
+  abort 当前 Pi turn；把 active Run 标 cancelled；Task 标 cancelled
+TaskService.RetryTask
+  仅 failed/cancelled；读取 Pi JSONL 最后一条 user 文本
+  重开 Task → 新 Run → StartSession → StartRun → SendPrompt
+  remote workspace 暂不支持
+Task 状态机
+  failed/cancelled → queued（显式 retry reopen）
+FinishRun(failed/cancelled) 同步收敛 Task 状态
+```
+
+Task Center 详情页新增 Cancel / Retry 按钮；Wails 方法 166，绑定函数 154。
+
 ## 本刀边界（下一刀）
 
 ```text
@@ -119,6 +135,7 @@ normalized run.started / run.updated / run.completed / run.cancelled / run.faile
 ✅ session live 状态拆出（messages / active assistant / waiting）
 ✅ workspace / threads / workspaceApplications 拆出
 ✅ normalized tool + run 事件（flag 默认 false）
+✅ Task Center cancel / retry（remote 暂不支持）
 ⏳ normalized message 事件
 ⏳ repository 引用、usage / composer 状态继续从 app.ts 拆出
 ⏳ useNormalizedEvents 灰度：工具卡 → 运行态 → 消息
