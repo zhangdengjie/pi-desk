@@ -81,6 +81,9 @@ type CreateRequest struct {
 	TaskID string
 	// BaseRef defaults to HEAD. It may be a branch, tag, or commit.
 	BaseRef string
+	// Bootstrap prepares dependencies that git worktree does not copy. The zero
+	// value is mode "none".
+	Bootstrap Bootstrap
 }
 
 type Worktree struct {
@@ -210,6 +213,9 @@ func (manager *Manager) Create(ctx context.Context, request CreateRequest) (Work
 	head, err := manager.run(ctx, path, "rev-parse", "HEAD")
 	if err != nil {
 		return Worktree{}, fmt.Errorf("read worktree HEAD: %w", err)
+	}
+	if err := applyBootstrap(ctx, root, path, request.Bootstrap); err != nil {
+		return Worktree{}, fmt.Errorf("bootstrap worktree: %w", err)
 	}
 	return Worktree{
 		TaskID: taskID, Slug: slug, Repository: root,
