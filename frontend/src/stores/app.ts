@@ -4,6 +4,7 @@ import { useWorkspaceStore } from "./workspace";
 import { createID, formatMessageTime, nowLabel } from "../utils/ids";
 import { RuntimeState, type BootstrapState, type DesktopState, type ProviderEnvIssue, type SessionSnapshot, type UserConfigView, type WorkspaceApplication, type WorkspaceSummary as HostWorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
 import { agentService, onPiEvent, type PiSessionEvent, type SessionBranches } from "../services/agent";
+import { onAgentEvent, type AgentEvent } from "../services/agentEvents";
 import { catalogService } from "../services/catalog";
 import { checkForUpdates, checkRuntime as checkRuntimeStatus, getBootstrapState, notifyDesktop, readUserConfig, writeUserConfig } from "../services/desktop";
 import { repositoryService, type RepositoryFileDiff, type RepositoryFilePreview, type RepositorySnapshot, type RepositoryWorkspaceReference, type SessionFileChange } from "../services/repository";
@@ -485,7 +486,28 @@ function mergeModelCatalog(runtime: PiModel[], configured: PiModel[], current: P
 }
 
 let unsubscribePiEvents: (() => void) | undefined;
+let unsubscribeAgentEvents: (() => void) | undefined;
 let unsubscribeTerminalEvents: (() => void) | undefined;
+
+function normalizedEventsEnabled(): boolean {
+  try {
+    return globalThis.localStorage?.getItem("pidesk.useNormalizedEvents") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function agentPayload(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
 // The user config is a file someone edits in another app. Re-reading it when the
 // window comes back to the foreground is the whole hot-reload story: switching to
 // an editor and back is the gesture, and no timer runs while nobody looks.
@@ -1064,6 +1086,7 @@ export const useAppStore = defineStore("app", {
   state: () => ({
     sidebarCollapsed: false,
     activePage: "task" as AppPage,
+    useNormalizedEvents: normalizedEventsEnabled(),
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     /** See `setPaneResizing`: true only while a resizer is being dragged. */
     paneResizing: false,
@@ -1501,6 +1524,9 @@ export const useAppStore = defineStore("app", {
     async initialize() {
       if (!unsubscribePiEvents) {
         unsubscribePiEvents = onPiEvent((event) => this.handlePiEvent(event));
+      }
+      if (!unsubscribeAgentEvents) {
+        unsubscribeAgentEvents = onAgentEvent((event) => this.handleAgentEvent(event));
       }
       if (!unsubscribeTerminalEvents) {
         unsubscribeTerminalEvents = onTerminalEvent((event) => this.handleTerminalEvent(event));
@@ -4146,6 +4172,53 @@ export const useAppStore = defineStore("app", {
       const messages = this.messagesByThread[threadId] ?? (this.messagesByThread[threadId] = []);
       messages.push({ id: createID("system"), role: "system", text, thinking: "", timestamp: nowLabel(), streaming: false, error, tools: [] });
     },
+    applyToolStart(thread: ThreadSummary, payload: Record<string, unknown>) {
+      this.waitingForOutputByThread[thread.id] = false;
+      const messages = this.messagesByThread[thread.id] ?? (this.messagesByThread[thread.id] = []);
+      const assistant = messages.findLast((message) => findTool(message.tools, String(payload.parentToolCallId ?? "")))
+        ?? this.currentAssistant(thread.id, true);
+      if (!assistant) return;
+      const parent = typeof payload.parentToolCallId === "string" ? findTool(assistant.tools, payload.parentToolCallId) : undefined;
+      const tools = parent ? (parent.children ??= []) : assistant.tools;
+      tools.push(toolStartFromPayload(payload, String(payload.toolCallId ?? createID("tool")), Date.now()));
+      assistant.activeExecution = "tool";
+      if (REMOTE_MUTATING_TOOLS.has(String(payload.toolName ?? ""))) this.markRemoteRepositoryStale(thread.id);
+    },
+    applyToolProgress(thread: ThreadSummary, payload: Record<string, unknown>, isEnd: boolean) {
+      const messages = this.messagesByThread[thread.id] ?? (this.messagesByThread[thread.id] = []);
+      const assistant = messages.findLast((message) => findTool(message.tools, String(payload.parentToolCallId ?? payload.toolCallId ?? "")))
+        ?? this.currentAssistant(thread.id, true);
+      if (!assistant) return;
+      const toolID = String(payload.toolCallId ?? "");
+      let tool = findTool(assistant.tools, toolID);
+      if (!tool) {
+        tool = { id: toolID || createID("tool"), name: String(payload.toolName ?? "tool"), output: "", status: "running" };
+        const parent = typeof payload.parentToolCallId === "string" ? findTool(assistant.tools, payload.parentToolCallId) : undefined;
+        (parent ? (parent.children ??= []) : assistant.tools).push(tool);
+      }
+      assistant.activeExecution = isEnd && !payload.parentToolCallId ? undefined : "tool";
+      const progress = toolProgressFromPayload(tool, payload, isEnd, Date.now());
+      Object.assign(tool, progress.patch);
+      if (isEnd) {
+        if (!payload.parentToolCallId) this.waitingForOutputByThread[thread.id] = true;
+        const images = contentImages(progress.result?.content);
+        if (images.length) tool.images = images;
+        if (REMOTE_MUTATING_TOOLS.has(tool.name)) this.markRemoteRepositoryStale(thread.id);
+      }
+    },
+    handleAgentEvent(event: AgentEvent) {
+      if (!this.useNormalizedEvents) return;
+      const thread = event.threadId ? this.threads.find((item) => item.id === event.threadId) : undefined;
+      if (!thread) return;
+      const payload = agentPayload(event.payload);
+      if (event.type === "tool.started") {
+        this.applyToolStart(thread, payload);
+      } else if (event.type === "tool.updated") {
+        this.applyToolProgress(thread, payload, false);
+      } else if (event.type === "tool.completed" || event.type === "tool.failed") {
+        this.applyToolProgress(thread, event.type === "tool.failed" ? { ...payload, isError: true } : payload, true);
+      }
+    },
     handlePiEvent(sessionEvent: PiSessionEvent) {
       const thread = this.threads.find((item) => item.id === sessionEvent.threadId);
       if (!thread) return;
@@ -4308,42 +4381,13 @@ export const useAppStore = defineStore("app", {
           void this.refreshStats(thread.id).catch(() => undefined);
           break;
         }
-        case "tool_execution_start": {
-          this.waitingForOutputByThread[thread.id] = false;
-          const assistant = messages.findLast((message) => findTool(message.tools, String(payload.parentToolCallId ?? "")))
-            ?? this.currentAssistant(thread.id, true);
-          if (!assistant) break;
-          const parent = typeof payload.parentToolCallId === "string" ? findTool(assistant.tools, payload.parentToolCallId) : undefined;
-          const tools = parent ? (parent.children ??= []) : assistant.tools;
-          tools.push(toolStartFromPayload(payload, String(payload.toolCallId ?? createID("tool")), Date.now()));
-          assistant.activeExecution = "tool";
-          if (REMOTE_MUTATING_TOOLS.has(String(payload.toolName ?? ""))) this.markRemoteRepositoryStale(thread.id);
+        case "tool_execution_start":
+          if (!this.useNormalizedEvents) this.applyToolStart(thread, payload);
           break;
-        }
         case "tool_execution_update":
-        case "tool_execution_end": {
-          const assistant = messages.findLast((message) => findTool(message.tools, String(payload.parentToolCallId ?? payload.toolCallId ?? "")))
-            ?? this.currentAssistant(thread.id, true);
-          if (!assistant) break;
-          const toolID = String(payload.toolCallId ?? "");
-          let tool = findTool(assistant.tools, toolID);
-          if (!tool) {
-            tool = { id: toolID || createID("tool"), name: String(payload.toolName ?? "tool"), output: "", status: "running" };
-            const parent = typeof payload.parentToolCallId === "string" ? findTool(assistant.tools, payload.parentToolCallId) : undefined;
-            (parent ? (parent.children ??= []) : assistant.tools).push(tool);
-          }
-          assistant.activeExecution = sessionEvent.event.type === "tool_execution_end" && !payload.parentToolCallId ? undefined : "tool";
-          const isEnd = sessionEvent.event.type === "tool_execution_end";
-          const progress = toolProgressFromPayload(tool, payload, isEnd, Date.now());
-          Object.assign(tool, progress.patch);
-          if (isEnd) {
-            if (!payload.parentToolCallId) this.waitingForOutputByThread[thread.id] = true;
-            const images = contentImages(progress.result?.content);
-            if (images.length) tool.images = images;
-            if (REMOTE_MUTATING_TOOLS.has(tool.name)) this.markRemoteRepositoryStale(thread.id);
-          }
+        case "tool_execution_end":
+          if (!this.useNormalizedEvents) this.applyToolProgress(thread, payload, sessionEvent.event.type === "tool_execution_end");
           break;
-        }
         case "compaction_start":
           // Pi writes the durable compaction entry only when compaction succeeds.
           // Keep start progress out of the conversation timeline, but keep
