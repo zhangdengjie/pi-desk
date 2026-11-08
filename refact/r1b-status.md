@@ -54,12 +54,27 @@ frontend/src/stores/events/piEvents.test.ts
 
 `handlePiEvent` 现在只负责编排：取状态、调用纯函数、写回 store。`app.ts` 从 5,115 行降到 5,058 行。
 
+## 第三刀：session store
+
+```text
+frontend/src/stores/session.ts
+  messagesByThread / activeAssistantByThread / waitingForOutputByThread
+  currentAssistant / finishAssistant
+frontend/src/utils/ids.ts
+  createID / formatMessageTime / nowLabel
+frontend/src/stores/app.ts
+  三个同名 getter + action 包装，保持外部调用与测试不变
+```
+
+`app.ts` 从 5,058 行降到 5,028 行；`app.test.ts` 与组件测试全绿。
+
 ## 本刀边界（下一刀）
 
 ```text
 ✅ 只读数据通路：Task/Run/Event/Usage 都能看到
 ✅ message/tool/retry 的纯 reducer 与测试
-⏳ app.ts 拆 store（session/tasks/workspace/usage）
+✅ session live 状态拆出（messages / active assistant / waiting）
+⏳ workspace / usage / composer 状态继续从 app.ts 拆出
 ⏳ useNormalizedEvents 灰度：工具卡 → 运行态 → 消息
 ⏳ 写操作：cancel / retry / archive
 ⏳ 历史导入 Task 的 Run 关联（当前只有下一次 Prompt 才产生 Run）
