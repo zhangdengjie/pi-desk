@@ -41,15 +41,28 @@ Task Center 显示 425 个历史 Task；当前选中任务无 Run/事件（历�
 截图：/tmp/r1b-task-center.png
 ```
 
+## 第二刀：message/tool/retry 纯 reducer
+
+```text
+frontend/src/stores/events/piEvents.ts
+  contentText / contentThinking / resultText / boundedToolOutput / tokenCount / messageTimestamp
+  messageStartParts / messageEndParts
+  toolStartFromPayload / toolProgressFromPayload
+  retryStartFromPayload / retryEndFromPayload
+frontend/src/stores/events/piEvents.test.ts
+```
+
+`handlePiEvent` 现在只负责编排：取状态、调用纯函数、写回 store。`app.ts` 从 5,115 行降到 5,058 行。
+
 ## 本刀边界（下一刀）
 
 ```text
 ✅ 只读数据通路：Task/Run/Event/Usage 都能看到
-⏳ handlePiEvent → 纯 reducer（message/tool/run）
+✅ message/tool/retry 的纯 reducer 与测试
 ⏳ app.ts 拆 store（session/tasks/workspace/usage）
 ⏳ useNormalizedEvents 灰度：工具卡 → 运行态 → 消息
 ⏳ 写操作：cancel / retry / archive
 ⏳ 历史导入 Task 的 Run 关联（当前只有下一次 Prompt 才产生 Run）
 ```
 
-> 本刀先做加法（不改现有聊天状态机），避免在 5k 行 store 上同时改数据和 UI；reducer 拆分在下一刀做，验收基线用本页和现有 `app.test.ts`。
+> 先做加法（Task Center），再做可测试的纯函数（message/tool/retry）；下一刀才是 5k 行 store 的结构拆分。
