@@ -4613,7 +4613,9 @@ export const useAppStore = defineStore("app", {
       this.bootstrapLoading = true;
       this.bootstrapError = "";
       try {
-        this.bootstrap = await getBootstrapState();
+        const bootstrap = await getBootstrapState();
+        if (bootstrap.normalizedEvents) this.useNormalizedEvents = true;
+        this.bootstrap = bootstrap;
       } catch (error) {
         this.bootstrapError = errorMessage(error) || "Desktop service is unavailable";
       } finally {

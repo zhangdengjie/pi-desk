@@ -37,6 +37,12 @@ export interface BootstrapState {
     "window": WindowState;
 
     /**
+     * NormalizedEvents is the dev/gray switch for agent:event consumers. It is
+     * injected by PI_DESK_NORMALIZED_EVENTS=1 and read once at startup.
+     */
+    "normalizedEvents"?: boolean;
+
+    /**
      * ProviderEnvIssues is the startup precheck: providers whose `$VAR` API key never reached this
      * process. A .app opened from Finder does not read ~/.zshrc, so Pi silently drops them.
      */
