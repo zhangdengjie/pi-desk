@@ -14,6 +14,7 @@ import * as PiMaintenanceService from "./pimaintenanceservice.js";
 import * as PromptTemplateService from "./prompttemplateservice.js";
 import * as RemoteWorkspaceService from "./remoteworkspaceservice.js";
 import * as RepositoryService from "./repositoryservice.js";
+import * as ScheduleService from "./scheduleservice.js";
 import * as TaskService from "./taskservice.js";
 import * as TerminalService from "./terminalservice.js";
 import * as WorktreeService from "./worktreeservice.js";
@@ -31,6 +32,7 @@ export {
     PromptTemplateService,
     RemoteWorkspaceService,
     RepositoryService,
+    ScheduleService,
     TaskService,
     TerminalService,
     WorktreeService

@@ -285,6 +285,7 @@ func main() {
 	piMaintenanceService := appservice.NewPiMaintenanceService(locator, agentService)
 	catalogService := appservice.NewCatalogService(catalog, sessionIndex, remoteCatalog)
 	taskService := appservice.NewTaskService(harness, agentService, sessionIndex, sessionIndex, catalog)
+	scheduleService := appservice.NewScheduleService(harness.Schedules())
 	worktreeService := appservice.NewWorktreeService(worktree.New(nil), catalog)
 	if harness != nil && appservice.R2SchedulerEnabled() {
 		runner := appservice.NewScheduledRunner(harness.Tasks(), catalog, catalog, agentService)
@@ -311,6 +312,7 @@ func main() {
 			application.NewService(mcpConfigService),
 			application.NewService(catalogService),
 			application.NewService(taskService),
+			application.NewService(scheduleService),
 			application.NewService(worktreeService),
 			application.NewService(remoteWorkspaceService),
 			application.NewService(orphanSessionService),

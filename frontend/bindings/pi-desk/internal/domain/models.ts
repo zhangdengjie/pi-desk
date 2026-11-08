@@ -907,6 +907,61 @@ export enum RuntimeState {
     RuntimeError = "error",
 };
 
+export interface ScheduleIDRequest {
+    "scheduleId": string;
+}
+
+export interface ScheduleSaveRequest {
+    "id"?: string;
+    "taskId": string;
+    "name": string;
+    "prompt": string;
+    "workspaceId": string;
+    "modelProvider"?: string;
+    "modelId"?: string;
+    "modelName"?: string;
+    "thinkingLevel"?: string;
+    "frequency": string;
+    "time"?: string;
+    "weekday"?: number;
+    "runAt"?: string;
+    "timezone"?: string;
+    "enabled": boolean;
+    "catchUp": boolean;
+    "nextRunAt"?: string;
+    "lastThreadId"?: string;
+}
+
+/**
+ * ScheduleSummary is the desktop projection of one recurring Task trigger.
+ */
+export interface ScheduleSummary {
+    "id": string;
+    "taskId": string;
+    "name": string;
+    "prompt": string;
+    "workspaceId": string;
+    "modelProvider"?: string;
+    "modelId"?: string;
+    "modelName"?: string;
+    "thinkingLevel"?: string;
+    "frequency": string;
+    "time"?: string;
+    "weekday"?: number;
+    "runAt"?: string;
+    "timezone": string;
+    "enabled": boolean;
+    "catchUp": boolean;
+    "nextRunAt"?: string;
+    "lastRunAt"?: string;
+    "lastCatchUpAt"?: string;
+    "lastStatus"?: string;
+    "lastError"?: string;
+    "lastThreadId"?: string;
+    "createdAt": string;
+    "updatedAt": string;
+}
+
 export interface ScheduledTaskState {
     "id": string;
     "name": string;
