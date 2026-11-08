@@ -1,7 +1,7 @@
 # R2 实施状态（进行中）
 
 - 分支：`feat/r2a-worktree-core`（已 `--no-ff` 合并进 `develop`，merge commit `1f75ce2`）
-- 最近提交：`bcbd58f`
+- 最近提交：`cbbf66f`
 - 日期：2026-11-09
 - 结论：**R2a 核心已落地，R2b 后端已落地；前端调度器切换与 bootstrap 尚未接完。**
 
