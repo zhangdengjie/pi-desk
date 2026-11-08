@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,12 +17,17 @@ import (
 	"pi-desk/internal/workspace"
 )
 
-// HarnessEnv enables the R1a data plane. It is deliberately opt-in so the
-// existing chat path remains byte-identical when the environment is absent.
+// HarnessEnv controls the R1a data plane. It is on by default after the R1b
+// verification; set it to 0/false/off for a clean rollback to the chat-only path.
 const HarnessEnv = "PI_DESK_HARNESS"
 
 func HarnessEnabled() bool {
-	return os.Getenv(HarnessEnv) == "1"
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(HarnessEnv))) {
+	case "0", "false", "off":
+		return false
+	default:
+		return true
+	}
 }
 
 // Harness owns the SQLite store and the event tap for one application process.

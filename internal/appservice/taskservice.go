@@ -91,7 +91,7 @@ func (service *TaskService) listTasks(archived bool) ([]domain.TaskSummary, erro
 
 func (service *TaskService) GetTask(request domain.TaskRequest) (domain.TaskDetail, error) {
 	if service.service == nil {
-		return domain.TaskDetail{}, errors.New("task data is disabled; start Pi Desk with PI_DESK_HARNESS=1")
+		return domain.TaskDetail{}, errors.New("task data is disabled; remove PI_DESK_HARNESS=0 to enable it")
 	}
 	taskID := strings.TrimSpace(request.TaskID)
 	if taskID == "" {
@@ -179,7 +179,7 @@ func (service *TaskService) GetRunUsage(request domain.TaskRunRequest) (domain.T
 
 func (service *TaskService) CancelTask(request domain.TaskRequest) (domain.TaskDetail, error) {
 	if service.service == nil {
-		return domain.TaskDetail{}, errors.New("task data is disabled; start Pi Desk with PI_DESK_HARNESS=1")
+		return domain.TaskDetail{}, errors.New("task data is disabled; remove PI_DESK_HARNESS=0 to enable it")
 	}
 	taskID := strings.TrimSpace(request.TaskID)
 	if taskID == "" {
@@ -233,7 +233,7 @@ func (service *TaskService) UnarchiveTask(request domain.TaskRequest) (domain.Ta
 
 func (service *TaskService) setArchived(request domain.TaskRequest, archived bool) (domain.TaskDetail, error) {
 	if service.service == nil {
-		return domain.TaskDetail{}, errors.New("task data is disabled; start Pi Desk with PI_DESK_HARNESS=1")
+		return domain.TaskDetail{}, errors.New("task data is disabled; remove PI_DESK_HARNESS=0 to enable it")
 	}
 	taskID := strings.TrimSpace(request.TaskID)
 	if taskID == "" {
@@ -252,7 +252,7 @@ func (service *TaskService) setArchived(request domain.TaskRequest, archived boo
 
 func (service *TaskService) RetryTask(request domain.TaskRequest) (domain.TaskDetail, error) {
 	if service.service == nil {
-		return domain.TaskDetail{}, errors.New("task data is disabled; start Pi Desk with PI_DESK_HARNESS=1")
+		return domain.TaskDetail{}, errors.New("task data is disabled; remove PI_DESK_HARNESS=0 to enable it")
 	}
 	if service.agent == nil || service.messages == nil || service.threads == nil {
 		return domain.TaskDetail{}, errors.New("task retry is unavailable in this build")

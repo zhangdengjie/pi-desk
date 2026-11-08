@@ -54,8 +54,23 @@ func TestStartHarnessImportsLegacyThreads(t *testing.T) {
 	}
 }
 
-func TestStartHarnessDisabled(t *testing.T) {
+func TestHarnessEnabledDefaultsOn(t *testing.T) {
 	t.Setenv(appservice.HarnessEnv, "")
+	if !appservice.HarnessEnabled() {
+		t.Fatal("harness should be enabled when the environment is unset")
+	}
+	t.Setenv(appservice.HarnessEnv, "0")
+	if appservice.HarnessEnabled() {
+		t.Fatal("PI_DESK_HARNESS=0 should disable the harness")
+	}
+	t.Setenv(appservice.HarnessEnv, "false")
+	if appservice.HarnessEnabled() {
+		t.Fatal("PI_DESK_HARNESS=false should disable the harness")
+	}
+}
+
+func TestStartHarnessDisabled(t *testing.T) {
+	t.Setenv(appservice.HarnessEnv, "0")
 	directory := t.TempDir()
 	harness, err := appservice.StartHarness(context.Background(), directory, workspace.NewCatalog(filepath.Join(directory, "state.json")))
 	if err != nil {
