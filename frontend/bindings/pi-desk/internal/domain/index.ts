@@ -115,6 +115,7 @@ export type {
     RevealTuning,
     RollbackSessionFileRequest,
     ScheduleIDRequest,
+    ScheduleRunResult,
     ScheduleSaveRequest,
     ScheduleSummary,
     ScheduledTaskState,

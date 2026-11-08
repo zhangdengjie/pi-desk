@@ -142,7 +142,7 @@ func (runner *ScheduledRunner) RunScheduled(ctx context.Context, value schedule.
 		runner.fail(ctx, run.ID, taskValue.ID, thread.ID, err)
 		return scheduler.RunResult{}, fmt.Errorf("send scheduled prompt: %w", err)
 	}
-	return scheduler.RunResult{ThreadID: thread.ID, RunID: run.ID}, nil
+	return scheduler.RunResult{ThreadID: thread.ID, RunID: run.ID, SessionPath: run.SessionPath}, nil
 }
 
 func (runner *ScheduledRunner) fail(ctx context.Context, runID, taskID, threadID string, cause error) {

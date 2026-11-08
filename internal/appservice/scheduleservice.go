@@ -9,14 +9,18 @@ import (
 
 	"pi-desk/internal/domain"
 	"pi-desk/internal/schedule"
+	"pi-desk/internal/scheduler"
+	"pi-desk/internal/task"
 )
 
 type ScheduleService struct {
 	schedules *schedule.Service
+	tasks     *task.Service
+	runner    scheduler.Runner
 }
 
-func NewScheduleService(schedules *schedule.Service) *ScheduleService {
-	return &ScheduleService{schedules: schedules}
+func NewScheduleService(schedules *schedule.Service, tasks *task.Service, runner scheduler.Runner) *ScheduleService {
+	return &ScheduleService{schedules: schedules, tasks: tasks, runner: runner}
 }
 
 func (service *ScheduleService) Enabled() bool {
@@ -33,9 +37,73 @@ func (service *ScheduleService) ListSchedules() ([]domain.ScheduleSummary, error
 	}
 	result := make([]domain.ScheduleSummary, 0, len(values))
 	for _, value := range values {
-		result = append(result, scheduleSummary(value))
+		result = append(result, scheduleSummary(service.reconcile(context.Background(), value)))
 	}
 	return result, nil
+}
+
+// reconcile turns the schedule's "started" marker into the real Run terminal
+// state. The scheduler only knows that the prompt was handed to Pi; the task
+// run is the source of truth for completion.
+func (service *ScheduleService) reconcile(ctx context.Context, value schedule.Schedule) schedule.Schedule {
+	if value.LastStatus != schedule.StatusStarted || service.tasks == nil || strings.TrimSpace(value.TaskID) == "" {
+		return value
+	}
+	runs, err := service.tasks.ListRuns(ctx, value.TaskID)
+	if err != nil || len(runs) == 0 {
+		return value
+	}
+	latest := runs[len(runs)-1]
+	switch latest.Status {
+	case task.StatusCompleted:
+		value.LastStatus = schedule.StatusCompleted
+		value.LastError = ""
+	case task.StatusFailed:
+		value.LastStatus = schedule.StatusFailed
+		value.LastError = latest.Error
+	case task.StatusCancelled:
+		value.LastStatus = schedule.StatusCancelled
+		value.LastError = ""
+	default:
+		return value
+	}
+	updated, err := service.schedules.Update(ctx, value)
+	if err != nil {
+		return value
+	}
+	return updated
+}
+
+// RunNow starts one manual Run without moving nextRunAt. The regular scheduler
+// remains responsible for recurring timing.
+func (service *ScheduleService) RunNow(request domain.ScheduleIDRequest) (domain.ScheduleRunResult, error) {
+	if !service.Enabled() {
+		return domain.ScheduleRunResult{}, errors.New("schedule service is disabled; set PI_DESK_R2_SCHEDULER=1 to enable it")
+	}
+	if service.runner == nil {
+		return domain.ScheduleRunResult{}, errors.New("scheduled runner is unavailable")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	value, err := service.schedules.Get(ctx, strings.TrimSpace(request.ScheduleID))
+	if err != nil {
+		return domain.ScheduleRunResult{}, err
+	}
+	started := time.Now().UTC()
+	_, _ = service.schedules.SetRuntime(ctx, value.ID, started, schedule.StatusStarted, value.LastThreadID, "")
+	result, runErr := service.runner.RunScheduled(ctx, value)
+	if runErr != nil {
+		status := schedule.StatusFailed
+		if errors.Is(runErr, scheduler.ErrBusy) {
+			status = schedule.StatusSkipped
+		}
+		_, _ = service.schedules.SetRuntime(ctx, value.ID, started, status, result.ThreadID, runErr.Error())
+		return domain.ScheduleRunResult{}, runErr
+	}
+	_, _ = service.schedules.SetRuntime(ctx, value.ID, started, schedule.StatusStarted, result.ThreadID, "")
+	return domain.ScheduleRunResult{
+		ScheduleID: value.ID, ThreadID: result.ThreadID, RunID: result.RunID, SessionPath: result.SessionPath,
+	}, nil
 }
 
 func (service *ScheduleService) SaveSchedule(request domain.ScheduleSaveRequest) (domain.ScheduleSummary, error) {

@@ -28,8 +28,9 @@ type Runner interface {
 }
 
 type RunResult struct {
-	ThreadID string
-	RunID    string
+	ThreadID    string
+	RunID       string
+	SessionPath string
 }
 
 type Options struct {
@@ -230,7 +231,9 @@ func (scheduler *Scheduler) run(ctx context.Context, value schedule.Schedule) {
 		_, _ = scheduler.schedules.SetRuntime(ctx, value.ID, started, status, result.ThreadID, err.Error())
 		scheduler.logf("scheduler: run %s: %v", value.ID, err)
 	} else {
-		_, _ = scheduler.schedules.SetRuntime(ctx, value.ID, started, schedule.StatusCompleted, result.ThreadID, "")
+		// The prompt was handed to Pi, not finished. ScheduleService reconciles
+		// the terminal status from the Run once the agent turn settles.
+		_, _ = scheduler.schedules.SetRuntime(ctx, value.ID, started, schedule.StatusStarted, result.ThreadID, "")
 	}
 	scheduler.mu.Lock()
 	delete(scheduler.running, value.ID)

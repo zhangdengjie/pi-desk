@@ -911,6 +911,13 @@ export interface ScheduleIDRequest {
     "scheduleId": string;
 }
 
+export interface ScheduleRunResult {
+    "scheduleId": string;
+    "threadId"?: string;
+    "runId"?: string;
+    "sessionPath"?: string;
+}
+
 export interface ScheduleSaveRequest {
     "id"?: string;
     "taskId": string;

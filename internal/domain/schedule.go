@@ -52,3 +52,10 @@ type ScheduleSaveRequest struct {
 type ScheduleIDRequest struct {
 	ScheduleID string `json:"scheduleId"`
 }
+
+type ScheduleRunResult struct {
+	ScheduleID  string `json:"scheduleId"`
+	ThreadID    string `json:"threadId,omitempty"`
+	RunID       string `json:"runId,omitempty"`
+	SessionPath string `json:"sessionPath,omitempty"`
+}

@@ -21,6 +21,14 @@ export function ListSchedules(): $CancellablePromise<domain$0.ScheduleSummary[] 
     return $Call.ByID(4148545617);
 }
 
+/**
+ * RunNow starts one manual Run without moving nextRunAt. The regular scheduler
+ * remains responsible for recurring timing.
+ */
+export function RunNow(request: domain$0.ScheduleIDRequest): $CancellablePromise<domain$0.ScheduleRunResult> {
+    return $Call.ByID(2240317378, request);
+}
+
 export function SaveSchedule(request: domain$0.ScheduleSaveRequest): $CancellablePromise<domain$0.ScheduleSummary> {
     return $Call.ByID(2195178525, request);
 }
