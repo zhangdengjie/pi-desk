@@ -139,8 +139,8 @@ WorkspaceSummary.ParentWorkspaceID
 ## 3. 开关
 
 ```text
-PI_DESK_R2_WORKTREE=1 / 0     开发期默认 0；验收后默认 1
-PI_DESK_R2_SCHEDULER=1 / 0    开发期默认 0；验收后默认 1，=0 回前端定时器
+PI_DESK_R2_WORKTREE=1 / 0     默认 1；=0 隐藏 worktree 入口
+PI_DESK_R2_SCHEDULER=1 / 0    默认 1；=0 回前端定时器
 ```
 
 两个开关都进 `BootstrapState`，前端据此隐藏入口，不靠 localStorage。

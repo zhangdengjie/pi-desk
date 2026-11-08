@@ -1,7 +1,7 @@
 # R2 实施状态（进行中）
 
 - 分支：`feat/r2a-worktree-core`（已 `--no-ff` 合并进 `develop`，merge commit `1f75ce2`）
-- 最近提交：`24156e4`
+- 最近提交：`b716691`
 - 日期：2026-11-09
 - 结论：**R2a 核心已落地，R2b 后端已落地；前端调度器切换与 bootstrap 尚未接完。**
 
@@ -77,13 +77,16 @@
   - 旧前端 timer 在 Go 模式下不启动。
 - Worktree bootstrap：`internal/worktree` 已支持 `none / copy / symlink / command`，
   默认 none；copy 只允许显式 allowlist，symlink 不跟随删除，command 失败带输出。
-  尚未接 `~/.pi-desk/config.json` 与设置页。
+  已接 `~/.pi-desk/config.json` 的 `worktreeBootstrap`（按 canonical workspace path 匹配），
+  例如 `{"worktreeBootstrap":{"/path/to/repo":{"mode":"command","command":"npm ci"}}}`。
+- Task 归档时会尝试删除对应 worktree；dirty/未合并保持 orphaned，不自动删分支。
+- 侧栏按 `parentWorkspaceId` 把 worktree 子项嵌套到父 workspace 下，默认折叠。
 
 ## 2. 开关
 
 ```text
-PI_DESK_R2_WORKTREE=1     显示新任务对话框的 worktree 选项；默认 0
-PI_DESK_R2_SCHEDULER=1    启动 Go scheduler；默认 0（前端定时器继续工作）
+PI_DESK_R2_WORKTREE=1 / 0     默认 1；=0 隐藏 worktree 入口
+PI_DESK_R2_SCHEDULER=1 / 0    默认 1；=0 回前端定时器
 ```
 
 两个开关都进入 `BootstrapState.r2Worktree` / `r2Scheduler`。
@@ -91,12 +94,14 @@ PI_DESK_R2_SCHEDULER=1    启动 Go scheduler；默认 0（前端定时器继续
 ## 3. 尚未完成
 
 ```text
-- ScheduleService 尚缺 export legacy（回滚导出）；Go 只处理已有 Task/Thread 的 schedule。
-- Go scheduler 默认未开启；需要沙箱验收 + 回滚导出后才能默认 1。
-- 旧 `state.json` schedule 在 Go 模式下仍会被镜像写入，作为回滚快照；尚未做显式 export 命令。
+- ScheduleService 尚缺显式 export 命令；Go 模式下 `state.json` 仍会镜像当前 schedule，
+  作为回滚快照。
+- Go scheduler 已默认开启；`PI_DESK_R2_SCHEDULER=0` 可回前端 timer。
+- worktree 首次创建尚不询问 bootstrap 策略；需手编辑 `~/.pi-desk/config.json`。
+- worktree orphan 扫描/设置页尚未做；dirty/未合并的 worktree 会保留。
 - worktree bootstrap 配置读取与设置页尚未接。
-- worktree 归档 GC、孤儿清理 UI、启动扫描尚未接。
-- 侧栏尚未把 worktree 子项折叠到父 workspace 下；目前是独立 workspace group。
+- worktree 孤儿清理 UI、启动扫描尚未接。
+- 首次创建 worktree 的 bootstrap 策略询问尚未接。
 - Worktree 与 Task/Run 的绑定使用 thread id（首个 Prompt 后 Task id 才生成），
   后续需要把 `task_worktrees` 表接上。
 - 远程 workspace 的 worktree/scheduler 明确拒绝，已验证 worktree；scheduler 走现有 local 检查。
