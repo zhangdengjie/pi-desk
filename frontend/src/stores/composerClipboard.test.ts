@@ -4,17 +4,6 @@ import { useAppStore } from "./app";
 import { useWorkspaceStore } from "./workspace";
 import { repositoryService } from "../services/repository";
 
-// R1b workspace store split: tests still seed the app store by name. Route
-// workspace-owned fields to their new owner and patch the rest as before.
-function patchApp(store: any, partial: any) {
-  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
-  store.$patch(rest);
-  const workspace = useWorkspaceStore();
-  if (threads !== undefined) workspace.threads = threads;
-  if (workspaces !== undefined) workspace.workspaces = workspaces;
-  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
-  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
-}
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/repository", () => ({ repositoryService: { clipboardFiles: vi.fn(), previewFile: vi.fn() } }));
@@ -23,10 +12,8 @@ describe("composer clipboard projection", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.resetAllMocks();
-    patchApp(useAppStore(), {
-      threads: [{ id: "thread", workspaceId: "workspace", workspacePath: "D:\\repo", workspace: "repo", title: "Task", trust: "approve", status: "idle", started: true, generation: 1 }],
-      activeThreadId: "thread",
-    });
+    useAppStore().$patch({activeThreadId: "thread"});
+    useWorkspaceStore().threads = [{ id: "thread", workspaceId: "workspace", workspacePath: "D:\\repo", workspace: "repo", title: "Task", trust: "approve", status: "idle", started: true, generation: 1 }];;
   });
 
   it("reads original images through the workspace service and keeps mixed copies as references", async () => {

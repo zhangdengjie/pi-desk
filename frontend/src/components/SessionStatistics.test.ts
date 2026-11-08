@@ -5,17 +5,6 @@ import { useAppStore } from "../stores/app";
 import { useWorkspaceStore } from "../stores/workspace";
 import SessionStatistics from "./SessionStatistics.vue";
 
-// R1b workspace store split: tests still seed the app store by name. Route
-// workspace-owned fields to their new owner and patch the rest as before.
-function patchApp(store: any, partial: any) {
-  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
-  store.$patch(rest);
-  const workspace = useWorkspaceStore();
-  if (threads !== undefined) workspace.threads = threads;
-  if (workspaces !== undefined) workspace.workspaces = workspaces;
-  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
-  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
-}
 
 const catalogMocks = vi.hoisted(() => ({ getSessionUsage: vi.fn() }));
 
@@ -57,10 +46,8 @@ describe("SessionStatistics", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "thread-1", title: "Usage", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-1",
-    });
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().threads = [{ id: "thread-1", title: "Usage", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     const wrapper = mount(SessionStatistics, { global: { plugins: [pinia] } });
     await flushPromises();
 

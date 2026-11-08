@@ -5,17 +5,6 @@ import { useAppStore } from "../stores/app";
 import { useWorkspaceStore } from "../stores/workspace";
 import DeleteSessionDialog from "./DeleteSessionDialog.vue";
 
-// R1b workspace store split: tests still seed the app store by name. Route
-// workspace-owned fields to their new owner and patch the rest as before.
-function patchApp(store: any, partial: any) {
-  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
-  store.$patch(rest);
-  const workspace = useWorkspaceStore();
-  if (threads !== undefined) workspace.threads = threads;
-  if (workspaces !== undefined) workspace.workspaces = workspaces;
-  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
-  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
-}
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -31,17 +20,11 @@ describe("DeleteSessionDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      deleteDialogOpen: true,
-      deleteThreadId: "thread-1",
-      deleteSessionTitle: "Runtime audit",
-      deleteHasSession: true,
-      activeThreadId: "thread-1",
-      threads: [{
+    store.$patch({deleteDialogOpen: true, deleteThreadId: "thread-1", deleteSessionTitle: "Runtime audit", deleteHasSession: true, activeThreadId: "thread-1"});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Runtime audit", workspace: "repo", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0, sessionFile: "one.jsonl",
-      }],
-    });
+      }];;
     store.confirmDeleteSession = vi.fn().mockImplementation(async () => {
       store.deletedRecoveryPath = "one.jsonl.deleted-test";
     });

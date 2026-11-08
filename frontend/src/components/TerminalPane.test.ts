@@ -5,17 +5,6 @@ import { useAppStore } from "../stores/app";
 import { useWorkspaceStore } from "../stores/workspace";
 import TerminalPane from "./TerminalPane.vue";
 
-// R1b workspace store split: tests still seed the app store by name. Route
-// workspace-owned fields to their new owner and patch the rest as before.
-function patchApp(store: any, partial: any) {
-  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
-  store.$patch(rest);
-  const workspace = useWorkspaceStore();
-  if (threads !== undefined) workspace.threads = threads;
-  if (workspaces !== undefined) workspace.workspaces = workspaces;
-  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
-  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
-}
 
 const terminalHarness = vi.hoisted(() => ({
   dataHandler: undefined as ((data: string) => void) | undefined,
@@ -124,13 +113,11 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Pooled", workspace: "repo", workspacePath: "/repo", trust: "approve",
         status: "idle", started: true, generation: 0,
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
     terminalMocks.snapshot.mockResolvedValue({
       threadId: "thread-1", running: true, sequence: 3, columns: 132, rows: 43, outputB64: btoa("ready\r\n"),
     });
@@ -176,13 +163,11 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Replay", workspace: "repo", workspacePath: "/repo", trust: "approve",
         status: "idle", started: true, generation: 0,
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
     const order: string[] = [];
     terminalHarness.resize.mockImplementation((cols: number, rows: number) => { order.push(`resize:${cols}x${rows}`); });
     terminalHarness.write.mockImplementation((_data: unknown, callback?: () => void) => { order.push("write"); callback?.(); });
@@ -216,13 +201,11 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Replay", workspace: "repo", workspacePath: "/repo", trust: "approve",
         status: "idle", started: true, generation: 0,
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
     let finishReplay: (() => void) | undefined;
     terminalHarness.write.mockImplementation((_data: unknown, callback?: () => void) => { finishReplay = callback; });
     terminalMocks.snapshot.mockResolvedValue({
@@ -254,13 +237,11 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Stale", workspace: "repo", workspacePath: "/repo", trust: "approve",
         status: "idle", started: true, generation: 0,
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
     terminalMocks.snapshot.mockResolvedValue({ threadId: "thread-1", running: true, sequence: 1 });
     const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
     await flushPromises();
@@ -294,13 +275,11 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Terminal", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
     const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
     await flushPromises();
     expect(terminalMocks.snapshot).toHaveBeenCalledWith("thread-1", undefined, undefined);
@@ -335,13 +314,11 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Terminal", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
     const wrapper = mount(TerminalPane, { global: { plugins: [pinia] }, props: { sessionId: "session-b" } });
     await flushPromises();
     expect(terminalMocks.snapshot).toHaveBeenCalledWith("thread-1", "session-b", undefined);
@@ -376,13 +353,11 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Terminal", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
     const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
     await flushPromises();
     await wrapper.get('button[title="Start terminal"]').trigger("click");
@@ -408,17 +383,15 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{
+    store.$patch({activeThreadId: "thread-2"});
+    useWorkspaceStore().workspaces = [{
         id: "workspace-0123456789abcdef0123456789abcdef", name: "repo", path: "", kind: "ssh",
         targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve",
-      }],
-      threads: [{
+      }];
+    useWorkspaceStore().threads = [{
         id: "thread-2", title: "Workspace", workspace: "repo", workspaceId: "workspace-0123456789abcdef0123456789abcdef", workspacePath: "",
         trust: "approve", status: "idle", started: true, generation: 1,
-      }],
-      activeThreadId: "thread-2",
-    });
+      }];;
     store.remoteReadyByWorkspace["workspace-0123456789abcdef0123456789abcdef"] = true;
     terminalMocks.snapshot.mockResolvedValueOnce({ threadId: "thread-2", running: false, sequence: 0 });
     terminalMocks.start.mockResolvedValueOnce({ threadId: "thread-2", running: true, sequence: 0 });
@@ -439,15 +412,12 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-remote", name: "repo", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }],
-      threads: [
+    store.$patch({activeThreadId: "thread-cold", remoteReadyByWorkspace: { "workspace-remote": false }});
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "repo", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [
         { id: "thread-cold", title: "Cold", workspace: "repo", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 },
         { id: "thread-local", title: "Local", workspace: "local", workspacePath: "D:\\local", trust: "approve", status: "idle", started: false, generation: 0 },
-      ],
-      activeThreadId: "thread-cold",
-      remoteReadyByWorkspace: { "workspace-remote": false },
-    });
+      ];;
     terminalMocks.snapshot.mockResolvedValueOnce({ threadId: "thread-cold", running: false, sequence: 0 });
     terminalMocks.start.mockResolvedValueOnce({ threadId: "thread-cold", running: true, sequence: 0 });
     const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
@@ -469,15 +439,12 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-remote", name: "repo", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }],
-      threads: [
+    store.$patch({activeThreadId: "thread-cold", remoteReadyByWorkspace: { "workspace-remote": true }});
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "repo", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [
         { id: "thread-cold", title: "Cold", workspace: "repo", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 },
         { id: "thread-local", title: "Local", workspace: "local", workspacePath: "D:\\local", trust: "approve", status: "idle", started: false, generation: 0 },
-      ],
-      activeThreadId: "thread-cold",
-      remoteReadyByWorkspace: { "workspace-remote": true },
-    });
+      ];;
     const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
     await flushPromises();
 
@@ -498,18 +465,15 @@ describe("TerminalPane", () => {
     const store = useAppStore();
     let finish!: (state: { threadId: string; running: boolean; sequence: number; shell: string }) => void;
     terminalMocks.snapshot.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
-    patchApp(store, {
-      workspaces: [
+    store.$patch({activeThreadId: "thread-local", remoteReadyByWorkspace: { "workspace-remote": false }});
+    useWorkspaceStore().workspaces = [
         { id: "workspace-local", name: "local", path: "D:\\repo", trust: "approve" },
         { id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" },
-      ],
-      threads: [
+      ];
+    useWorkspaceStore().threads = [
         { id: "thread-local", title: "Local", workspace: "local", workspaceId: "workspace-local", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 },
         { id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 },
-      ],
-      activeThreadId: "thread-local",
-      remoteReadyByWorkspace: { "workspace-remote": false },
-    });
+      ];;
     const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
     await Promise.resolve();
     store.activeThreadId = "thread-remote";
@@ -525,12 +489,9 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-remote", name: "repo", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }],
-      threads: [{ id: "thread-stale", title: "Stale", workspace: "repo", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }],
-      activeThreadId: "thread-stale",
-      remoteReadyByWorkspace: { "workspace-remote": false },
-    });
+    store.$patch({activeThreadId: "thread-stale", remoteReadyByWorkspace: { "workspace-remote": false }});
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "repo", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-stale", title: "Stale", workspace: "repo", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: true, generation: 1 }];;
     const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
     await flushPromises();
 
@@ -545,12 +506,9 @@ describe("TerminalPane", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-remote", name: "repo", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }],
-      threads: [{ id: "thread-failed", title: "Failed", workspace: "repo", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-failed",
-      remoteReadyByWorkspace: { "workspace-remote": true },
-    });
+    store.$patch({activeThreadId: "thread-failed", remoteReadyByWorkspace: { "workspace-remote": true }});
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "repo", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-failed", title: "Failed", workspace: "repo", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];;
     const start = vi.spyOn(store, "startThreadInBackground");
     const wrapper = mount(TerminalPane, { global: { plugins: [pinia] } });
     await flushPromises();

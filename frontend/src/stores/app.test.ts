@@ -173,17 +173,6 @@ import { consumeMentionInsert, useAppStore } from "./app";
 import { useWorkspaceStore } from "./workspace";
 import { DEFAULT_DOCUMENT_POOL, MAX_DOCUMENT_POOL } from "../utils/documentPool";
 
-// R1b workspace store split: tests still seed the app store by name. Route
-// workspace-owned fields to their new owner and patch the rest as before.
-function patchApp(store: any, partial: any) {
-  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
-  store.$patch(rest);
-  const workspace = useWorkspaceStore();
-  if (threads !== undefined) workspace.threads = threads;
-  if (workspaces !== undefined) workspace.workspaces = workspaces;
-  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
-  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
-}
 
 describe("app store", () => {
   it("reveals created and selected browser tabs while keeping state updates in their owning conversation", async () => {
@@ -408,14 +397,12 @@ describe("app store", () => {
 
   it("searches unopened session bodies and caches their text", async () => {
     const store = useAppStore();
-    patchApp(store, {
-      searchQuery: "hidden semaphore",
-      threads: [{
+    store.$patch({searchQuery: "hidden semaphore"});
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Runtime audit", workspace: "pi-desk", workspacePath: "D:\\repo", trust: "deny",
         status: "idle", started: false, generation: 0, sessionFile: "C:\\sessions\\one.jsonl",
         modifiedAt: "2026-08-10T09:00:00Z",
-      }],
-    });
+      }];;
     mocks.searchSessionText.mockResolvedValueOnce({ messageCount: 2, text: "Inspect the worker\nThe hidden semaphore is released here." });
 
     expect(store.filteredThreads).toEqual([]);
@@ -1594,15 +1581,12 @@ describe("app store", () => {
 
   it("updates workspace access for every related task and restarts idle Pi processes", async () => {
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }],
-      threads: [
+    store.$patch({activeThreadId: "thread-1", piProcessOrder: ["thread-1"]});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [
         { id: "thread-1", title: "One", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "deny", status: "idle", started: true, generation: 2 },
         { id: "thread-2", title: "Two", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "deny", status: "idle", started: false, generation: 0 },
-      ],
-      activeThreadId: "thread-1",
-      piProcessOrder: ["thread-1"],
-    });
+      ];;
     mocks.stopSession.mockResolvedValue(undefined);
     store.startThreadInBackground = vi.fn();
 
@@ -1618,14 +1602,12 @@ describe("app store", () => {
 
   it("does not change workspace access while a related task is running", async () => {
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }],
-      threads: [
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [
         { id: "thread-1", title: "One", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "deny", status: "idle", started: false, generation: 0 },
         { id: "thread-2", title: "Two", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "deny", status: "running", started: true, generation: 2 },
-      ],
-      activeThreadId: "thread-1",
-    });
+      ];;
 
     expect(store.activeWorkspaceTrustBusy).toBe(true);
     expect(await store.setActiveWorkspaceTrust("approve")).toBe(false);
@@ -1649,14 +1631,12 @@ describe("app store", () => {
 
   it("removes an idle workspace registration without deleting its directory", async () => {
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }],
-      threads: [{
+    store.$patch({activeThreadId: "thread-1"});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }];
+    useWorkspaceStore().threads = [{
         id: "thread-1", title: "Workspace task", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "deny",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-1",
-    });
+      }];;
 
     await store.removeWorkspace("workspace-1");
 
@@ -1793,17 +1773,13 @@ describe("app store", () => {
   it("refreshes available thinking levels after switching the active model", async () => {
     const store = useAppStore();
     const grok = { provider: "grok", id: "grok-4.6", name: "Grok 4.6", reasoning: true };
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-model", sessionStateByThread: { "thread-model": {
+        model: { provider: "openai", id: "gpt-5.6-sol", reasoning: true }, thinkingLevel: "xhigh",
+      } }, thinkingLevelsByThread: { "thread-model": ["off", "minimal", "low", "medium", "high", "xhigh"] }});
+    useWorkspaceStore().threads = [{
         id: "thread-model", title: "Models", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
-      }],
-      activeThreadId: "thread-model",
-      sessionStateByThread: { "thread-model": {
-        model: { provider: "openai", id: "gpt-5.6-sol", reasoning: true }, thinkingLevel: "xhigh",
-      } },
-      thinkingLevelsByThread: { "thread-model": ["off", "minimal", "low", "medium", "high", "xhigh"] },
-    });
+      }];;
     mocks.getState.mockResolvedValueOnce({ model: grok, thinkingLevel: "high" });
     mocks.getAvailableThinkingLevels.mockResolvedValueOnce({ levels: ["low", "medium", "high"] });
 
@@ -1946,15 +1922,11 @@ describe("app store", () => {
     const store = useAppStore();
     const gpt = { provider: "openai", id: "gpt-5.6-sol", reasoning: true };
     const grok = { provider: "grok", id: "grok-4.6", reasoning: true };
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-model-race", sessionStateByThread: { "thread-model-race": { model: gpt } }, thinkingLevelsByThread: { "thread-model-race": ["off", "low", "medium", "high", "xhigh"] }});
+    useWorkspaceStore().threads = [{
         id: "thread-model-race", title: "Models", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: true, generation: 1,
-      }],
-      activeThreadId: "thread-model-race",
-      sessionStateByThread: { "thread-model-race": { model: gpt } },
-      thinkingLevelsByThread: { "thread-model-race": ["off", "low", "medium", "high", "xhigh"] },
-    });
+      }];;
     let resolveOld!: (value: { levels: string[] }) => void;
     mocks.getAvailableThinkingLevels
       .mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }))
@@ -1973,16 +1945,11 @@ describe("app store", () => {
     const store = useAppStore();
     const oldOpenAIModel = { provider: "openai", id: "gpt-5.4", name: "GPT 5.4" };
     const configured = { provider: "openai-direct", id: "gpt-5.6-sol", name: "GPT 5.6 Sol" };
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-runtime-models", modelsByThread: { "thread-runtime-models": [configured] }, configuredModels: [configured], knownRuntimeModels: [oldOpenAIModel]});
+    useWorkspaceStore().threads = [{
         id: "thread-runtime-models", title: "Models", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "running", started: true, generation: 1,
-      }],
-      activeThreadId: "thread-runtime-models",
-      modelsByThread: { "thread-runtime-models": [configured] },
-      configuredModels: [configured],
-      knownRuntimeModels: [oldOpenAIModel],
-    });
+      }];;
 
     expect(store.activeModels).toEqual([configured]);
   });
@@ -2005,13 +1972,8 @@ describe("app store", () => {
     const store = useAppStore();
     const allowed = { provider: "openai", id: "allowed", source: "account" };
     const previous = { provider: "openai", id: "previous" };
-    patchApp(store, {
-      threads: [{ id: "account-models", title: "Models", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
-      activeThreadId: "account-models",
-      configuredModels: [allowed],
-      modelsByThread: { "account-models": [allowed, previous, { provider: "openai", id: "not-in-account" }] },
-      sessionStateByThread: { "account-models": { model: previous } },
-    });
+    store.$patch({activeThreadId: "account-models", configuredModels: [allowed], modelsByThread: { "account-models": [allowed, previous, { provider: "openai", id: "not-in-account" }] }, sessionStateByThread: { "account-models": { model: previous } }});
+    useWorkspaceStore().threads = [{ id: "account-models", title: "Models", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }];;
     expect(store.activeModels.map(model => model.id)).toEqual(["allowed", "previous"]);
   });
 
@@ -4764,11 +4726,7 @@ describe("app store", () => {
 
   it("runs a due one-time task in the background and keeps the scheduled-task page open", async () => {
     const store = useAppStore();
-    patchApp(store, {
-      catalogReady: true,
-      activePage: "scheduledTasks",
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }],
-      scheduledTasks: [{
+    store.$patch({catalogReady: true, activePage: "scheduledTasks", scheduledTasks: [{
         id: "schedule-1",
         name: "Dependency review",
         prompt: "Review dependency updates.",
@@ -4783,8 +4741,8 @@ describe("app store", () => {
         nextRunAt: "2026-09-03T01:00:00.000Z",
         createdAt: "2026-09-02T01:00:00.000Z",
         updatedAt: "2026-09-02T01:00:00.000Z",
-      }],
-    });
+      }]});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }];;
     mocks.getState
       .mockResolvedValueOnce({ sessionId: "session-1", model: { provider: "openai", id: "gpt-5.6", name: "GPT 5.6" }, isStreaming: false })
       .mockResolvedValueOnce({ sessionId: "session-1", model: { provider: "openai", id: "gpt-5.6", name: "GPT 5.6" }, thinkingLevel: "medium", isStreaming: false });
@@ -4829,14 +4787,12 @@ describe("app store", () => {
 
   it("does not send a scheduled prompt when the saved thinking level is unavailable", async () => {
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }],
-      scheduledTasks: [{
+    store.$patch({scheduledTasks: [{
         id: "schedule-unsupported", name: "Deep review", prompt: "Review deeply.", workspaceId: "workspace-1",
         modelProvider: "openai", modelId: "gpt-5.6", thinkingLevel: "max", frequency: "daily", time: "09:00",
         enabled: true, nextRunAt: "2026-09-04T01:00:00.000Z", createdAt: "2026-09-03T01:00:00.000Z", updatedAt: "2026-09-03T01:00:00.000Z",
-      }],
-    });
+      }]});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }];;
     mocks.getAvailableThinkingLevels.mockResolvedValue({ levels: ["off", "medium"] });
     mocks.getState.mockResolvedValueOnce({ model: { provider: "openai", id: "gpt-5.6" }, isStreaming: false });
 
@@ -4903,14 +4859,12 @@ describe("app store", () => {
 
   it("mentions a picked workspace file with a relative path", async () => {
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }],
-      threads: [{
+    store.$patch({activeThreadId: "thread-mention"});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{
         id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-mention",
-    });
+      }];;
     mocks.pickFile.mockResolvedValue("D:\\work\\repo\\src\\main.go");
 
     await expect(store.pickFileMention()).resolves.toEqual({ path: "D:/work/repo/src/main.go", external: false });
@@ -4921,13 +4875,11 @@ describe("app store", () => {
 
   it("mentions a picked file outside the workspace with an absolute path", async () => {
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-mention"});
+    useWorkspaceStore().threads = [{
         id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-mention",
-    });
+      }];;
     mocks.pickFile.mockResolvedValue("C:\\notes\\run book.md");
 
     await expect(store.pickFileMention()).resolves.toEqual({ path: "C:/notes/run book.md", external: true });
@@ -4938,14 +4890,11 @@ describe("app store", () => {
 
   it("keeps the draft untouched when the file picker is cancelled", async () => {
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-mention", draftsByThread: { "thread-mention": "Keep this " }});
+    useWorkspaceStore().threads = [{
         id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-mention",
-      draftsByThread: { "thread-mention": "Keep this " },
-    });
+      }];;
     mocks.pickFile.mockResolvedValue(undefined);
 
     await expect(store.pickFileMention()).resolves.toBeUndefined();
@@ -4959,13 +4908,11 @@ describe("app store", () => {
 
   it("records repository tree expansion per workspace so every tab shares one tree", () => {
     const store = useAppStore();
-    patchApp(store, {
-      threads: [
+    store.$patch({activeThreadId: "t-a"});
+    useWorkspaceStore().threads = [
         { id: "t-a", title: "A", workspace: "repo-a", workspacePath: "D:\\repo-a", trust: "approve", status: "idle", started: false, generation: 0 },
         { id: "t-b", title: "B", workspace: "repo-b", workspacePath: "D:\\repo-b", trust: "approve", status: "idle", started: false, generation: 0 },
-      ],
-      activeThreadId: "t-a",
-    });
+      ];;
 
     expect(store.activeRepositoryTreeExpanded).toEqual({});
     store.setRepositoryTreeExpanded("src", false);
@@ -4989,13 +4936,11 @@ describe("app store", () => {
 
   it("marks only the just-inserted mention draft as a programmatic insert", async () => {
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-mention"});
+    useWorkspaceStore().threads = [{
         id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-mention",
-    });
+      }];;
 
     store.insertFileMention("src/main.go");
     const inserted = store.activeDraft;
@@ -5079,7 +5024,8 @@ describe("app store", () => {
 
   it("serializes desktop saves and coalesces changes into the latest snapshot", async () => {
     const store = useAppStore();
-    patchApp(store, { catalogReady: true, activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }] });
+    store.$patch({catalogReady: true, activeThreadId: "t"});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }];;
     let release!: () => void;
     mocks.saveDesktopState.mockReturnValueOnce(new Promise<void>(resolve => { release = resolve; }));
     store.draftsByThread.t = "old";
@@ -5098,10 +5044,8 @@ describe("app store", () => {
 
   it("persists image references and restores queues paused until explicit resume", async () => {
     const store = useAppStore();
-    patchApp(store, { catalogReady: true, activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }],
-      attachmentsByThread: { t: [{ id: "a", name: "draft.png", mimeType: "image/png", data: "YQ==", previewUrl: "data:image/png;base64,YQ==" }] },
-      pendingPromptsByThread: { t: [{ id: "p", text: "queued text", createdAt: "now", images: [{ id: "b", name: "queue.png", mimeType: "image/png", data: "Yg==", previewUrl: "data:image/png;base64,Yg==" }] }] },
-    });
+    store.$patch({catalogReady: true, activeThreadId: "t", attachmentsByThread: { t: [{ id: "a", name: "draft.png", mimeType: "image/png", data: "YQ==", previewUrl: "data:image/png;base64,YQ==" }] }, pendingPromptsByThread: { t: [{ id: "p", text: "queued text", createdAt: "now", images: [{ id: "b", name: "queue.png", mimeType: "image/png", data: "Yg==", previewUrl: "data:image/png;base64,Yg==" }] }] }});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }];;
     await store.persistDesktopState();
     const metadata = mocks.saveDesktopState.mock.calls.at(-1)![0].threads[0].composerJson;
     expect(metadata).not.toContain("YQ=="); expect(metadata).not.toContain("Yg=="); expect(metadata).not.toContain("previewUrl");
@@ -5119,7 +5063,8 @@ describe("app store", () => {
 
   it("retains queued text when a cached image is missing and blocks dispatch", async () => {
     const store = useAppStore();
-    patchApp(store, { activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }] });
+    store.$patch({activeThreadId: "t"});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }];;
     mocks.readComposerImage.mockRejectedValueOnce(new Error("missing"));
     await store.restoreComposer("t", JSON.stringify({ pending: [{ id: "p", text: "keep this text", createdAt: "now", images: [{ id: "i", name: "missing.png", mimeType: "image/png", cacheKey: "a".repeat(64) }] }] }));
     await store.resumePendingPrompts();
@@ -5131,7 +5076,8 @@ describe("app store", () => {
 
   it("cancels a pending body search and discards late results", async () => {
     const store = useAppStore();
-    patchApp(store, { searchQuery: "needle", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0, sessionFile: "D:/sessions/one.jsonl" }] });
+    store.$patch({searchQuery: "needle"});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0, sessionFile: "D:/sessions/one.jsonl" }];;
     let resolve!: (value: { text: string; messageCount: number }) => void;
     const cancel = vi.fn().mockResolvedValue(undefined);
     const request = Object.assign(new Promise(resolveCallback => { resolve = resolveCallback; }), { cancel });
@@ -5146,7 +5092,8 @@ describe("app store", () => {
 
   it.each(["completed", "failed", "cancelled"] as const)("finalizes scheduled runs as %s only at settlement", status => {
     const store = useAppStore();
-    patchApp(store, { activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "running", started: true, generation: 4 }], scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }] });
+    store.$patch({activeThreadId: "t", scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }]});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "running", started: true, generation: 4 }];;
     if (status === "failed") store.messagesByThread.t = [{ id: "a", role: "assistant", text: "", thinking: "", timestamp: "now", streaming: false, tools: [], error: "provider failed" }];
     store.handlePiEvent({ threadId: "t", event: { generation: 4, type: "agent_end", payload: {} } });
     expect(store.scheduledTasks[0].lastStatus).toBe("started");
@@ -5156,13 +5103,15 @@ describe("app store", () => {
 
   it("blocks a second scheduled run while its linked session is running", async () => {
     const store = useAppStore();
-    patchApp(store, { threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "attention", started: true, generation: 4 }], scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }] });
+    store.$patch({scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }]});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "attention", started: true, generation: 4 }];;
     await store.runScheduledTask("s"); expect(mocks.startSession).not.toHaveBeenCalled();
   });
 
   it("blocks history changes before stopping a large session", async () => {
     const store = useAppStore();
-    patchApp(store, { activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", sessionFile: "D:/sessions/one.jsonl", trust: "deny", status: "idle", started: true, generation: 4 }], sessionMutationErrorByThread: { t: "64 MiB limit" } });
+    store.$patch({activeThreadId: "t", sessionMutationErrorByThread: { t: "64 MiB limit" }});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", sessionFile: "D:/sessions/one.jsonl", trust: "deny", status: "idle", started: true, generation: 4 }];;
     store.messagesByThread.t = [{ id: "u", entryId: "entry", role: "user", text: "question", thinking: "", timestamp: "now", streaming: false, tools: [] }];
     expect(await store.editMessage("u", "edit")).toBe(false);
     expect(await store.deleteMessage("u")).toBe(false);
@@ -5173,7 +5122,8 @@ describe("app store", () => {
 
   it("retains a queued prompt on disk until Pi acknowledges it", async () => {
     const store = useAppStore();
-    patchApp(store, { catalogReady: true, activeThreadId: "t", threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: true, generation: 4 }], pendingPromptsByThread: { t: [{ id: "p", text: "still awaiting acknowledgement", images: [], createdAt: "now" }] } });
+    store.$patch({catalogReady: true, activeThreadId: "t", pendingPromptsByThread: { t: [{ id: "p", text: "still awaiting acknowledgement", images: [], createdAt: "now" }] }});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: true, generation: 4 }];;
     let acknowledge!: (value: { command: string }) => void;
     mocks.sendPrompt.mockReturnValueOnce(new Promise(resolve => { acknowledge = resolve; }));
     const dispatch = store.dispatchNextPendingPrompt("t");
@@ -5189,7 +5139,8 @@ describe("app store", () => {
 
   it("keeps a scheduled run active after a failed stop and fails it on runtime exit", async () => {
     const store = useAppStore();
-    patchApp(store, { threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "running", started: true, generation: 4 }], scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }] });
+    store.$patch({scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }]});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "running", started: true, generation: 4 }];;
     mocks.stopSession.mockRejectedValueOnce(new Error("stop failed"));
     expect(await store.stopThread("t")).toBe(false);
     expect(store.scheduledTasks[0].lastStatus).toBe("started");
@@ -5199,7 +5150,8 @@ describe("app store", () => {
 
   it.each(["stop", "delete"] as const)("marks an explicitly %s scheduled run cancelled", async action => {
     const store = useAppStore();
-    patchApp(store, { threads: [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "running", started: true, generation: 4 }], scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }] });
+    store.$patch({scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", frequency: "daily", enabled: true, lastThreadId: "t", lastStatus: "started", createdAt: "now", updatedAt: "now" }]});
+    useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "running", started: true, generation: 4 }];;
     mocks.stopSession.mockImplementationOnce(async () => { store.handlePiEvent({ threadId: "t", event: { generation: 4, type: "runtime_exit", payload: {} } }); });
     if (action === "stop") expect(await store.stopThread("t")).toBe(true);
     else { store.deleteThreadId = "t"; await store.confirmDeleteSession(); }
@@ -5215,7 +5167,8 @@ describe("app store", () => {
 
   it("records completion even when settlement precedes prompt acknowledgement", async () => {
     const store = useAppStore();
-    patchApp(store, { workspaces: [{ id: "w", name: "repo", path: "D:/repo", trust: "approve" }], scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", modelProvider: "openai", modelId: "gpt-5.6", thinkingLevel: "medium", frequency: "daily", enabled: true, createdAt: "now", updatedAt: "now" }] });
+    store.$patch({scheduledTasks: [{ id: "s", name: "Scheduled", prompt: "review", workspaceId: "w", modelProvider: "openai", modelId: "gpt-5.6", thinkingLevel: "medium", frequency: "daily", enabled: true, createdAt: "now", updatedAt: "now" }]});
+    useWorkspaceStore().workspaces = [{ id: "w", name: "repo", path: "D:/repo", trust: "approve" }];;
     mocks.getState
       .mockResolvedValueOnce({ model: { provider: "openai", id: "gpt-5.6" }, isStreaming: false })
       .mockResolvedValueOnce({ model: { provider: "openai", id: "gpt-5.6" }, thinkingLevel: "medium", isStreaming: false });

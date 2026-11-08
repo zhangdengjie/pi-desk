@@ -8,17 +8,6 @@ import { useWorkspaceStore } from "../stores/workspace";
 import InspectorPanel from "./InspectorPanel.vue";
 import { buildToolDiff } from "../utils/toolDiff";
 
-// R1b workspace store split: tests still seed the app store by name. Route
-// workspace-owned fields to their new owner and patch the rest as before.
-function patchApp(store: any, partial: any) {
-  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
-  store.$patch(rest);
-  const workspace = useWorkspaceStore();
-  if (threads !== undefined) workspace.threads = threads;
-  if (workspaces !== undefined) workspace.workspaces = workspaces;
-  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
-  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
-}
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -281,10 +270,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "pin", title: "Pin", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "pin",
-    });
+    store.$patch({activeThreadId: "pin"});
+    useWorkspaceStore().threads = [{ id: "pin", title: "Pin", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
     repositoryMocks.previewFile.mockResolvedValue({ path: "main.py", content: "print(1)" });
@@ -302,11 +289,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "tree", title: "Tree", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "tree",
-      repositoryByWorkspace: { "d:/repo": { files: [{ path: "main.py", name: "main.py" }], git: { isRepository: false, files: [] } } },
-    });
+    store.$patch({activeThreadId: "tree", repositoryByWorkspace: { "d:/repo": { files: [{ path: "main.py", name: "main.py" }], git: { isRepository: false, files: [] } } }});
+    useWorkspaceStore().threads = [{ id: "tree", title: "Tree", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
     repositoryMocks.previewFile.mockResolvedValue({ path: "main.py", content: "print(1)" });
@@ -336,10 +320,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "gutter", title: "Gutter", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "gutter",
-    });
+    store.$patch({activeThreadId: "gutter"});
+    useWorkspaceStore().threads = [{ id: "gutter", title: "Gutter", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -368,14 +350,11 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-session-diff", ...panelState("thread-session-diff", { kind: "diff", path: "main.go", diff: { path: "main.go", working: "@@ -1 +1 @@\n-old\n+new", session: true } })});
+    useWorkspaceStore().threads = [{
         id: "thread-session-diff", title: "Session diff", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-session-diff",
-      ...panelState("thread-session-diff", { kind: "diff", path: "main.go", diff: { path: "main.go", working: "@@ -1 +1 @@\n-old\n+new", session: true } }),
-    });
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
 
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -390,21 +369,18 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
-        id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
-        status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-1",
-      repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-1", repositoryByWorkspace: { "d:/repo": {
         files: [{ path: "README.md", name: "README.md" }, { path: "src/main.go", name: "main.go" }],
         git: {
           isRepository: true,
           branch: "feature/repo-view",
           files: [{ path: "src/main.go", indexStatus: " ", worktreeStatus: "M" }],
         },
-      } },
-    });
+      } }});
+    useWorkspaceStore().threads = [{
+        id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     repositoryMocks.diff.mockResolvedValue({
       path: "src/main.go",
@@ -469,21 +445,18 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
-        id: "thread-2", title: "Assets", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
-        status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-2",
-      repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-2", repositoryByWorkspace: { "d:/repo": {
         files: [{ path: "new.png", name: "new.png" }],
         git: {
           isRepository: true,
           branch: "main",
           files: [{ path: "new.png", originalPath: "old.png", indexStatus: "R", worktreeStatus: " " }],
         },
-      } },
-    });
+      } }});
+    useWorkspaceStore().threads = [{
+        id: "thread-2", title: "Assets", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
@@ -517,12 +490,9 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }],
-      threads: [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-remote",
-      ...panelState("thread-remote", { kind: "file", path: "README.md", preview: { path: "README.md", absolutePath: "", content: "remote", size: 6, binary: false, truncated: false } }),
-    });
+    store.$patch({activeThreadId: "thread-remote", ...panelState("thread-remote", { kind: "file", path: "README.md", preview: { path: "README.md", absolutePath: "", content: "remote", size: 6, binary: false, truncated: false } })});
+    useWorkspaceStore().workspaces = [{ id: "workspace-remote", name: "remote", path: "", kind: "ssh", targetId: "target-remote", remoteRoot: "/srv/repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{ id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "workspace-remote", workspacePath: "", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
 
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -538,10 +508,7 @@ describe("InspectorPanel", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const thread = { id: "thread-doc", title: "Docs", workspace: "repo", workspacePath: "/repo", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
-    patchApp(store, {
-      threads: [thread],
-      activeThreadId: "thread-doc",
-      inspectorByThread: {
+    store.$patch({activeThreadId: "thread-doc", inspectorByThread: {
         "thread-doc": {
           open: true, width: 600, expanded: false, activeId: "doc",
           tabs: [
@@ -553,8 +520,8 @@ describe("InspectorPanel", () => {
             } },
           ],
         },
-      },
-    });
+      }});
+    useWorkspaceStore().threads = [thread];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -587,10 +554,7 @@ describe("InspectorPanel", () => {
     const store = useAppStore();
     const thread = { id: "thread-doc", title: "Docs", workspace: "repo", workspacePath: "/repo", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
     const other = { id: "thread-other", title: "Other", workspace: "repo", workspacePath: "/repo", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
-    patchApp(store, {
-      threads: [thread, other],
-      activeThreadId: "thread-doc",
-      inspectorByThread: {
+    store.$patch({activeThreadId: "thread-doc", inspectorByThread: {
         "thread-doc": {
           open: true, width: 600, expanded: false, activeId: "doc",
           tabs: [
@@ -607,8 +571,8 @@ describe("InspectorPanel", () => {
             } },
           ],
         },
-      },
-    });
+      }});
+    useWorkspaceStore().threads = [thread, other];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -637,10 +601,7 @@ describe("InspectorPanel", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     const thread = { id: "thread-doc", title: "Docs", workspace: "repo", workspacePath: "/repo", trust: "approve" as const, status: "idle" as const, started: false, generation: 0 };
-    patchApp(store, {
-      threads: [thread],
-      activeThreadId: "thread-doc",
-      inspectorByThread: {
+    store.$patch({activeThreadId: "thread-doc", inspectorByThread: {
         "thread-doc": {
           open: true, width: 600, expanded: false, activeId: "doc",
           tabs: [
@@ -652,8 +613,8 @@ describe("InspectorPanel", () => {
             } },
           ],
         },
-      },
-    });
+      }});
+    useWorkspaceStore().threads = [thread];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -678,16 +639,13 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-preview", ...panelState("thread-preview", { kind: "file", path: "scripts/join_groups.py", preview: {
+        path: "scripts/join_groups.py", absolutePath: "D:\\repo\\scripts\\join_groups.py", content: "print('ok')", size: 12, binary: false, truncated: false,
+      } })});
+    useWorkspaceStore().threads = [{
         id: "thread-preview", title: "Preview", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-preview",
-      ...panelState("thread-preview", { kind: "file", path: "scripts/join_groups.py", preview: {
-        path: "scripts/join_groups.py", absolutePath: "D:\\repo\\scripts\\join_groups.py", content: "print('ok')", size: 12, binary: false, truncated: false,
-      } }),
-    });
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
@@ -707,13 +665,10 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "thread-media", title: "Media", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-media",
-      ...panelState("thread-media", { kind: "file", path: "image.png", preview: {
+    store.$patch({activeThreadId: "thread-media", ...panelState("thread-media", { kind: "file", path: "image.png", preview: {
         path: "image.png", absolutePath: "D:\\repo\\image.png", mediaType: "image/png", dataUrl: "data:image/png;base64,iVBORw0KGgo=", size: 8, binary: true, truncated: false,
-      } }),
-    });
+      } })});
+    useWorkspaceStore().threads = [{ id: "thread-media", title: "Media", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     repositoryMocks.previewFile.mockResolvedValue({ path: "README.md", absolutePath: "D:\\repo\\README.md", mediaType: "text/markdown", content: "# Repo", size: 6 });
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -734,10 +689,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "thread-sheet", title: "Workbook", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-sheet",
-      ...panelState("thread-sheet", { kind: "file", path: "reports/summary.xlsx", preview: {
+    store.$patch({activeThreadId: "thread-sheet", ...panelState("thread-sheet", { kind: "file", path: "reports/summary.xlsx", preview: {
         path: "reports/summary.xlsx",
         absolutePath: "D:\\repo\\reports\\summary.xlsx",
         mediaType: "application/x-pi-desk-spreadsheet",
@@ -748,8 +700,8 @@ describe("InspectorPanel", () => {
         size: 128,
         binary: true,
         truncated: false,
-      } }),
-    });
+      } })});
+    useWorkspaceStore().threads = [{ id: "thread-sheet", title: "Workbook", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
 
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -772,18 +724,14 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
-        id: "thread-rollback", title: "Rollback", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
-        status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-rollback",
-      repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-rollback", repositoryByWorkspace: { "d:/repo": {
         files: [{ path: "src/main.go", name: "main.go" }],
         git: { isRepository: true, branch: "main", files: [{ path: "src/main.go", indexStatus: " ", worktreeStatus: "M" }] },
-      } },
-      sessionChangesByThread: { "thread-rollback": [{ path: "src/main.go", editCalls: 1, writeCalls: 0, plan: "revert-edits" }] },
-    });
+      } }, sessionChangesByThread: { "thread-rollback": [{ path: "src/main.go", editCalls: 1, writeCalls: 0, plan: "revert-edits" }] }});
+    useWorkspaceStore().threads = [{
+        id: "thread-rollback", title: "Rollback", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.rollbackSessionFile = vi.fn().mockResolvedValue(undefined);
 
@@ -805,18 +753,14 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
-        id: "thread-created", title: "Created", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
-        status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-created",
-      repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-created", repositoryByWorkspace: { "d:/repo": {
         files: [{ path: "notes.md", name: "notes.md" }],
         git: { isRepository: true, branch: "main", files: [{ path: "notes.md", indexStatus: "?", worktreeStatus: "?" }] },
-      } },
-      sessionChangesByThread: { "thread-created": [{ path: "notes.md", editCalls: 0, writeCalls: 1, plan: "delete" }] },
-    });
+      } }, sessionChangesByThread: { "thread-created": [{ path: "notes.md", editCalls: 0, writeCalls: 1, plan: "delete" }] }});
+    useWorkspaceStore().threads = [{
+        id: "thread-created", title: "Created", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.rollbackSessionFile = vi.fn().mockResolvedValue(undefined);
 
@@ -838,11 +782,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const owned = useAppStore();
-    patchApp(owned, {
-      threads: [{ id: "thread-expand", title: "Tree", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-expand",
-      repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } },
-    });
+    owned.$patch({activeThreadId: "thread-expand", repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } }});
+    useWorkspaceStore().threads = [{ id: "thread-expand", title: "Tree", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     owned.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     owned.scheduleDesktopStateSave = vi.fn();
     const panel = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -879,11 +820,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const owned = useAppStore();
-    patchApp(owned, {
-      threads: [{ id: "thread-bulk", title: "Bulk", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-bulk",
-      repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } },
-    });
+    owned.$patch({activeThreadId: "thread-bulk", repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } }});
+    useWorkspaceStore().threads = [{ id: "thread-bulk", title: "Bulk", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     owned.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     owned.scheduleDesktopStateSave = vi.fn();
     const panel = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -911,11 +849,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "thread-cap", title: "Cap", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-cap",
-      repositoryByWorkspace: { "d:/repo": { files: paths.map((path) => ({ path, name: path.split("/").pop() ?? path })), git: { isRepository: true, files: [] } } },
-    });
+    store.$patch({activeThreadId: "thread-cap", repositoryByWorkspace: { "d:/repo": { files: paths.map((path) => ({ path, name: path.split("/").pop() ?? path })), git: { isRepository: true, files: [] } } }});
+    useWorkspaceStore().threads = [{ id: "thread-cap", title: "Cap", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -930,10 +865,7 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "thread-ignored", title: "Ignored", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-ignored",
-      repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-ignored", repositoryByWorkspace: { "d:/repo": {
         files: [
           { path: "README.md", name: "README.md" },
           { path: ".pi/settings.json", name: "settings.json" },
@@ -941,8 +873,8 @@ describe("InspectorPanel", () => {
           { path: ".pi/plans/2026-09-24.md", name: "2026-09-24.md", ignored: true },
         ],
         git: { isRepository: true, files: [] },
-      } },
-    });
+      } }});
+    useWorkspaceStore().threads = [{ id: "thread-ignored", title: "Ignored", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -975,11 +907,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "thread-filter", title: "Filter", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-filter",
-      repositoryByWorkspace: { "d:/repo": { files: paths.map((path) => ({ path, name: path.split("/").pop() ?? path })), git: { isRepository: true, files: [] } } },
-    });
+    store.$patch({activeThreadId: "thread-filter", repositoryByWorkspace: { "d:/repo": { files: paths.map((path) => ({ path, name: path.split("/").pop() ?? path })), git: { isRepository: true, files: [] } } }});
+    useWorkspaceStore().threads = [{ id: "thread-filter", title: "Filter", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -1006,18 +935,15 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "thread-deep", title: "Deep", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-deep",
-      repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-deep", repositoryByWorkspace: { "d:/repo": {
         files: [
           "src/main/java/com/iot/platform/service/WearCaliberService.java",
           "src/main/resources/mapper/WearCaliberMapper.xml",
           "src/main/java/com/iot/platform/service/OrderService.java",
         ].map((path) => ({ path, name: path.split("/").pop() ?? path })),
         git: { isRepository: true, files: [] },
-      } },
-    });
+      } }});
+    useWorkspaceStore().threads = [{ id: "thread-deep", title: "Deep", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
@@ -1036,17 +962,14 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
-        id: "thread-outline", title: "Outline", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
-        status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-outline",
-      ...panelState("thread-outline", { kind: "file", path: "notes/plan.md", markdownRendered: true, preview: {
+    store.$patch({activeThreadId: "thread-outline", ...panelState("thread-outline", { kind: "file", path: "notes/plan.md", markdownRendered: true, preview: {
         path: "notes/plan.md", absolutePath: "D:\\repo\\notes\\plan.md", mediaType: "text/markdown",
         content: "# Plan\n\n## Intro\n\n### Setup\n\n## 深度工作\n\nbody\n", size: 60, binary: false, truncated: false,
-      } }),
-    });
+      } })});
+    useWorkspaceStore().threads = [{
+        id: "thread-outline", title: "Outline", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
@@ -1090,17 +1013,14 @@ describe("InspectorPanel", () => {
       if (!record) throw new Error("the markdown preview host is not observed");
       record.cb([{ contentRect: { width } } as unknown as ResizeObserverEntry], {} as ResizeObserver);
     };
-    patchApp(store, {
-      threads: [{
-        id: "thread-drag", title: "Drag", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
-        status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-drag",
-      ...panelState("thread-drag", { kind: "file", path: "plan.md", markdownRendered: true, preview: {
+    store.$patch({activeThreadId: "thread-drag", ...panelState("thread-drag", { kind: "file", path: "plan.md", markdownRendered: true, preview: {
         path: "plan.md", absolutePath: "D:\\repo\\plan.md", mediaType: "text/markdown",
         content: "# Plan\n\n## Intro\n\n### Setup\n\n## Ship\n", size: 40, binary: false, truncated: false,
-      } }),
-    });
+      } })});
+    useWorkspaceStore().threads = [{
+        id: "thread-drag", title: "Drag", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
@@ -1140,17 +1060,14 @@ describe("InspectorPanel", () => {
     const store = useAppStore();
     // No ResizeObserver in this environment, so the panel width is what the decision reads.
     store.inspectorWidth = 700;
-    patchApp(store, {
-      threads: [{
-        id: "thread-rail", title: "Rail", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
-        status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-rail",
-      ...panelState("thread-rail", { kind: "file", path: "plan.md", markdownRendered: true, preview: {
+    store.$patch({activeThreadId: "thread-rail", ...panelState("thread-rail", { kind: "file", path: "plan.md", markdownRendered: true, preview: {
         path: "plan.md", absolutePath: "D:\\repo\\plan.md", mediaType: "text/markdown",
         content: "# Plan\n\n## Intro\n\n### Setup\n\n## Ship\n", size: 40, binary: false, truncated: false,
-      } }),
-    });
+      } })});
+    useWorkspaceStore().threads = [{
+        id: "thread-rail", title: "Rail", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
@@ -1174,16 +1091,11 @@ describe("InspectorPanel", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     store.inspectorWidth = 700;
-    patchApp(store, {
-      threads: [{
+    store.$patch({activeThreadId: "thread-late", ...panelState("thread-late", { kind: "file", path: "plan.md", markdownRendered: true })});
+    useWorkspaceStore().threads = [{
         id: "thread-late", title: "Late", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-late",
-      // The tab exists but its content does not: this is what a click in the file tree actually does,
-      // and the old watcher on store state never saw the markdown document enter the DOM afterwards.
-      ...panelState("thread-late", { kind: "file", path: "plan.md", markdownRendered: true }),
-    });
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     repositoryMocks.previewFile.mockResolvedValue({
       path: "plan.md", absolutePath: "D:\\repo\\plan.md", mediaType: "text/markdown",
@@ -1202,17 +1114,14 @@ describe("InspectorPanel", () => {
     setActivePinia(pinia);
     const store = useAppStore();
     store.inspectorWidth = 420;
-    patchApp(store, {
-      threads: [{
-        id: "thread-float", title: "Float", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
-        status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-float",
-      ...panelState("thread-float", { kind: "file", path: "notes/float.md", markdownRendered: true, preview: {
+    store.$patch({activeThreadId: "thread-float", ...panelState("thread-float", { kind: "file", path: "notes/float.md", markdownRendered: true, preview: {
         path: "notes/float.md", absolutePath: "D:\\repo\\notes\\float.md", mediaType: "text/markdown",
         content: "# Float\n\n## One\n\n## Two\n\n## Three\n", size: 40, binary: false, truncated: false,
-      } }),
-    });
+      } })});
+    useWorkspaceStore().threads = [{
+        id: "thread-float", title: "Float", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
@@ -1241,17 +1150,14 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
-        id: "thread-noheadings", title: "Plain", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
-        status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-noheadings",
-      ...panelState("thread-noheadings", { kind: "file", path: "notes/plain.md", markdownRendered: true, preview: {
+    store.$patch({activeThreadId: "thread-noheadings", ...panelState("thread-noheadings", { kind: "file", path: "notes/plain.md", markdownRendered: true, preview: {
         path: "notes/plain.md", absolutePath: "D:\\repo\\notes\\plain.md", mediaType: "text/markdown",
         content: "just prose\n\n- and a list\n", size: 22, binary: false, truncated: false,
-      } }),
-    });
+      } })});
+    useWorkspaceStore().threads = [{
+        id: "thread-noheadings", title: "Plain", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
@@ -1267,17 +1173,14 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
-        id: "thread-find", title: "Find", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
-        status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-find",
-      ...panelState("thread-find", { kind: "file", path: "notes/find.md", markdownRendered: true, preview: {
+    store.$patch({activeThreadId: "thread-find", ...panelState("thread-find", { kind: "file", path: "notes/find.md", markdownRendered: true, preview: {
         path: "notes/find.md", absolutePath: "D:\\repo\\notes\\find.md", mediaType: "text/markdown",
         content: "# Alpha\n\nfirst alpha\n\nsecond ALPHA\n\nnothing here\n", size: 44, binary: false, truncated: false,
-      } }),
-    });
+      } })});
+    useWorkspaceStore().threads = [{
+        id: "thread-find", title: "Find", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });
     await flushPromises();
@@ -1330,17 +1233,14 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{
-        id: "thread-jump", title: "Jump", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
-        status: "idle", started: false, generation: 0,
-      }],
-      activeThreadId: "thread-jump",
-      ...panelState("thread-jump", { kind: "file", path: "notes/a.md", markdownRendered: true, preview: {
+    store.$patch({activeThreadId: "thread-jump", ...panelState("thread-jump", { kind: "file", path: "notes/a.md", markdownRendered: true, preview: {
         path: "notes/a.md", absolutePath: "D:\\repo\\notes\\a.md", mediaType: "text/markdown",
         content: "# A\n\n[goto b](b.md#target)\n", size: 24, binary: false, truncated: false,
-      } }),
-    });
+      } })});
+    useWorkspaceStore().threads = [{
+        id: "thread-jump", title: "Jump", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
+        status: "idle", started: false, generation: 0,
+      }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     repositoryMocks.previewFile.mockImplementation((_root: string, path: string) => Promise.resolve({
       path, absolutePath: `D:\\repo\\${path}`, mediaType: "text/markdown",
@@ -1378,14 +1278,11 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "thread-scroll", title: "Scroll", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-scroll",
-      repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-scroll", repositoryByWorkspace: { "d:/repo": {
         files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }],
         git: { isRepository: true, files: [] },
-      } },
-    });
+      } }});
+    useWorkspaceStore().threads = [{ id: "thread-scroll", title: "Scroll", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
     repositoryMocks.previewFile.mockResolvedValue({ path: "src/index.ts", content: "x" });
@@ -1412,12 +1309,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "thread-late", title: "Late", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }],
-      activeThreadId: "thread-late",
-      repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } },
-      inspectorByThread: { "thread-late": { tabs: [{ id: "late-diff", kind: "diff", title: "diff", path: "", treeOpen: false, scroll: { ".panel-file-tree": [0, 1200] } }], activeId: "late-diff", open: true, width: 600, expanded: false } },
-    });
+    store.$patch({activeThreadId: "thread-late", repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } }, inspectorByThread: { "thread-late": { tabs: [{ id: "late-diff", kind: "diff", title: "diff", path: "", treeOpen: false, scroll: { ".panel-file-tree": [0, 1200] } }], activeId: "late-diff", open: true, width: 600, expanded: false } }});
+    useWorkspaceStore().threads = [{ id: "thread-late", title: "Late", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
     const wrapper = mount(InspectorPanel, { global: { plugins: [pinia] } });

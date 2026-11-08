@@ -5,17 +5,6 @@ import { useAppStore } from "../stores/app";
 import { useWorkspaceStore } from "../stores/workspace";
 import NewTaskDialog from "./NewTaskDialog.vue";
 
-// R1b workspace store split: tests still seed the app store by name. Route
-// workspace-owned fields to their new owner and patch the rest as before.
-function patchApp(store: any, partial: any) {
-  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
-  store.$patch(rest);
-  const workspace = useWorkspaceStore();
-  if (threads !== undefined) workspace.threads = threads;
-  if (workspaces !== undefined) workspace.workspaces = workspaces;
-  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
-  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
-}
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -86,11 +75,8 @@ describe("NewTaskDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      newTaskOpen: true,
-      workspaces: [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }],
-      bootstrap: { workingDirectory: "D:\\work\\repo" },
-    });
+    store.$patch({newTaskOpen: true, bootstrap: { workingDirectory: "D:\\work\\repo" }});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "repo", path: "D:\\work\\repo", trust: "deny" }];;
 
     const wrapper = mount(NewTaskDialog, { global: { plugins: [pinia] } });
 
@@ -324,15 +310,12 @@ describe("NewTaskDialog", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      newTaskOpen: true,
-      workspaces: [{ id: "workspace-existing", name: "Existing", path: "", kind: "ssh", targetId: "target-1", remoteRoot: "/srv/existing", trust: "approve" }],
-      threads: [{
+    store.$patch({newTaskOpen: true, remoteReadyByWorkspace: { "workspace-existing": true }});
+    useWorkspaceStore().workspaces = [{ id: "workspace-existing", name: "Existing", path: "", kind: "ssh", targetId: "target-1", remoteRoot: "/srv/existing", trust: "approve" }];
+    useWorkspaceStore().threads = [{
         id: "thread-running", title: "Running", workspace: "Existing", workspaceId: "workspace-existing", workspacePath: "", trust: "approve",
         status: "running", started: true, generation: 7,
-      }],
-      remoteReadyByWorkspace: { "workspace-existing": true },
-    });
+      }];;
     store.stopRemoteTargetThreads = vi.fn().mockImplementation(async (targetID: string) => {
       store.threads[0].started = false;
       store.threads[0].status = "idle";

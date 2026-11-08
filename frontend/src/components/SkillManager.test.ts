@@ -6,17 +6,6 @@ import { useAppStore } from "../stores/app";
 import { useWorkspaceStore } from "../stores/workspace";
 import SkillManager from "./SkillManager.vue";
 
-// R1b workspace store split: tests still seed the app store by name. Route
-// workspace-owned fields to their new owner and patch the rest as before.
-function patchApp(store: any, partial: any) {
-  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
-  store.$patch(rest);
-  const workspace = useWorkspaceStore();
-  if (threads !== undefined) workspace.threads = threads;
-  if (workspaces !== undefined) workspace.workspaces = workspaces;
-  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
-  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
-}
 
 const skillMocks = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() }));
 const piSkillRoot = "C:\\Users\\dev\\.pi\\agent\\skills";
@@ -116,11 +105,8 @@ describe("SkillManager", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      threads: [{ id: "thread-1", title: "Runtime", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }],
-      activeThreadId: "thread-1",
-      commandsByThread: { "thread-1": [{ name: "package-skill", description: "Loaded from a package", source: "skill", path: "C:\\package\\skills\\package-skill\\SKILL.md" }] },
-    });
+    store.$patch({activeThreadId: "thread-1", commandsByThread: { "thread-1": [{ name: "package-skill", description: "Loaded from a package", source: "skill", path: "C:\\package\\skills\\package-skill\\SKILL.md" }] }});
+    useWorkspaceStore().threads = [{ id: "thread-1", title: "Runtime", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: true, generation: 1 }];;
     const wrapper = mount(SkillManager, { global: { plugins: [pinia] } });
     await flushPromises();
 

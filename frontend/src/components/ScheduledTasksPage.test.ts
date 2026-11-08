@@ -5,17 +5,6 @@ import { useAppStore } from "../stores/app";
 import { useWorkspaceStore } from "../stores/workspace";
 import ScheduledTasksPage from "./ScheduledTasksPage.vue";
 
-// R1b workspace store split: tests still seed the app store by name. Route
-// workspace-owned fields to their new owner and patch the rest as before.
-function patchApp(store: any, partial: any) {
-  const { threads, workspaces, workspaceApplications, workspaceApplication, ...rest } = partial;
-  store.$patch(rest);
-  const workspace = useWorkspaceStore();
-  if (threads !== undefined) workspace.threads = threads;
-  if (workspaces !== undefined) workspace.workspaces = workspaces;
-  if (workspaceApplications !== undefined) workspace.workspaceApplications = workspaceApplications;
-  if (workspaceApplication !== undefined) workspace.workspaceApplication = workspaceApplication;
-}
 
 vi.mock("../services/agent", () => ({ agentService: {}, onPiEvent: () => () => undefined }));
 vi.mock("../services/catalog", () => ({ catalogService: {} }));
@@ -32,9 +21,7 @@ describe("ScheduledTasksPage", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "approve" }],
-      scheduledTasks: [{
+    store.$patch({scheduledTasks: [{
         id: "schedule-1",
         name: "Review dependency updates",
         prompt: "Inspect dependency updates and report breaking changes.",
@@ -49,8 +36,8 @@ describe("ScheduledTasksPage", () => {
         nextRunAt: new Date(Date.now() + 60_000).toISOString(),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      }],
-    });
+      }]});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "approve" }];;
     store.runScheduledTask = vi.fn().mockResolvedValue("thread-1");
     const wrapper = mount(ScheduledTasksPage, { global: { plugins: [pinia] } });
 
@@ -81,20 +68,15 @@ describe("ScheduledTasksPage", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "approve" }],
-      threads: [{
-        id: "thread-1", title: "Current", workspace: "pi-desk", workspaceId: "workspace-1", workspacePath: "D:\\repo",
-        trust: "approve", status: "idle", started: true, generation: 1, createdAt: new Date().toISOString(), modifiedAt: new Date().toISOString(), unread: false,
-      }],
-      activeThreadId: "thread-1",
-      knownRuntimeModels: [
+    store.$patch({activeThreadId: "thread-1", knownRuntimeModels: [
         { provider: "anthropic", id: "claude", name: "Claude" },
         { provider: "openai", id: "gpt-5.6", name: "GPT 5.6" },
-      ],
-      sessionStateByThread: { "thread-1": { model: { provider: "openai", id: "gpt-5.6", name: "GPT 5.6" }, thinkingLevel: "high" } },
-      thinkingLevelsByThread: { "thread-1": ["low", "medium", "high"] },
-    });
+      ], sessionStateByThread: { "thread-1": { model: { provider: "openai", id: "gpt-5.6", name: "GPT 5.6" }, thinkingLevel: "high" } }, thinkingLevelsByThread: { "thread-1": ["low", "medium", "high"] }});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "approve" }];
+    useWorkspaceStore().threads = [{
+        id: "thread-1", title: "Current", workspace: "pi-desk", workspaceId: "workspace-1", workspacePath: "D:\\repo",
+        trust: "approve", status: "idle", started: true, generation: 1, createdAt: new Date().toISOString(), modifiedAt: new Date().toISOString(), unread: false,
+      }];;
     const wrapper = mount(ScheduledTasksPage, { global: { plugins: [pinia] } });
 
     await wrapper.get(".scheduled-tasks-header button").trigger("click");
@@ -111,13 +93,11 @@ describe("ScheduledTasksPage", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    patchApp(store, {
-      workspaces: [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "approve" }],
-      knownRuntimeModels: [
+    store.$patch({knownRuntimeModels: [
         { provider: "anthropic", id: "claude", name: "Claude" },
         { provider: "openai", id: "gpt-5.6", name: "GPT 5.6" },
-      ],
-    });
+      ]});
+    useWorkspaceStore().workspaces = [{ id: "workspace-1", name: "pi-desk", path: "D:\\repo", trust: "approve" }];;
     const wrapper = mount(ScheduledTasksPage, { global: { plugins: [pinia] } });
 
     await wrapper.get(".scheduled-tasks-header button").trigger("click");
