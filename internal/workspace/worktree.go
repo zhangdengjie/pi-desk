@@ -74,12 +74,15 @@ func (catalog *Catalog) AddWorktree(parentID, path, branch, taskID string) (Reco
 			Kind:  KindLocal,
 			Local: LocalLocation{CanonicalPath: canonical},
 		},
-		Trust:             parent.Trust,
-		ParentWorkspaceID: parent.ID,
-		WorktreeBranch:    branch,
-		WorktreeTaskID:    taskID,
-		AddedAt:           now,
-		LastOpenedAt:      now,
+		Trust:                parent.Trust,
+		ParentWorkspaceID:    parent.ID,
+		WorktreeBranch:       branch,
+		WorktreeTaskID:       taskID,
+		DefaultModelProvider: parent.DefaultModelProvider,
+		DefaultModelID:       parent.DefaultModelID,
+		DefaultThinking:      parent.DefaultThinking,
+		AddedAt:              now,
+		LastOpenedAt:         now,
 	}
 	records = append(records, record)
 	if err := catalog.saveLocked(records, catalog.desktop); err != nil {
