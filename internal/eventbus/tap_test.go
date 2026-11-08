@@ -124,6 +124,10 @@ func TestTapPersistsRunEventsAndUsage(t *testing.T) {
 	if err != nil || run.Status != task.StatusCompleted || run.FinishedAt == nil {
 		t.Fatalf("run = %+v, %v", run, err)
 	}
+	completedTask, err := store.GetTask(ctx, run.TaskID)
+	if err != nil || completedTask.Status != task.StatusCompleted || completedTask.CompletedAt == nil {
+		t.Fatalf("task = %+v, %v", completedTask, err)
+	}
 	usage, err := store.GetUsage(ctx, runID)
 	if err != nil {
 		t.Fatalf("usage: %v", err)

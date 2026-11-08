@@ -21,34 +21,52 @@ import { FONT_FAMILY_INPUT_MAX } from "../utils/fontFamily";
 import { BATCH_ASK_PLACEHOLDER, parseBatchAskEnvelope, type BatchAskQuestion } from "../utils/batchAsk";
 import { formatFileMention } from "../utils/fileMentions";
 import { appendQuoteToDraft, formatSelectionQuote } from "../utils/selectionQuote";
-import { MAX_ATTACHED_IMAGES, MAX_SOURCE_IMAGE_BYTES, parseImageDataURL, type PreparedImage } from "../utils/imageAttachments";
-import { sessionImageUrl } from "../utils/sessionImages";
+import { MAX_ATTACHED_IMAGES, MAX_SOURCE_IMAGE_BYTES, type PreparedImage } from "../utils/imageAttachments";
 import { skillInvocationCommandText, skillInvocationTitleText } from "../utils/skillInvocation";
-import { runtimeErrorText } from "../utils/runtimeError";
 import type { SubagentTaskSummary } from "../utils/subagentTasks";
-import { buildToolDiff } from "../utils/toolDiff";
 import {
   boundedToolOutput,
   contentText,
   contentThinking,
   messageEndParts,
   messageStartParts,
-  messageTimestamp,
   retryEndFromPayload,
   retryStartFromPayload,
-  tokenCount,
   toolProgressFromPayload,
   toolStartFromPayload,
 } from "./events/piEvents";
 import { threadTitleText } from "../utils/threadLabel";
 import { setAppLanguage, tr } from "../i18n";
+import type { ScheduledTask, ScheduledTaskDraft } from "../utils/scheduledTasks";
 import {
-  localDateTimeToISO,
-  nextScheduledRun,
-  scheduledTaskThinkingLevels,
-  type ScheduledTask,
-  type ScheduledTaskDraft,
-} from "../utils/scheduledTasks";
+  checkScheduledTasks,
+  clearScheduledTaskStopping,
+  deleteScheduledTask,
+  finishScheduledRun,
+  isScheduledTaskStopping,
+  markScheduledTaskStopping,
+  restoreScheduledTask,
+  runScheduledTask,
+  saveScheduledTask,
+  startScheduledTaskScheduler,
+  stopScheduledTaskScheduler,
+  toggleScheduledTask,
+} from "./scheduledTaskActions";
+
+import {
+  adoptStreamedIds,
+  compactionEstimateKey,
+  contentImages,
+  copyMessages,
+  findTool,
+  historicalMessages,
+  imageAttachmentContent,
+  latestPromptCacheStatus,
+  liveCompactionMessage,
+  nestedToolHistory,
+  promptCacheStatus,
+  transcriptDisplayID,
+} from "./transcriptHistory";
 
 export type ThreadStatus = "idle" | "starting" | "running" | "attention";
 export interface PanelTab {
@@ -516,7 +534,6 @@ function agentPayload(value: unknown): Record<string, unknown> {
 // an editor and back is the gesture, and no timer runs while nobody looks.
 let unsubscribeUserConfigWatch: (() => void) | undefined;
 let desktopSaveTimer: ReturnType<typeof setTimeout> | undefined;
-const scheduledTaskStoppingThreads = new Set<string>();
 let desktopSavePromise: Promise<void> | undefined;
 let desktopSavePending = false;
 let searchGeneration = 0;
@@ -540,8 +557,6 @@ function isCurrentPiRequest(threads: ThreadSummary[], thread: ThreadSummary | un
   return Boolean(thread && threads.includes(thread) && thread.generation === generation && (!wasStarted || thread.started));
 }
 const settledReloadPromises = new Map<string, Promise<void>>();
-let scheduledTaskTimer: ReturnType<typeof setInterval> | undefined;
-let scheduledTaskTicking = false;
 function supportsContextEdits(version?: string): boolean {
   const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version?.trim() ?? "");
   if (!match) return false;
@@ -770,305 +785,6 @@ function timelineSearchText(messages: TimelineMessage[]): string {
 
 function sessionSearchVersion(thread: ThreadSummary): string {
   return `${thread.sessionFile ?? ""}\n${thread.messageCount ?? ""}\n${thread.modifiedAt ?? ""}`;
-}
-
-function contentImages(content: unknown): PreparedImage[] {
-  if (!Array.isArray(content)) return [];
-  return content.flatMap((part, index) => {
-    if (!part || typeof part !== "object") return [];
-    const value = part as Record<string, unknown>;
-    if (value.type !== "image" || typeof value.mimeType !== "string") return [];
-    // A snapshot image carries a reference instead of bytes (see utils/sessionImages.ts). Its
-    // payload is the URL itself - one string, no base64 copy, and no `data:` URL built here.
-    if (typeof value.ref === "string" && value.ref) {
-      return [{
-        id: createID(`history-image-${index}`),
-        name: `Image ${index + 1}`,
-        data: "",
-        bytes: typeof value.bytes === "number" ? value.bytes : undefined,
-        ref: value.ref,
-        mimeType: value.mimeType,
-        previewUrl: sessionImageUrl(value.ref),
-      }];
-    }
-    if (typeof value.data !== "string" || !value.data) return [];
-    return [{
-      id: createID(`history-image-${index}`),
-      name: `Image ${index + 1}`,
-      data: value.data,
-      mimeType: value.mimeType,
-      previewUrl: `data:${value.mimeType};base64,${value.data}`,
-    }];
-  });
-}
-
-/**
- * The one path that still needs an image's bytes: sending it. A fork of a user message carries that
- * message's images into the composer, and those may be reference-only, so they are fetched back and
- * encoded at the RPC boundary instead of being kept in memory for the whole session.
- */
-async function imageAttachmentContent(image: PreparedImage): Promise<{ type: "image"; data: string; mimeType: string }> {
-  if (image.data || !image.ref) return { type: "image", data: image.data, mimeType: image.mimeType };
-  const response = await fetch(sessionImageUrl(image.ref));
-  if (!response.ok) throw new Error("Unable to read the attached image");
-  const parsed = parseImageDataURL(await readBlobDataURL(await response.blob()), image.mimeType);
-  return { type: "image", data: parsed.data, mimeType: parsed.mimeType };
-}
-
-function readBlobDataURL(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error || new Error("Unable to read the attached image"));
-    reader.onload = () => resolve(String(reader.result));
-    reader.readAsDataURL(blob);
-  });
-}
-
-
-
-
-function messageTime(value: unknown): string {
-  const timestamp = messageTimestamp(value);
-  return timestamp === undefined ? "" : formatMessageTime(new Date(timestamp));
-}
-
-function transcriptDisplayID(value: Record<string, unknown>): string | undefined {
-  if (typeof value.piDeskEntryId === "string") return value.piDeskEntryId;
-  return typeof value.piDeskDisplayId === "string" ? value.piDeskDisplayId : undefined;
-}
-
-function historicalIdentity(value: Record<string, unknown>, fallback: string, prefix = "history"): { id: string; entryId?: string } {
-  const entryId = typeof value.piDeskEntryId === "string" ? value.piDeskEntryId : undefined;
-  const displayId = transcriptDisplayID(value);
-  return {
-    id: displayId ? `${prefix}-${displayId}` : createID(fallback),
-    entryId,
-  };
-}
-
-
-function promptCacheStatus(message: Record<string, unknown>, cacheObserved = false): PromptCacheStatus | undefined {
-  if (!message.usage || typeof message.usage !== "object" || Array.isArray(message.usage)) return undefined;
-  const usage = message.usage as Record<string, unknown>;
-  const input = tokenCount(usage.input) ?? 0;
-  const cacheRead = tokenCount(usage.cacheRead) ?? 0;
-  const cacheWrite = tokenCount(usage.cacheWrite) ?? 0;
-  if (input + cacheRead + cacheWrite === 0) return undefined;
-  return { input, cacheRead, cacheWrite, cacheObserved: cacheObserved || cacheRead + cacheWrite > 0 };
-}
-
-function latestPromptCacheStatus(source: Array<Record<string, unknown>>): PromptCacheStatus | undefined {
-  let latest: PromptCacheStatus | undefined;
-  for (const message of source) {
-    if (message.role !== "assistant") continue;
-    latest = promptCacheStatus(message, latest?.cacheObserved) ?? latest;
-  }
-  return latest;
-}
-
-function compactionEstimateKey(summary: string, tokensBefore: number | undefined): string {
-  return `${tokensBefore ?? ""}\n${summary}`;
-}
-
-function findTool(tools: ToolExecution[], id: string): ToolExecution | undefined {
-  for (const tool of tools) {
-    if (tool.id === id) return tool;
-    const child = findTool(tool.children ?? [], id);
-    if (child) return child;
-  }
-}
-
-function nestedToolHistory(value: unknown): ToolExecution[] | undefined {
-  if (!value || typeof value !== "object") return;
-  const calls = (value as Record<string, unknown>).calls;
-  if (!Array.isArray(calls)) return;
-  const roots: ToolExecution[] = [];
-  const byId = new Map<string, ToolExecution>();
-  for (const call of calls) {
-    if (!call || typeof call !== "object") continue;
-    const tool: ToolExecution = {
-      id: String(call.id), name: String(call.name), arguments: call.arguments,
-      output: typeof call.error === "string" ? call.error : call.status === "unfinished" ? tr("tools.unfinished") : "",
-      status: call.status === "ok" ? "complete" : call.status === "unfinished" ? "unfinished" : "error",
-      resultReceived: call.status !== "unfinished", durationMs: tokenCount(call.durationMs),
-    };
-    // Pi assigns each nested call <callerId>/<n>; the durable record omits parentToolCallId.
-    const parent = byId.get(tool.id.slice(0, tool.id.lastIndexOf("/")));
-    (parent ? (parent.children ??= []) : roots).push(tool);
-    byId.set(tool.id, tool);
-  }
-  return roots;
-}
-
-function historicalMessages(
-  source: Array<Record<string, unknown>>,
-  compactionEstimates: Record<string, number> = {},
-  compactionDurations: Record<string, number> = {},
-): TimelineMessage[] {
-  const result: TimelineMessage[] = [];
-  const toolsByID = new Map<string, ToolExecution>();
-  for (const value of source) {
-    const role = String(value.role ?? "");
-    if (role === "piDeskCompaction") {
-      const identity = historicalIdentity(value, "history-compaction", "history-compaction");
-      const summary = typeof value.summary === "string" ? value.summary : "";
-      const tokensBefore = tokenCount(value.tokensBefore);
-      const persistedEstimate = tokenCount(value.estimatedTokensAfter);
-      const estimateKey = compactionEstimateKey(summary, tokensBefore);
-      result.push({
-        id: identity.id,
-        role: "system", text: "", thinking: "",
-        timestamp: messageTime(value.timestamp), timestampMs: messageTimestamp(value.timestamp), streaming: false, tools: [],
-        compaction: {
-          summary,
-          tokensBefore,
-          estimatedTokensAfter: persistedEstimate ?? compactionEstimates[estimateKey],
-          durationMs: compactionDurations[estimateKey],
-        },
-      });
-      continue;
-    }
-    if (role === "toolResult") {
-      const toolCallID = String(value.toolCallId ?? "");
-      const tool = toolsByID.get(toolCallID);
-      if (tool) {
-        tool.entryId = typeof value.piDeskEntryId === "string" ? value.piDeskEntryId : undefined;
-        tool.contextExcluded = value.piDeskContextExcluded === true || undefined;
-        const output = boundedToolOutput(contentText(value.content));
-        tool.output = output.text;
-        tool.truncated = output.truncated || undefined;
-        tool.resultReceived = true;
-        tool.status = value.isError ? "error" : "complete";
-        const images = contentImages(value.content);
-        if (images.length) tool.images = images;
-        const endedAt = messageTimestamp(value.timestamp);
-        tool.durationMs = tokenCount(value.durationMs) ?? (endedAt !== undefined && tool.startedAt !== undefined ? Math.max(0, endedAt - tool.startedAt) : undefined);
-        tool.children = nestedToolHistory(value.nestedCalls);
-        tool.nestedCallsIncomplete = !!value.nestedCalls && (value.nestedCalls as Record<string, unknown>).complete === false;
-        tool.diff = buildToolDiff(tool.name, tool.arguments, value.details) ?? tool.diff;
-      }
-      continue;
-    }
-    if (role === "user") {
-      const images = contentImages(value.content);
-      const identity = historicalIdentity(value, "history-user");
-      result.push({
-        ...identity,
-        role: "user", text: contentText(value.content), thinking: "",
-        timestamp: messageTime(value.timestamp), timestampMs: messageTimestamp(value.timestamp), streaming: false, images, tools: [],
-        contextExcluded: value.piDeskContextExcluded === true || undefined,
-      });
-      continue;
-    }
-    if (role === "assistant") {
-      const content = Array.isArray(value.content) ? value.content : [];
-      const tools: ToolExecution[] = [];
-      for (const item of content) {
-        if (!item || typeof item !== "object") continue;
-        const part = item as Record<string, unknown>;
-        if (part.type === "toolCall") {
-          const tool: ToolExecution = {
-            id: String(part.id ?? createID("history-tool")), name: String(part.name ?? "tool"),
-            arguments: part.arguments, output: "", status: "unfinished", startedAt: messageTimestamp(value.timestamp),
-          };
-          tool.diff = buildToolDiff(tool.name, tool.arguments);
-          tools.push(tool);
-          toolsByID.set(tool.id, tool);
-        }
-      }
-      const identity = historicalIdentity(value, "history-assistant");
-      result.push({
-        ...identity,
-        role: "assistant", text: contentText(value.content), thinking: contentThinking(value.content),
-        timestamp: messageTime(value.timestamp), timestampMs: messageTimestamp(value.timestamp), streaming: false,
-        error: runtimeErrorText(value.errorMessage), tools,
-        contextExcluded: value.piDeskContextExcluded === true || undefined,
-      });
-      continue;
-    }
-    if (role === "bashExecution") {
-      const command = typeof value.command === "string" ? value.command : "";
-      const output = typeof value.output === "string" ? value.output : "";
-      result.push({
-        ...historicalIdentity(value, "history-bash"), role: "system", text: [`$ ${command}`, output].filter(Boolean).join("\n"),
-        thinking: "", timestamp: messageTime(value.timestamp), timestampMs: messageTimestamp(value.timestamp), streaming: false,
-        error: Number(value.exitCode ?? 0) !== 0 ? `Command exited with code ${String(value.exitCode)}` : undefined, tools: [],
-      });
-    }
-  }
-  return result;
-}
-
-function liveCompactionMessage(payload: Record<string, unknown>, durationMs?: number): TimelineMessage | undefined {
-  if (payload.aborted === true) return undefined;
-  const result = payload.result && typeof payload.result === "object" ? payload.result as Record<string, unknown> : undefined;
-  if (!result || typeof result.summary !== "string") return undefined;
-  const tokensBefore = tokenCount(result.tokensBefore);
-  const timestampMs = Date.now();
-  return {
-    id: createID("live-compaction"),
-    role: "system", text: "", thinking: "",
-    timestamp: formatMessageTime(new Date(timestampMs)), timestampMs, streaming: false, tools: [],
-    compaction: {
-      summary: result.summary,
-      tokensBefore,
-      estimatedTokensAfter: tokenCount(result.estimatedTokensAfter),
-      durationMs,
-    },
-  };
-}
-
-/**
- * Give the rows of the run that just settled back the ids they streamed under.
- *
- * A live turn is keyed by the RPC message id; the transcript snapshot that replaces it a
- * moment later is keyed by the session entry id (`historicalIdentity`). Same row, two
- * ids - and two ids mean Vue tears the row down and builds it again: the markdown is
- * parsed a second time, `useRevealedText` restarts, the reader's expanded panels are
- * forgotten (`detailsOpenState` remembers them by message id) and the virtualizer
- * re-measures every row below. Adopting the streamed id makes the settled transcript a
- * patch instead of a rebuild.
- *
- * Deliberately narrow: only the tail still keyed by a streamed id is touched, and it is
- * matched from the end so a repeated prompt cannot re-pair older rows. `entryId` is left
- * as the snapshot set it - edit/delete/fork address the session entry through that, not
- * through the display id.
- */
-function adoptStreamedIds(historical: TimelineMessage[], previous: TimelineMessage[]): void {
-  let incoming = historical.length - 1;
-  let streamed = previous.length - 1;
-  while (incoming >= 0 && streamed >= 0) {
-    const next = historical[incoming];
-    const live = previous[streamed];
-    // A row on a session entry id on either side means the run ends here.
-    if (live.id.startsWith("history-") || !next.id.startsWith("history-")) return;
-    // A prompt can come back expanded (prompt templates, skills), so the one row that
-    // cannot be anything else is allowed to differ in text.
-    const sameText = next.role === live.role && next.text === live.text;
-    const samePrompt = next.role === "user" && live.role === "user";
-    if (!sameText && !samePrompt) return;
-    next.id = live.id;
-    incoming -= 1;
-    streamed -= 1;
-  }
-}
-
-function copyTool(tool: ToolExecution): ToolExecution {
-  return { ...tool, diff: tool.diff ? { ...tool.diff } : undefined, children: tool.children?.map(copyTool) };
-}
-
-function copyMessages(messages: TimelineMessage[]): TimelineMessage[] {
-  return messages.map((message) => ({
-    ...message,
-    images: message.images?.map((image) => ({ ...image })),
-    tools: message.tools.map(copyTool),
-    executionSteps: message.executionSteps?.map((step) => ({
-      ...step,
-      tools: step.tools?.map(copyTool),
-    })),
-    compaction: message.compaction ? { ...message.compaction } : undefined,
-    runNotice: message.runNotice ? { ...message.runNotice } : undefined,
-  }));
 }
 
 let lastMentionDraft = "";
@@ -2903,7 +2619,7 @@ export const useAppStore = defineStore("app", {
       const thread = this.threads.find((candidate) => candidate.id === threadId);
       if (!thread?.started) return false;
       try {
-        scheduledTaskStoppingThreads.add(thread.id);
+        markScheduledTaskStopping(thread.id);
         await agentService.stopSession(thread.id);
         this.finishScheduledRun(thread.id, "cancelled");
         thread.started = false;
@@ -2926,7 +2642,7 @@ export const useAppStore = defineStore("app", {
         this.appendSystem(thread.id, `Unable to close session: ${failure}`, failure);
         return false;
       } finally {
-        scheduledTaskStoppingThreads.delete(thread.id);
+        clearScheduledTaskStopping(thread.id);
       }
     },
     async stopActiveSession() {
@@ -3055,7 +2771,7 @@ export const useAppStore = defineStore("app", {
       try {
         await waitForPiStart(thread.id);
         if (thread.started) {
-          scheduledTaskStoppingThreads.add(thread.id);
+          markScheduledTaskStopping(thread.id);
           await agentService.stopSession(thread.id);
           this.finishScheduledRun(thread.id, "cancelled");
           thread.started = false;
@@ -3076,7 +2792,7 @@ export const useAppStore = defineStore("app", {
       } catch (error) {
         this.deleteSessionError = this.remoteFailureMessage(thread.id, error);
       } finally {
-        scheduledTaskStoppingThreads.delete(thread.id);
+        clearScheduledTaskStopping(thread.id);
         delete this.sessionOperationByThread[thread.id];
       }
     },
@@ -3169,190 +2885,31 @@ export const useAppStore = defineStore("app", {
       this.searchQuery = "";
     },
     startScheduledTaskScheduler() {
-      if (scheduledTaskTimer) return;
-      scheduledTaskTimer = setInterval(() => void this.checkScheduledTasks(), 30_000);
+      startScheduledTaskScheduler(this);
     },
     stopScheduledTaskScheduler() {
-      if (!scheduledTaskTimer) return;
-      clearInterval(scheduledTaskTimer);
-      scheduledTaskTimer = undefined;
+      stopScheduledTaskScheduler();
     },
     saveScheduledTask(draft: ScheduledTaskDraft, taskID = "") {
-      const workspace = this.workspaces.find((item) => item.id === draft.workspaceId);
-      if (!workspace || workspace.kind === "ssh" || workspace.trust !== "approve") {
-        throw new Error(tr("scheduledTasks.errors.workspace"));
-      }
-      const name = draft.name.trim();
-      const prompt = draft.prompt.trim();
-      if (!name || !prompt) throw new Error(tr("scheduledTasks.errors.required"));
-      const modelProvider = draft.modelProvider.trim();
-      const modelId = draft.modelId.trim();
-      if (!modelProvider || !modelId) throw new Error(tr("scheduledTasks.errors.model"));
-      const thinkingLevel = draft.thinkingLevel.trim();
-      if (!scheduledTaskThinkingLevels.includes(thinkingLevel as (typeof scheduledTaskThinkingLevels)[number])) {
-        throw new Error(tr("scheduledTasks.errors.thinkingLevel"));
-      }
-      const now = nowISO();
-      const existing = this.scheduledTasks.find((task) => task.id === taskID);
-      const schedule = {
-        frequency: draft.frequency,
-        time: draft.frequency === "once" ? undefined : draft.time,
-        weekday: draft.frequency === "weekly" ? draft.weekday : undefined,
-        runAt: draft.frequency === "once" ? localDateTimeToISO(draft.runAt) : undefined,
-      } as const;
-      const nextRunAt = nextScheduledRun(schedule);
-      if (!nextRunAt) throw new Error(tr("scheduledTasks.errors.future"));
-      const task: ScheduledTask = {
-        ...(existing ?? {
-          id: createID("schedule"),
-          enabled: true,
-          createdAt: now,
-        }),
-        ...schedule,
-        name,
-        prompt,
-        workspaceId: workspace.id,
-        modelProvider,
-        modelId,
-        modelName: draft.modelName.trim() || undefined,
-        thinkingLevel,
-        nextRunAt,
-        updatedAt: now,
-      };
-      if (existing) Object.assign(existing, task);
-      else this.scheduledTasks.unshift(task);
-      this.scheduleDesktopStateSave();
-      return task;
+      return saveScheduledTask(this, draft, taskID);
     },
     deleteScheduledTask(taskID: string): ScheduledTask | undefined {
-      const index = this.scheduledTasks.findIndex((task) => task.id === taskID);
-      if (index < 0) return undefined;
-      const [removed] = this.scheduledTasks.splice(index, 1);
-      this.scheduleDesktopStateSave();
-      return removed;
+      return deleteScheduledTask(this, taskID);
     },
     restoreScheduledTask(task: ScheduledTask) {
-      if (this.scheduledTasks.some((item) => item.id === task.id)) return;
-      this.scheduledTasks.unshift({
-        ...task,
-        enabled: Boolean(task.enabled && task.modelProvider && task.modelId && task.thinkingLevel),
-        updatedAt: nowISO(),
-      });
-      this.scheduleDesktopStateSave();
+      restoreScheduledTask(this, task);
     },
     toggleScheduledTask(taskID: string) {
-      const task = this.scheduledTasks.find((item) => item.id === taskID);
-      if (!task) return;
-      if (!task.enabled && (!task.modelProvider || !task.modelId || !task.thinkingLevel)) return;
-      task.enabled = !task.enabled;
-      task.updatedAt = nowISO();
-      task.nextRunAt = task.enabled ? nextScheduledRun(task) : undefined;
-      if (task.enabled && !task.nextRunAt) task.enabled = false;
-      this.scheduleDesktopStateSave();
+      toggleScheduledTask(this, taskID);
     },
     finishScheduledRun(threadId: string, status: "completed" | "failed" | "cancelled", error = "") {
-      for (const task of this.scheduledTasks) {
-        if (task.lastThreadId !== threadId || task.lastStatus !== "started") continue;
-        task.lastStatus = status;
-        task.lastError = status === "failed" ? error || this.messagesByThread[threadId]?.findLast(message => message.role === "assistant")?.error || this.threads.find(thread => thread.id === threadId)?.error : undefined;
-        task.updatedAt = nowISO();
-      }
-      this.scheduleDesktopStateSave();
+      finishScheduledRun(this, threadId, status, error);
     },
     async runScheduledTask(taskID: string, manual = true): Promise<string | undefined> {
-      const task = this.scheduledTasks.find((item) => item.id === taskID);
-      if (!task || this.scheduledTaskRunningByID[taskID] || task.lastStatus === "started") return undefined;
-      this.scheduledTaskRunningByID[taskID] = true;
-      const startedAt = nowISO();
-      let threadID: string | undefined;
-      try {
-        const workspace = this.workspaces.find((item) => item.id === task.workspaceId);
-        if (!workspace || workspace.kind === "ssh" || workspace.trust !== "approve") {
-          throw new Error(tr("scheduledTasks.errors.workspace"));
-        }
-        if (!task.modelProvider || !task.modelId) throw new Error(tr("scheduledTasks.errors.model"));
-        if (!task.thinkingLevel) throw new Error(tr("scheduledTasks.errors.thinkingLevel"));
-        threadID = createID("thread");
-        const thread: ThreadSummary = {
-          id: threadID,
-          title: task.name,
-          workspace: workspace.name,
-          workspaceId: workspace.id,
-          workspacePath: workspace.path,
-          trust: "approve",
-          status: "idle",
-          started: false,
-          generation: 0,
-          createdAt: startedAt,
-          modifiedAt: startedAt,
-          unread: true,
-        };
-        this.threads.unshift(thread);
-        this.messagesByThread[threadID] = [];
-        this.draftsByThread[threadID] = "";
-        this.transcriptEntriesByThread[threadID] = [];
-        this.transcriptStateByThread[threadID] = "loaded";
-        const scheduledModel: PiModel = { provider: task.modelProvider, id: task.modelId, name: task.modelName };
-        this.pendingModelByThread[threadID] = scheduledModel;
-        this.sessionStateByThread[threadID] = { model: scheduledModel };
-        await this.ensureSession(thread);
-        const appliedModel = this.sessionStateByThread[threadID]?.model;
-        if (!appliedModel || modelKey(appliedModel) !== modelKey(scheduledModel)) {
-          throw new Error(thread.error || tr("scheduledTasks.errors.modelApply"));
-        }
-        const availableThinkingLevels = this.thinkingLevelsByThread[threadID] ?? [];
-        if (!availableThinkingLevels.includes(task.thinkingLevel)) {
-          throw new Error(tr("scheduledTasks.errors.thinkingLevelUnavailable", { level: task.thinkingLevel }));
-        }
-        await agentService.setThinkingLevel({ threadId: threadID, level: task.thinkingLevel });
-        await this.refreshState(threadID);
-        if (this.sessionStateByThread[threadID]?.thinkingLevel !== task.thinkingLevel) {
-          throw new Error(tr("scheduledTasks.errors.thinkingLevelApply"));
-        }
-        task.lastThreadId = threadID;
-        task.lastStatus = "started";
-        task.lastError = undefined;
-        this.scheduleDesktopStateSave();
-        const delivered = await this.deliverPrompt(thread, task.prompt, []);
-        if (!delivered) throw new Error(thread.error || tr("scheduledTasks.errors.start"));
-        return threadID;
-      } catch (error) {
-        const failure = errorMessage(error);
-        task.lastStatus = "failed";
-        task.lastError = failure;
-        task.lastThreadId = threadID;
-        if (threadID) {
-          const failedThread = this.threads.find((candidate) => candidate.id === threadID);
-          if (failedThread) {
-            if (failedThread.started) {
-              failedThread.status = "attention";
-              failedThread.error = failure;
-            } else {
-              this.removeThreadState(threadID);
-            }
-          }
-        }
-        return undefined;
-      } finally {
-        task.lastRunAt = startedAt;
-        task.updatedAt = nowISO();
-        if (!manual) {
-          task.nextRunAt = task.frequency === "once" ? undefined : nextScheduledRun(task);
-          if (task.frequency === "once") task.enabled = false;
-        }
-        this.scheduledTaskRunningByID[taskID] = false;
-        this.scheduleDesktopStateSave();
-      }
+      return runScheduledTask(this, taskID, manual);
     },
     async checkScheduledTasks(now = new Date()) {
-      if (scheduledTaskTicking || !this.catalogReady) return;
-      scheduledTaskTicking = true;
-      try {
-        const due = this.scheduledTasks.filter((task) => task.enabled && task.nextRunAt && Date.parse(task.nextRunAt) <= now.getTime());
-        for (const task of due) await this.runScheduledTask(task.id, false);
-      } finally {
-        scheduledTaskTicking = false;
-      }
+      return checkScheduledTasks(this, now);
     },
     async resendEditedMessage(messageId: string, text: string): Promise<boolean> {
       const thread = this.activeThread;
@@ -4281,7 +3838,7 @@ export const useAppStore = defineStore("app", {
       this.piProcessOrder = this.piProcessOrder.filter((id) => id !== thread.id);
       thread.status = "attention";
       thread.error = error;
-      this.finishScheduledRun(thread.id, scheduledTaskStoppingThreads.has(thread.id) ? "cancelled" : "failed", thread.error);
+      this.finishScheduledRun(thread.id, isScheduledTaskStopping(thread.id) ? "cancelled" : "failed", thread.error);
       this.finishAssistant(thread.id);
       if (thread.id !== this.activeThreadId || appIsInBackground()) thread.unread = true;
       this.queueByThread[thread.id] = { steering: [], followUp: [] };

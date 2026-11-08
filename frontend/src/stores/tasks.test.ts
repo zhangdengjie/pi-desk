@@ -9,6 +9,7 @@ const listRunEvents = vi.fn();
 const enabled = vi.fn();
 const cancelTask = vi.fn();
 const retryTask = vi.fn();
+const adoptThread = vi.fn();
 const archiveTask = vi.fn();
 const unarchiveTask = vi.fn();
 
@@ -22,6 +23,7 @@ vi.mock("../services/tasks", () => ({
     getRunUsage: vi.fn(),
     cancelTask: (...args: unknown[]) => cancelTask(...args),
     retryTask: (...args: unknown[]) => retryTask(...args),
+    adoptThread: (...args: unknown[]) => adoptThread(...args),
     archiveTask: (...args: unknown[]) => archiveTask(...args),
     unarchiveTask: (...args: unknown[]) => unarchiveTask(...args),
   },
@@ -69,6 +71,7 @@ describe("tasks store", () => {
     getTask.mockResolvedValue(detail);
     cancelTask.mockResolvedValue(detail);
     retryTask.mockResolvedValue(detail);
+    adoptThread.mockResolvedValue(detail);
     archiveTask.mockResolvedValue({ ...detail, archivedAt: 3 });
     unarchiveTask.mockResolvedValue(detail);
     listRunEvents.mockResolvedValue([{
@@ -126,6 +129,16 @@ describe("tasks store", () => {
     expect(store.view).toBe("archived");
     expect(listArchivedTasks).toHaveBeenCalledOnce();
     expect(store.tasks).toEqual([archived]);
+    expect(store.selectedTaskID).toBe("task_1");
+  });
+
+  it("adopts a thread and selects its task", async () => {
+    const store = useTasksStore();
+    await store.refresh();
+    const adopted = await store.adoptThread("thread-1");
+    expect(adoptThread).toHaveBeenCalledWith("thread-1");
+    expect(adopted.id).toBe("task_1");
+    expect(store.view).toBe("active");
     expect(store.selectedTaskID).toBe("task_1");
   });
 

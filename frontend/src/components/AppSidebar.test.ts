@@ -584,6 +584,7 @@ describe("AppSidebar", () => {
     await wrapper.get(".thread-row").trigger("contextmenu", { clientX: 40, clientY: 60 });
     const menuItems = wrapper.get(".thread-context-menu").findAll('[role="menuitem"]');
     expect(menuItems.map((item) => item.text())).toEqual([
+      "Open in Tasks",
       "Show in File Explorer",
       "Rename task",
       "Session branches",
@@ -596,7 +597,7 @@ describe("AppSidebar", () => {
     ]);
     expect(menuItems.find((item) => item.text() === "Archive task")!.attributes("disabled")).toBeUndefined();
 
-    await menuItems[0].trigger("click");
+    await menuItems[1].trigger("click");
     expect(store.openWorkspace).toHaveBeenCalledWith("workspace-1");
 
     for (const [label, action] of [
@@ -641,6 +642,7 @@ describe("AppSidebar", () => {
     await wrapper.get(".thread-row").trigger("contextmenu", { clientX: 40, clientY: 60 });
     const items = wrapper.get(".thread-context-menu").findAll('[role="menuitem"]');
     expect(items.map((item) => item.text())).toEqual([
+      "Open in Tasks",
       "Show in File Explorer",
       "Rename task",
       "Session branches",

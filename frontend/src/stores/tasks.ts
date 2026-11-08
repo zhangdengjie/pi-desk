@@ -14,6 +14,7 @@ export const useTasksStore = defineStore("tasks", () => {
   const view = ref<TaskView>("active");
   const tasks = ref<TaskSummary[]>([]);
   const selectedTaskID = ref("");
+  const pendingSelectionID = ref("");
   const detail = ref<TaskDetail | null>(null);
   const selectedRunID = ref("");
   const events = ref<TaskEventView[]>([]);
@@ -75,6 +76,14 @@ export const useTasksStore = defineStore("tasks", () => {
     await refreshEvents();
   }
 
+  async function adoptThread(threadId: string): Promise<TaskDetail> {
+    const adopted = await tasksService.adoptThread(threadId);
+    view.value = "active";
+    pendingSelectionID.value = adopted.id;
+    await refresh();
+    return adopted;
+  }
+
   async function runAction(action: "cancel" | "retry" | "archive" | "unarchive") {
     if (!selectedTaskID.value || actionLoading.value) return;
     actionLoading.value = true;
@@ -129,8 +138,12 @@ export const useTasksStore = defineStore("tasks", () => {
         return;
       }
       tasks.value = (view.value === "archived" ? await tasksService.listArchivedTasks() : await tasksService.listTasks()) ?? [];
+      const preferred = pendingSelectionID.value;
+      pendingSelectionID.value = "";
       const stillPresent = tasks.value.some((task) => task.id === selectedTaskID.value);
-      if (!stillPresent) {
+      if (preferred && tasks.value.some((task) => task.id === preferred)) {
+        selectedTaskID.value = preferred;
+      } else if (!stillPresent) {
         selectedTaskID.value = tasks.value.length ? tasks.value[0].id : "";
       }
       if (selectedTaskID.value) {
@@ -163,6 +176,7 @@ export const useTasksStore = defineStore("tasks", () => {
     refresh,
     select,
     selectRun,
+    adoptThread,
     refreshEvents,
     cancelSelected,
     retrySelected,

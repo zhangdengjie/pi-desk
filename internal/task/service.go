@@ -121,7 +121,13 @@ func (s *Service) CreateRun(ctx context.Context, taskID, runtimeID string) (Run,
 		return Run{}, err
 	}
 	if IsTerminal(task.Status) {
-		return Run{}, ErrInvalidTransition
+		if task.Status != StatusCompleted {
+			return Run{}, ErrInvalidTransition
+		}
+		task, err = s.TransitionTask(ctx, task.ID, StatusQueued)
+		if err != nil {
+			return Run{}, err
+		}
 	}
 	now := s.now().UTC()
 	run := Run{
@@ -180,9 +186,13 @@ func (s *Service) FinishRun(ctx context.Context, runID string, status Status, me
 	if err := s.store.UpdateRun(ctx, run); err != nil {
 		return Run{}, err
 	}
-	if status == StatusFailed || status == StatusCancelled {
-		if value, getErr := s.store.GetTask(ctx, run.TaskID); getErr == nil && CanTransitionTask(value.Status, status) {
-			_ = s.store.UpdateTaskStatus(ctx, value.ID, status, now, nil)
+	if value, getErr := s.store.GetTask(ctx, run.TaskID); getErr == nil && CanTransitionTask(value.Status, status) {
+		var completedAt *time.Time
+		if status == StatusCompleted {
+			completedAt = &now
+		}
+		if err := s.store.UpdateTaskStatus(ctx, value.ID, status, now, completedAt); err != nil {
+			return Run{}, err
 		}
 	}
 	return run, nil

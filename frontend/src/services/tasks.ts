@@ -1,4 +1,5 @@
 import {
+  AdoptThread,
   ArchiveTask,
   CancelTask,
   Enabled,
@@ -24,6 +25,7 @@ export const tasksService = {
   enabled: (): Promise<boolean> => Enabled(),
   listTasks: (): Promise<TaskSummary[] | null> => ListTasks(),
   listArchivedTasks: (): Promise<TaskSummary[] | null> => ListArchivedTasks(),
+  adoptThread: (threadId: string): Promise<TaskDetail> => AdoptThread({ threadId }),
   getTask: (request: TaskRequest): Promise<TaskDetail> => GetTask(request),
   listRunEvents: (request: TaskEventsRequest): Promise<TaskEventView[] | null> => ListRunEvents(request),
   getRunUsage: (request: TaskRunRequest): Promise<TaskUsageSummary> => GetRunUsage(request),

@@ -22,6 +22,9 @@ func CanTransitionTask(from, to Status) bool {
 	case StatusFailed, StatusCancelled:
 		// Explicit retry reopens a terminal task for one new Run.
 		return to == StatusQueued
+	case StatusCompleted:
+		// A completed Task can accumulate another Run when the user continues it.
+		return to == StatusQueued
 	default:
 		return false
 	}

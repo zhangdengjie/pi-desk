@@ -14,6 +14,7 @@ export {
 export type {
     AddModelsConfigRequest,
     AddWorkspaceRequest,
+    AdoptThreadRequest,
     BashRequest,
     BootstrapState,
     BrowserBoundsRequest,

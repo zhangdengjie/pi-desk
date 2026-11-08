@@ -89,6 +89,66 @@ func (service *TaskService) listTasks(archived bool) ([]domain.TaskSummary, erro
 	return result, nil
 }
 
+func (service *TaskService) AdoptThread(request domain.AdoptThreadRequest) (domain.TaskDetail, error) {
+	if service.service == nil {
+		return domain.TaskDetail{}, errors.New("task data is disabled; remove PI_DESK_HARNESS=0 to enable it")
+	}
+	if service.threads == nil {
+		return domain.TaskDetail{}, errors.New("task adoption is unavailable in this build")
+	}
+	threadID := strings.TrimSpace(request.ThreadID)
+	if threadID == "" {
+		return domain.TaskDetail{}, errors.New("thread id is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if existing, err := service.service.FindTaskByLegacyThreadID(ctx, threadID); err == nil {
+		if existing.ArchivedAt != nil {
+			if existing, err = service.service.SetArchived(ctx, existing.ID, false); err != nil {
+				return domain.TaskDetail{}, err
+			}
+		}
+		return service.GetTask(domain.TaskRequest{TaskID: existing.ID})
+	} else if !errors.Is(err, task.ErrNotFound) {
+		return domain.TaskDetail{}, err
+	}
+	desktop, err := service.threads.Desktop()
+	if err != nil {
+		return domain.TaskDetail{}, err
+	}
+	var thread *workspace.ThreadRecord
+	for index := range desktop.Threads {
+		if desktop.Threads[index].ID == threadID {
+			thread = &desktop.Threads[index]
+			break
+		}
+	}
+	if thread == nil {
+		return domain.TaskDetail{}, errors.New("thread not found")
+	}
+	source := singleLegacySource{thread: task.LegacyThread{
+		ID: thread.ID, Title: thread.Title, WorkspaceID: thread.WorkspaceID,
+		WorkspacePath: thread.WorkspacePath, Trust: thread.Trust, Status: thread.Status,
+		SessionPath: thread.SessionPath, CreatedAt: thread.CreatedAt, UpdatedAt: thread.UpdatedAt,
+	}}
+	if _, err := task.ImportLegacy(ctx, service.service, source, false); err != nil {
+		return domain.TaskDetail{}, err
+	}
+	created, err := service.service.FindTaskByLegacyThreadID(ctx, threadID)
+	if err != nil {
+		return domain.TaskDetail{}, err
+	}
+	return service.GetTask(domain.TaskRequest{TaskID: created.ID})
+}
+
+type singleLegacySource struct {
+	thread task.LegacyThread
+}
+
+func (source singleLegacySource) LegacyThreads() ([]task.LegacyThread, error) {
+	return []task.LegacyThread{source.thread}, nil
+}
+
 func (service *TaskService) GetTask(request domain.TaskRequest) (domain.TaskDetail, error) {
 	if service.service == nil {
 		return domain.TaskDetail{}, errors.New("task data is disabled; remove PI_DESK_HARNESS=0 to enable it")

@@ -16,6 +16,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // @ts-ignore: Unused imports
 import * as domain$0 from "../domain/models.js";
 
+export function AdoptThread(request: domain$0.AdoptThreadRequest): $CancellablePromise<domain$0.TaskDetail> {
+    return $Call.ByID(2800923797, request);
+}
+
 export function ArchiveTask(request: domain$0.TaskRequest): $CancellablePromise<domain$0.TaskDetail> {
     return $Call.ByID(2296088556, request);
 }

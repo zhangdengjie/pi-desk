@@ -75,6 +75,46 @@ func TestTaskServiceReadModels(t *testing.T) {
 	}
 }
 
+func TestTaskServiceAdoptsThreadManually(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "pi-desk.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	workspaceService := task.NewService(store)
+	service := &TaskService{
+		service: workspaceService, store: store,
+		threads: fakeThreads{desktop: workspace.DesktopRecord{Threads: []workspace.ThreadRecord{{
+			ID: "thread-adopt", Title: "Adopt me", WorkspaceID: "ws-1", WorkspacePath: "/repo",
+			Trust: "approve", Status: "idle", SessionPath: "/tmp/adopt.jsonl",
+		}}}},
+	}
+	detail, err := service.AdoptThread(domain.AdoptThreadRequest{ThreadID: "thread-adopt"})
+	if err != nil {
+		t.Fatalf("adopt thread: %v", err)
+	}
+	if detail.ID == "" || detail.LegacyThreadID != "thread-adopt" || detail.Origin != string(task.OriginLegacy) {
+		t.Fatalf("adopted detail = %+v", detail)
+	}
+	if len(detail.Runs) != 1 || detail.Runs[0].SessionPath != "/tmp/adopt.jsonl" || detail.Runs[0].Status != string(task.StatusCompleted) {
+		t.Fatalf("adopted runs = %+v", detail.Runs)
+	}
+	if _, err := workspaceService.SetArchived(context.Background(), detail.ID, true); err != nil {
+		t.Fatalf("archive adopted task: %v", err)
+	}
+	again, err := service.AdoptThread(domain.AdoptThreadRequest{ThreadID: "thread-adopt"})
+	if err != nil || again.ID != detail.ID || again.ArchivedAt != 0 {
+		t.Fatalf("adopt should be idempotent and unarchive: %+v, %v", again, err)
+	}
+	active, err := service.ListTasks()
+	if err != nil || len(active) != 1 {
+		t.Fatalf("active tasks = %+v, %v", active, err)
+	}
+	if _, err := service.AdoptThread(domain.AdoptThreadRequest{ThreadID: "missing"}); err == nil {
+		t.Fatal("adopting an unknown thread should fail")
+	}
+}
+
 func TestTaskServiceDisabled(t *testing.T) {
 	service := NewTaskService(nil, nil, nil, nil, nil)
 	if service.Enabled() {

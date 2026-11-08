@@ -5,6 +5,11 @@ type TaskRequest struct {
 	TaskID string `json:"taskId"`
 }
 
+// AdoptThreadRequest asks the data plane to adopt one existing Pi thread.
+type AdoptThreadRequest struct {
+	ThreadID string `json:"threadId"`
+}
+
 // TaskRunRequest addresses one Run.
 type TaskRunRequest struct {
 	RunID string `json:"runId"`

@@ -22,6 +22,13 @@ export interface AddWorkspaceRequest {
     "trust": string;
 }
 
+/**
+ * AdoptThreadRequest asks the data plane to adopt one existing Pi thread.
+ */
+export interface AdoptThreadRequest {
+    "threadId": string;
+}
+
 export interface BashRequest {
     "threadId": string;
     "command": string;

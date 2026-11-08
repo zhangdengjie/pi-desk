@@ -38,12 +38,14 @@ import RuntimeBadge from "./RuntimeBadge.vue";
 import RemoveWorkspaceDialog from "./RemoveWorkspaceDialog.vue";
 import ThreadRowMarks from "./ThreadRowMarks.vue";
 import { useAppStore, type ThreadSummary } from "../stores/app";
+import { useTasksStore } from "../stores/tasks";
 import { tr } from "../i18n";
 import { threadTooltip } from "../utils/threadLabel";
 import { relativeTimeText } from "../utils/relativeTime";
 import { PANEL_SETTLE_MS } from "../utils/paneMotion";
 
 const appStore = useAppStore();
+const tasksStore = useTasksStore();
 const searchInput = ref<HTMLInputElement>();
 
 // Pane motion · the left rail (任务). `workbench.css` interpolates `.app-shell`'s first grid track
@@ -231,6 +233,17 @@ async function runTaskAction(action: "branch" | "clone" | "export" | "compact") 
   else if (action === "clone") await appStore.cloneActiveSession();
   else if (action === "export") await appStore.exportActiveSession();
   else await appStore.compactActiveSession();
+}
+
+async function openThreadTask(threadId: string) {
+  closeTaskMenu();
+  try {
+    await tasksStore.adoptThread(threadId);
+  } catch (error) {
+    tasksStore.error = error instanceof Error ? error.message : String(error);
+  } finally {
+    appStore.openTasks();
+  }
 }
 
 async function dismissActiveThread() {
@@ -596,6 +609,7 @@ onBeforeUnmount(() => {
       @click.stop="closeTaskMenu"
       @contextmenu.prevent
     >
+      <button type="button" role="menuitem" @click="void openThreadTask(taskMenuThread.id)"><ListTodo :size="14" />{{ tr("sidebar.adoptTask") }}</button>
       <button v-if="taskMenuWorkspace?.kind !== 'ssh'" type="button" role="menuitem" @click="void openTaskWorkspace()"><FolderOpen :size="14" />{{ tr("sidebar.openWorkspace") }}</button>
       <button type="button" role="menuitem" @click="void beginTaskRename()"><Pencil :size="14" />{{ tr("topbar.rename") }}</button>
       <button type="button" role="menuitem" :disabled="!taskMenuThread.sessionFile || Boolean(appStore.activeSessionOperation)" @click="void runTaskAction('branch')"><GitBranch :size="14" />{{ tr("topbar.branches") }}</button>
