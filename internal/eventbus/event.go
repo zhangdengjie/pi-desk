@@ -19,4 +19,5 @@ type Event struct {
 	Generation uint64          `json:"generation,omitempty"`
 	Timestamp  int64           `json:"ts"`
 	Payload    json.RawMessage `json:"payload,omitempty"`
+	Error      string          `json:"error,omitempty"`
 }

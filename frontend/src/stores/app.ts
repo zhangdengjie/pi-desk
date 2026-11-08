@@ -4206,11 +4206,108 @@ export const useAppStore = defineStore("app", {
         if (REMOTE_MUTATING_TOOLS.has(tool.name)) this.markRemoteRepositoryStale(thread.id);
       }
     },
+    applyRunStarted(thread: ThreadSummary) {
+      thread.archived = false;
+      thread.status = "running";
+      this.waitingForOutputByThread[thread.id] = true;
+      this.scheduleDesktopStateSave();
+    },
+    applyRunUpdated(thread: ThreadSummary, payload: Record<string, unknown>) {
+      const willRetry = payload.willRetry === true;
+      if (willRetry) {
+        thread.status = "running";
+        this.waitingForOutputByThread[thread.id] = true;
+      } else {
+        this.waitingForOutputByThread[thread.id] = false;
+        this.finishAssistant(thread.id);
+      }
+      void this.refreshState(thread.id);
+    },
+    applyRunSettled(thread: ThreadSummary, _payload: Record<string, unknown>, cancelled: boolean) {
+      const messages = this.messagesByThread[thread.id] ?? (this.messagesByThread[thread.id] = []);
+
+      thread.status = "idle";
+      this.waitingForOutputByThread[thread.id] = false;
+      const unfinishedRetry = this.retryByThread[thread.id];
+      if (unfinishedRetry) {
+        const retryIndex = messages.findLastIndex((message) => message.runNotice?.status === "retrying");
+        const retryMessage = retryIndex >= 0 ? messages[retryIndex] : undefined;
+        if (retryMessage?.runNotice) {
+          const recovered = messages.slice(retryIndex + 1)
+            .some((message) => message.role === "assistant" && !message.error);
+          retryMessage.runNotice = {
+            status: recovered ? "recovered" : "failed",
+            error: retryMessage.runNotice.error ?? unfinishedRetry.errorMessage,
+            attempt: unfinishedRetry.attempt,
+            maxAttempts: unfinishedRetry.maxAttempts,
+          };
+        }
+        this.retryByThread[thread.id] = undefined;
+      }
+      this.finishAssistant(thread.id);
+      this.finishScheduledRun(thread.id, cancelled ? "cancelled" : messages.findLast(message => message.role === "assistant")?.error ? "failed" : "completed");
+      if (thread.id !== this.activeThreadId || appIsInBackground()) thread.unread = true;
+      {
+        const reload = (async () => {
+          if (thread.sessionFile) await this.reloadSessionTranscript(thread).catch(() => undefined);
+          void this.refreshActiveRepository(thread.id);
+        })();
+        settledReloadPromises.set(thread.id, reload);
+        void reload.finally(() => {
+          if (settledReloadPromises.get(thread.id) === reload) settledReloadPromises.delete(thread.id);
+          void this.dispatchNextPendingPrompt(thread.id);
+        });
+      }
+      if (this.notificationsEnabled && !(this.pendingPromptsByThread[thread.id]?.length)) {
+        const lastAssistant = messages.findLast((message) => message.role === "assistant");
+        const notification = cancelled ? "notifications.taskCancelled" : lastAssistant?.error ? "notifications.taskFailed" : "notifications.taskCompleted";
+        void notifyDesktop(tr(notification), taskNotificationSummary(thread.title));
+      }
+      void this.refreshState(thread.id);
+      void this.refreshStats(thread.id).catch(() => undefined);
+      thread.modifiedAt = nowISO();
+      this.scheduleDesktopStateSave();
+    },
+    applyRuntimeExit(thread: ThreadSummary, error: string, generation: number) {
+      piExitedGenerationByThread.set(thread.id, generation);
+      thread.started = false;
+      this.waitingForOutputByThread[thread.id] = false;
+      this.piProcessOrder = this.piProcessOrder.filter((id) => id !== thread.id);
+      thread.status = "attention";
+      thread.error = error;
+      this.finishScheduledRun(thread.id, scheduledTaskStoppingThreads.has(thread.id) ? "cancelled" : "failed", thread.error);
+      this.finishAssistant(thread.id);
+      if (thread.id !== this.activeThreadId || appIsInBackground()) thread.unread = true;
+      this.queueByThread[thread.id] = { steering: [], followUp: [] };
+      this.retryByThread[thread.id] = undefined;
+      this.clearExtensionRequests(thread.id);
+      this.extensionStatusesByThread[thread.id] = {};
+      this.extensionWidgetsByThread[thread.id] = {};
+      this.extensionTitleByThread[thread.id] = undefined;
+      if (!isClosedRPCStreamError(thread.error)) this.appendSystem(thread.id, thread.error, thread.error);
+      this.scheduleDesktopStateSave();
+    },
     handleAgentEvent(event: AgentEvent) {
       if (!this.useNormalizedEvents) return;
       const thread = event.threadId ? this.threads.find((item) => item.id === event.threadId) : undefined;
       if (!thread) return;
       const payload = agentPayload(event.payload);
+      if (event.type === "run.started") {
+        this.applyRunStarted(thread);
+        return;
+      }
+      if (event.type === "run.updated") {
+        this.applyRunUpdated(thread, payload);
+        return;
+      }
+      if (event.type === "run.completed" || event.type === "run.cancelled") {
+        this.applyRunSettled(thread, payload, event.type === "run.cancelled");
+        return;
+      }
+      if (event.type === "run.failed") {
+        this.applyRuntimeExit(thread, event.error || "Pi process exited", event.generation ?? 0);
+        return;
+      }
       if (event.type === "tool.started") {
         this.applyToolStart(thread, payload);
       } else if (event.type === "tool.updated") {
@@ -4236,70 +4333,14 @@ export const useAppStore = defineStore("app", {
 
       switch (sessionEvent.event.type) {
         case "agent_start":
-          thread.archived = false;
-          thread.status = "running";
-          this.waitingForOutputByThread[thread.id] = true;
-          this.scheduleDesktopStateSave();
+          if (!this.useNormalizedEvents) this.applyRunStarted(thread);
           break;
-        case "agent_end": {
-          // Pi's agent_end only closes one low-level run. RPC may still emit
-          // an automatic retry/compaction or drain queued messages before
-          // agent_settled, which is the authoritative idle boundary.
-          const willRetry = payload.willRetry === true;
-          if (willRetry) {
-            thread.status = "running";
-            this.waitingForOutputByThread[thread.id] = true;
-          } else {
-            this.waitingForOutputByThread[thread.id] = false;
-            this.finishAssistant(thread.id);
-          }
-          void this.refreshState(thread.id);
+        case "agent_end":
+          if (!this.useNormalizedEvents) this.applyRunUpdated(thread, payload);
           break;
-        }
-        case "agent_settled": {
-          thread.status = "idle";
-          this.waitingForOutputByThread[thread.id] = false;
-          const unfinishedRetry = this.retryByThread[thread.id];
-          if (unfinishedRetry) {
-            const retryIndex = messages.findLastIndex((message) => message.runNotice?.status === "retrying");
-            const retryMessage = retryIndex >= 0 ? messages[retryIndex] : undefined;
-            if (retryMessage?.runNotice) {
-              const recovered = messages.slice(retryIndex + 1)
-                .some((message) => message.role === "assistant" && !message.error);
-              retryMessage.runNotice = {
-                status: recovered ? "recovered" : "failed",
-                error: retryMessage.runNotice.error ?? unfinishedRetry.errorMessage,
-                attempt: unfinishedRetry.attempt,
-                maxAttempts: unfinishedRetry.maxAttempts,
-              };
-            }
-            this.retryByThread[thread.id] = undefined;
-          }
-          this.finishAssistant(thread.id);
-          this.finishScheduledRun(thread.id, payload.aborted === true ? "cancelled" : messages.findLast(message => message.role === "assistant")?.error ? "failed" : "completed");
-          if (thread.id !== this.activeThreadId || appIsInBackground()) thread.unread = true;
-          {
-            const reload = (async () => {
-              if (thread.sessionFile) await this.reloadSessionTranscript(thread).catch(() => undefined);
-              void this.refreshActiveRepository(thread.id);
-            })();
-            settledReloadPromises.set(thread.id, reload);
-            void reload.finally(() => {
-              if (settledReloadPromises.get(thread.id) === reload) settledReloadPromises.delete(thread.id);
-              void this.dispatchNextPendingPrompt(thread.id);
-            });
-          }
-          if (this.notificationsEnabled && !(this.pendingPromptsByThread[thread.id]?.length)) {
-            const lastAssistant = messages.findLast((message) => message.role === "assistant");
-            const notification = payload.aborted === true ? "notifications.taskCancelled" : lastAssistant?.error ? "notifications.taskFailed" : "notifications.taskCompleted";
-            void notifyDesktop(tr(notification), taskNotificationSummary(thread.title));
-          }
-          void this.refreshState(thread.id);
-          void this.refreshStats(thread.id).catch(() => undefined);
-          thread.modifiedAt = nowISO();
-          this.scheduleDesktopStateSave();
+        case "agent_settled":
+          if (!this.useNormalizedEvents) this.applyRunSettled(thread, payload, payload.aborted === true);
           break;
-        }
         case "queue_update": {
           const steering = Array.isArray(payload.steering) ? payload.steering.filter((item): item is string => typeof item === "string") : [];
           const followUp = Array.isArray(payload.followUp) ? payload.followUp.filter((item): item is string => typeof item === "string") : [];
@@ -4538,23 +4579,7 @@ export const useAppStore = defineStore("app", {
           break;
         }
         case "runtime_exit":
-          piExitedGenerationByThread.set(thread.id, sessionEvent.event.generation);
-          thread.started = false;
-          this.waitingForOutputByThread[thread.id] = false;
-          this.piProcessOrder = this.piProcessOrder.filter((id) => id !== thread.id);
-          thread.status = "attention";
-          thread.error = sessionEvent.event.error || "Pi process exited";
-          this.finishScheduledRun(thread.id, scheduledTaskStoppingThreads.has(thread.id) ? "cancelled" : "failed", thread.error);
-          this.finishAssistant(thread.id);
-          if (thread.id !== this.activeThreadId || appIsInBackground()) thread.unread = true;
-          this.queueByThread[thread.id] = { steering: [], followUp: [] };
-          this.retryByThread[thread.id] = undefined;
-          this.clearExtensionRequests(thread.id);
-          this.extensionStatusesByThread[thread.id] = {};
-          this.extensionWidgetsByThread[thread.id] = {};
-          this.extensionTitleByThread[thread.id] = undefined;
-          if (!isClosedRPCStreamError(thread.error)) this.appendSystem(thread.id, thread.error, thread.error);
-          this.scheduleDesktopStateSave();
+          if (!this.useNormalizedEvents) this.applyRuntimeExit(thread, sessionEvent.event.error || "Pi process exited", sessionEvent.event.generation);
           break;
       }
     },

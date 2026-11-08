@@ -190,6 +190,7 @@ func (tap *Tap) handle(parent context.Context, sessionEvent piruntime.SessionEve
 		Generation: sessionEvent.Event.Generation,
 		Timestamp:  now.UnixMilli(),
 		Payload:    append(json.RawMessage(nil), sanitized...),
+		Error:      sessionEvent.Event.Error,
 	}
 
 	if err := tap.store.AppendEvent(ctx, task.Event{

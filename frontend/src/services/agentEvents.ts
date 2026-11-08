@@ -12,6 +12,7 @@ export interface AgentEvent {
   generation?: number;
   ts: number;
   payload: unknown;
+  error?: string;
 }
 
 /** No-op outside a Wails host (unit tests, plain browser). */

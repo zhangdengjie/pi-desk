@@ -93,6 +93,25 @@ describe("normalized agent events", () => {
     expect(message.tools).toHaveLength(0);
   });
 
+  it("applies run.started and run.failed from normalized events", () => {
+    const { store, message } = fixture();
+    const thread = useWorkspaceStore().threads[0];
+    thread.status = "idle";
+    store.useNormalizedEvents = true;
+    store.handleAgentEvent({
+      id: "run-start", seq: 1, type: "run.started", threadId: "thread-1",
+      ts: 1, generation: 1, payload: {},
+    });
+    expect(thread.status).toBe("running");
+    store.handleAgentEvent({
+      id: "run-failed", seq: 2, type: "run.failed", threadId: "thread-1",
+      ts: 2, generation: 1, error: "boom", payload: {},
+    });
+    expect(thread.status).toBe("attention");
+    expect(thread.error).toBe("boom");
+    expect(message.tools).toHaveLength(0);
+  });
+
   it("accepts a JSON-string payload from the Wails event bridge", () => {
     const { store, message } = fixture();
     store.useNormalizedEvents = true;
