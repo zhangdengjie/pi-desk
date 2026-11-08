@@ -172,5 +172,11 @@ export type {
     WorkspaceApplication,
     WorkspaceDefaultsRequest,
     WorkspaceRequest,
-    WorkspaceSummary
+    WorkspaceSummary,
+    WorktreeCreateRequest,
+    WorktreeListRequest,
+    WorktreePruneResult,
+    WorktreeRemoveResult,
+    WorktreeRequest,
+    WorktreeSummary
 } from "./models.js";

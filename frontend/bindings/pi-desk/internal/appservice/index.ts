@@ -16,6 +16,7 @@ import * as RemoteWorkspaceService from "./remoteworkspaceservice.js";
 import * as RepositoryService from "./repositoryservice.js";
 import * as TaskService from "./taskservice.js";
 import * as TerminalService from "./terminalservice.js";
+import * as WorktreeService from "./worktreeservice.js";
 export {
     AgentService,
     BrowserService,
@@ -31,5 +32,6 @@ export {
     RemoteWorkspaceService,
     RepositoryService,
     TaskService,
-    TerminalService
+    TerminalService,
+    WorktreeService
 };

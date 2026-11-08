@@ -62,6 +62,13 @@ export interface BootstrapState {
     "normalizedEventsDisabled"?: boolean;
 
     /**
+     * R2Worktree / R2Scheduler expose the independent rollback switches for the
+     * second refactor stage. Both are opt-in until their UI path is verified.
+     */
+    "r2Worktree"?: boolean;
+    "r2Scheduler"?: boolean;
+
+    /**
      * ProviderEnvIssues is the startup precheck: providers whose `$VAR` API key never reached this
      * process. A .app opened from Finder does not read ~/.zshrc, so Pi silently drops them.
      */
@@ -1498,4 +1505,54 @@ export interface WorkspaceSummary {
     "defaultModelProvider"?: string;
     "defaultModelId"?: string;
     "defaultThinking"?: string;
+    "parentWorkspaceId"?: string;
+    "worktreeBranch"?: string;
+    "worktreeTaskId"?: string;
+}
+
+/**
+ * WorktreeCreateRequest asks the desktop to create (or reuse) the worktree
+ * bound to a Task. TaskID may be a thread identity before the Task row exists;
+ * the branch/path stay stable once created.
+ */
+export interface WorktreeCreateRequest {
+    "workspaceId": string;
+    "taskId": string;
+    "baseRef"?: string;
+}
+
+export interface WorktreeListRequest {
+    "workspaceId": string;
+}
+
+export interface WorktreePruneResult {
+    "removed": string[] | null;
+}
+
+export interface WorktreeRemoveResult {
+    "path": string;
+    "branch": string;
+    "removed": boolean;
+    "orphaned": boolean;
+    "branchKept": boolean;
+    "reason"?: string;
+}
+
+export interface WorktreeRequest {
+    "workspaceId"?: string;
+    "taskId"?: string;
+    "path"?: string;
+}
+
+export interface WorktreeSummary {
+    "taskId": string;
+    "slug": string;
+    "workspaceId"?: string;
+    "path": string;
+    "branch": string;
+    "baseRef"?: string;
+    "head"?: string;
+    "managed": boolean;
+    "dirty"?: boolean;
+    "unmerged"?: number;
 }
