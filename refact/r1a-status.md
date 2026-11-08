@@ -45,7 +45,7 @@ raw binary 因没有 bundle identifier，notifications 服务报错退出；这�
 3. Task 完成态未自动收敛（Run 完成只更新 Run）；R1b 定义 Task 生命周期。
 4. agent:event 已发出但前端未消费；R1b 做 reducer 拆分与 Task Center。
 5. task_schedules / worktree / tool_executions 表未建；R2。
-6. R0 剩余：docs/01–05 刷新、current-to-target、P0-1/P0-3、基线截图。
+6. R0 已收口：docs 入库、P0-1/P0-3、bindings 门禁、基线截图均完成，见 `refact/r0-status.md`。
 ```
 
 ## 提交
