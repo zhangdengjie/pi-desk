@@ -29,13 +29,20 @@ import (
 const (
 	appVersion               = "1.4.0"
 	wailsVersion             = "v3.1.0"
-	updateManifestURL        = "https://api.github.com/repos/saucer-man/pi-desk/releases/latest"
 	maxDiagnosticConfigBytes = 4 << 20
 	// Pi's Node CLI can take several seconds to initialise on Windows while
 	// npm shims and package caches are cold. Bootstrap never waits for this
 	// asynchronous probe, so prefer a reliable status over a false negative.
 	runtimeProbeTimeout = 8 * time.Second
 )
+
+// UpdateManifestURL is injected by release builds:
+//
+//	-ldflags "-X pi-desk/internal/appservice.UpdateManifestURL=https://..."
+//
+// Empty disables update checks. It intentionally has no upstream default: a
+// fork must never send its users to someone else's release page.
+var UpdateManifestURL = ""
 
 type RuntimeProber interface {
 	Probe(ctx context.Context) domain.PiRuntimeStatus
@@ -67,7 +74,7 @@ func NewDesktopService(runtimeProber RuntimeProber, catalogs ...*workspace.Catal
 	if len(catalogs) > 0 {
 		catalog = catalogs[0]
 	}
-	return &DesktopService{runtimeProber: runtimeProber, catalog: catalog, updateURL: updateManifestURL}
+	return &DesktopService{runtimeProber: runtimeProber, catalog: catalog, updateURL: UpdateManifestURL}
 }
 
 func (service *DesktopService) GetBootstrapState() domain.BootstrapState {
@@ -442,6 +449,10 @@ type updateManifest struct {
 
 func (service *DesktopService) CheckForUpdates() domain.UpdateCheckResult {
 	result := domain.UpdateCheckResult{Status: "error", CurrentVersion: appVersion, CheckedAt: time.Now().UTC()}
+	if strings.TrimSpace(service.updateURL) == "" {
+		result.Status, result.Message = "disabled", "Update source is not configured"
+		return result
+	}
 	parsed, err := url.Parse(service.updateURL)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "https" && !isLocalHTTP(parsed)) {
 		result.Status, result.Message = "error", "Update source must use HTTPS"

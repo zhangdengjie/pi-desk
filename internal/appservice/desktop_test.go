@@ -112,6 +112,15 @@ func TestCheckForUpdates(t *testing.T) {
 	}
 }
 
+func TestCheckForUpdatesDisabled(t *testing.T) {
+	service := NewDesktopService(fakeProber{}, nil)
+	service.updateURL = ""
+	result := service.CheckForUpdates()
+	if result.Status != "disabled" || result.Message == "" {
+		t.Fatalf("unexpected disabled update result: %#v", result)
+	}
+}
+
 func TestCheckForUpdatesRejectsRemoteHTTP(t *testing.T) {
 	service := NewDesktopService(fakeProber{}, nil)
 	service.updateURL = "http://updates.example.com/latest.json"
