@@ -94,6 +94,32 @@ describe("AppSidebar", () => {
     expect(wrapper.get(".runtime-badge").text()).toContain("Current Pi version 0.83.0");
   });
 
+  it("nests worktree workspaces under their parent and expands the active line", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const store = useAppStore();
+    store.$patch({ catalogLoading: false });
+    useWorkspaceStore().workspaces = [
+      { id: "workspace-parent", name: "repo", path: "D:\\repo", trust: "approve" },
+      { id: "workspace-child", name: "task-feature", path: "D:\\repo\\.worktrees\\task-feature", trust: "approve", parentWorkspaceId: "workspace-parent" },
+    ];
+    useWorkspaceStore().threads = [
+      { id: "thread-parent", title: "Parent task", workspace: "repo", workspaceId: "workspace-parent", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 },
+      { id: "thread-child", title: "Child task", workspace: "task-feature", workspaceId: "workspace-child", workspacePath: "D:\\repo\\.worktrees\\task-feature", trust: "approve", status: "idle", started: false, generation: 0 },
+    ];
+    const wrapper = mount(AppSidebar, { global: { plugins: [pinia] } });
+
+    const groups = wrapper.findAll(".workspace-group");
+    expect(groups).toHaveLength(2);
+    expect(groups[0].classes()).not.toContain("is-worktree");
+    expect(groups[1].classes()).toContain("is-worktree");
+    expect(wrapper.text()).toContain("Parent task");
+    expect(wrapper.text()).not.toContain("Child task");
+
+    await groups[1].get(".workspace-row").trigger("click");
+    expect(wrapper.text()).toContain("Child task");
+  });
+
   it("groups tasks by workspace without counters or visible collapse controls", () => {
     const pinia = createPinia();
     setActivePinia(pinia);

@@ -117,18 +117,54 @@ function comparablePath(path: string): string {
   return /^[a-z]:\//i.test(normalized) ? normalized.toLocaleLowerCase() : normalized;
 }
 
-const workspaceGroups = computed(() => appStore.workspaces.map((workspace) => {
+interface WorkspaceGroup {
+  workspace: (typeof appStore.workspaces)[number];
+  threads: ThreadSummary[];
+  threadCount: number;
+  hiddenCount: number;
+  children: WorkspaceGroup[];
+  depth: number;
+  parentId?: string;
+}
+
+const workspaceGroups = computed<WorkspaceGroup[]>(() => {
   const searching = Boolean(appStore.searchQuery.trim());
-  const threads = appStore.filteredThreads.filter((thread) => (searching || Boolean(thread.archived) === showArchived.value)
-    && (workspace.kind === "ssh"
-    ? thread.workspaceId === workspace.id
-    : comparablePath(thread.workspacePath) === comparablePath(workspace.path)));
-  const limit = visibleThreadCounts.value[workspace.id] ?? 20;
-  const visibleThreads = searching ? threads : threads.filter((thread, index) => index < limit
-    || thread.id === appStore.activeThreadId || thread.status === "running" || thread.status === "starting"
-    || appStore.bashRunningByThread[thread.id]);
-  return { workspace, threads: visibleThreads, threadCount: threads.length, hiddenCount: threads.length - visibleThreads.length };
-}).filter((group) => !appStore.searchQuery.trim() || group.threadCount > 0));
+  const groups: WorkspaceGroup[] = appStore.workspaces.map((workspace) => {
+    const threads = appStore.filteredThreads.filter((thread) => (searching || Boolean(thread.archived) === showArchived.value)
+      && (workspace.kind === "ssh"
+      ? thread.workspaceId === workspace.id
+      : comparablePath(thread.workspacePath) === comparablePath(workspace.path)));
+    const limit = visibleThreadCounts.value[workspace.id] ?? 20;
+    const visibleThreads = searching ? threads : threads.filter((thread, index) => index < limit
+      || thread.id === appStore.activeThreadId || thread.status === "running" || thread.status === "starting"
+      || appStore.bashRunningByThread[thread.id]);
+    return {
+      workspace, threads: visibleThreads, threadCount: threads.length,
+      hiddenCount: threads.length - visibleThreads.length, children: [], depth: 0,
+      parentId: workspace.parentWorkspaceId,
+    };
+  });
+  const byID = new Map(groups.map((group) => [group.workspace.id, group]));
+  const roots: WorkspaceGroup[] = [];
+  for (const group of groups) {
+    const parent = group.parentId ? byID.get(group.parentId) : undefined;
+    if (parent) parent.children.push(group);
+    else roots.push(group);
+  }
+  const flat: WorkspaceGroup[] = [];
+  const hasThreads = (group: WorkspaceGroup): boolean => group.threadCount > 0 || group.children.some(hasThreads);
+  const visit = (group: WorkspaceGroup, depth: number) => {
+    if (searching && !hasThreads(group)) return;
+    group.depth = depth;
+    flat.push(group);
+    for (const child of group.children) visit(child, depth + 1);
+  };
+  for (const root of roots) visit(root, 0);
+  return flat;
+});
+
+const visibleWorkspaceGroups = computed(() => workspaceGroups.value.filter((group) =>
+  group.depth === 0 || !isWorkspaceCollapsed(group.parentId || "")));
 
 /**
  * The cross-project list. `workspaceGroups` is the right shape for browsing a project, and the wrong
@@ -160,10 +196,18 @@ function activeSessionTooltip(thread: ThreadSummary): string {
   if (!workspace) return base;
   return `${base}\n\n${tr("sidebar.inWorkspace", { workspace })}`;
 }
-const defaultExpandedWorkspaceID = computed(() => {
+const defaultExpandedWorkspaceIDs = computed(() => {
   const activeThread = appStore.activeThread;
-  const activeWorkspace = activeThread && workspaceGroups.value.find((group) => group.threads.some((thread) => thread.id === activeThread.id))?.workspace;
-  return activeWorkspace?.id || workspaceGroups.value.find((group) => group.threadCount > 0)?.workspace.id || "";
+  let workspace = activeThread && workspaceGroups.value.find((group) => group.threads.some((thread) => thread.id === activeThread.id))?.workspace;
+  workspace ||= workspaceGroups.value.find((group) => group.threadCount > 0 && !group.parentId)?.workspace;
+  workspace ||= workspaceGroups.value.find((group) => group.threadCount > 0)?.workspace;
+  const ids = new Set<string>();
+  while (workspace) {
+    ids.add(workspace.id);
+    const parentID = workspace.parentWorkspaceId;
+    workspace = parentID ? appStore.workspaces.find((item) => item.id === parentID) : undefined;
+  }
+  return ids;
 });
 
 watch(() => appStore.searchQuery, (query) => {
@@ -178,7 +222,7 @@ watch(() => [appStore.activeThreadId, appStore.activeThread?.archived], () => {
 
 function isWorkspaceCollapsed(workspaceID: string): boolean {
   if (appStore.searchQuery.trim()) return false;
-  return collapsedWorkspaceIDs.value[workspaceID] ?? workspaceID !== defaultExpandedWorkspaceID.value;
+  return collapsedWorkspaceIDs.value[workspaceID] ?? !defaultExpandedWorkspaceIDs.value.has(workspaceID);
 }
 
 function toggleWorkspace(workspaceID: string) {
@@ -522,8 +566,8 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <p v-if="showArchived && !appStore.searchQuery.trim()" class="mx-2 my-1 text-[var(--font-size-label)] text-[var(--text-secondary)]">{{ tr(workspaceGroups.some(group => group.threadCount) ? "sidebar.archivedTasks" : "sidebar.noArchivedTasks") }}</p>
-      <div v-for="group in workspaceGroups" :key="group.workspace.id" class="workspace-group mt-1">
-        <div class="workspace-header group flex h-8 min-w-0 items-center rounded-md border border-transparent hover:bg-[var(--bg-hover)] active:bg-[var(--bg-active)]">
+      <div v-for="group in visibleWorkspaceGroups" :key="group.workspace.id" class="workspace-group mt-1" :class="{ 'is-worktree': group.depth > 0 }">
+        <div class="workspace-header group flex h-8 min-w-0 items-center rounded-md border border-transparent hover:bg-[var(--bg-hover)] active:bg-[var(--bg-active)]" :style="group.depth > 0 ? { marginLeft: '14px' } : undefined">
           <input
             v-if="group.workspace.id === workspaceRenameID"
             id="workspace-rename-input"

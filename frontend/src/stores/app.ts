@@ -209,6 +209,9 @@ export interface WorkspaceSummary {
   defaultModelProvider?: string;
   defaultModelId?: string;
   defaultThinking?: string;
+  parentWorkspaceId?: string;
+  worktreeBranch?: string;
+  worktreeTaskId?: string;
 }
 
 export interface ThreadSummary {
