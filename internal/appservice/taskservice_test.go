@@ -3,11 +3,13 @@ package appservice
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"pi-desk/internal/domain"
+	"pi-desk/internal/sessionindex"
 	"pi-desk/internal/storage/sqlite"
 	"pi-desk/internal/task"
 	"pi-desk/internal/workspace"
@@ -74,7 +76,7 @@ func TestTaskServiceReadModels(t *testing.T) {
 }
 
 func TestTaskServiceDisabled(t *testing.T) {
-	service := NewTaskService(nil, nil, nil, nil)
+	service := NewTaskService(nil, nil, nil, nil, nil)
 	if service.Enabled() {
 		t.Fatal("nil harness should be disabled")
 	}
@@ -114,6 +116,16 @@ type fakeMessages struct {
 
 func (source fakeMessages) Messages(string) ([]json.RawMessage, error) {
 	return source.messages, nil
+}
+
+type fakeImages map[string]sessionindex.ImageData
+
+func (source fakeImages) Image(ref string) (sessionindex.ImageData, error) {
+	value, ok := source[ref]
+	if !ok {
+		return sessionindex.ImageData{}, errors.New("missing image")
+	}
+	return value, nil
 }
 
 type fakeThreads struct {
@@ -204,5 +216,159 @@ func TestTaskServiceRetriesFailedRunFromLastUserPrompt(t *testing.T) {
 	}
 	if detail.Status != string(task.StatusRunning) || len(detail.Runs) != 2 || detail.Runs[1].Status != string(task.StatusRunning) {
 		t.Fatalf("detail = %+v", detail)
+	}
+}
+
+func TestTaskServiceArchivesOnlyTerminalTasks(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "pi-desk.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	workspaceService := task.NewService(store)
+	service := &TaskService{service: workspaceService, store: store}
+	ctx := context.Background()
+	created, err := workspaceService.CreateTask(ctx, task.CreateTaskInput{Title: "Archive me"})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	run, err := workspaceService.CreateRun(ctx, created.ID, "pi")
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if _, err := workspaceService.StartRun(ctx, run.ID); err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if _, err := service.ArchiveTask(domain.TaskRequest{TaskID: created.ID}); err == nil {
+		t.Fatal("active task should not be archivable")
+	}
+	if _, err := workspaceService.FinishRun(ctx, run.ID, task.StatusCompleted, ""); err != nil {
+		t.Fatalf("finish run: %v", err)
+	}
+	archived, err := service.ArchiveTask(domain.TaskRequest{TaskID: created.ID})
+	if err != nil {
+		t.Fatalf("archive task: %v", err)
+	}
+	if archived.ArchivedAt == 0 {
+		t.Fatalf("archive detail = %+v", archived)
+	}
+	active, err := service.ListTasks()
+	if err != nil || len(active) != 0 {
+		t.Fatalf("active tasks = %+v, %v", active, err)
+	}
+	hidden, err := service.ListArchivedTasks()
+	if err != nil || len(hidden) != 1 || hidden[0].ID != created.ID {
+		t.Fatalf("archived tasks = %+v, %v", hidden, err)
+	}
+	restored, err := service.UnarchiveTask(domain.TaskRequest{TaskID: created.ID})
+	if err != nil || restored.ArchivedAt != 0 {
+		t.Fatalf("unarchive task = %+v, %v", restored, err)
+	}
+	active, err = service.ListTasks()
+	if err != nil || len(active) != 1 {
+		t.Fatalf("active after unarchive = %+v, %v", active, err)
+	}
+}
+
+func TestTaskServiceRetriesLastUserImagesAndUnarchives(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "pi-desk.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	workspaceService := task.NewService(store)
+	agent := &fakeTaskAgent{}
+	service := &TaskService{
+		service: workspaceService, store: store, agent: agent,
+		messages: fakeMessages{messages: []json.RawMessage{json.RawMessage(`{"role":"user","content":[{"type":"text","text":"look"},{"type":"image","mimeType":"image/png","bytes":5,"ref":"img-1"}]}`)}},
+		images:   fakeImages{"img-1": {MIMEType: "image/png", Data: []byte("hello")}},
+		threads: fakeThreads{desktop: workspace.DesktopRecord{Threads: []workspace.ThreadRecord{{
+			ID: "thread-image", Title: "Image", WorkspacePath: "/repo", Trust: "approve", SessionPath: "/tmp/image.jsonl",
+		}}}},
+	}
+	ctx := context.Background()
+	created, err := workspaceService.CreateTask(ctx, task.CreateTaskInput{
+		Title: "Image retry", Origin: task.OriginChat, LegacyThreadID: "thread-image",
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	run, err := workspaceService.CreateRun(ctx, created.ID, "pi")
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if _, err := workspaceService.StartRun(ctx, run.ID); err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if _, err := workspaceService.FinishRun(ctx, run.ID, task.StatusFailed, "boom"); err != nil {
+		t.Fatalf("finish run: %v", err)
+	}
+	if _, err := workspaceService.SetArchived(ctx, created.ID, true); err != nil {
+		t.Fatalf("archive task: %v", err)
+	}
+	detail, err := service.RetryTask(domain.TaskRequest{TaskID: created.ID})
+	if err != nil {
+		t.Fatalf("retry task: %v", err)
+	}
+	if detail.ArchivedAt != 0 {
+		t.Fatalf("retry should unarchive, detail = %+v", detail)
+	}
+	if len(agent.prompts) != 1 || agent.prompts[0].Message != "look" {
+		t.Fatalf("prompts = %+v", agent.prompts)
+	}
+	if len(agent.prompts[0].Images) != 1 {
+		t.Fatalf("prompt images = %+v", agent.prompts[0].Images)
+	}
+	image := agent.prompts[0].Images[0]
+	if image.Type != "image" || image.MIMEType != "image/png" || image.Data != "aGVsbG8=" {
+		t.Fatalf("image = %+v", image)
+	}
+}
+
+func TestTaskServiceFailsRetryWhenImageCannotBeRecovered(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "pi-desk.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	workspaceService := task.NewService(store)
+	agent := &fakeTaskAgent{}
+	service := &TaskService{
+		service: workspaceService, store: store, agent: agent,
+		messages: fakeMessages{messages: []json.RawMessage{json.RawMessage(`{"role":"user","content":[{"type":"image","ref":"missing"}]}`)}},
+		images:   fakeImages{},
+		threads: fakeThreads{desktop: workspace.DesktopRecord{Threads: []workspace.ThreadRecord{{
+			ID: "thread-missing", Title: "Missing", WorkspacePath: "/repo", Trust: "approve", SessionPath: "/tmp/missing.jsonl",
+		}}}},
+	}
+	ctx := context.Background()
+	created, err := workspaceService.CreateTask(ctx, task.CreateTaskInput{
+		Title: "Missing image", Origin: task.OriginChat, LegacyThreadID: "thread-missing",
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	run, err := workspaceService.CreateRun(ctx, created.ID, "pi")
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if _, err := workspaceService.StartRun(ctx, run.ID); err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if _, err := workspaceService.FinishRun(ctx, run.ID, task.StatusFailed, "boom"); err != nil {
+		t.Fatalf("finish run: %v", err)
+	}
+	if _, err := workspaceService.SetArchived(ctx, created.ID, true); err != nil {
+		t.Fatalf("archive task: %v", err)
+	}
+	if _, err := service.RetryTask(domain.TaskRequest{TaskID: created.ID}); err == nil {
+		t.Fatal("retry with an unavailable image should fail")
+	}
+	if len(agent.prompts) != 0 {
+		t.Fatalf("prompt should not be sent: %+v", agent.prompts)
+	}
+	loaded, err := workspaceService.GetTask(ctx, created.ID)
+	if err != nil || loaded.Status != task.StatusFailed || loaded.ArchivedAt == nil {
+		t.Fatalf("task should stay failed and archived: %+v, %v", loaded, err)
 	}
 }

@@ -282,7 +282,7 @@ func main() {
 	}()
 	piMaintenanceService := appservice.NewPiMaintenanceService(locator, agentService)
 	catalogService := appservice.NewCatalogService(catalog, sessionIndex, remoteCatalog)
-	taskService := appservice.NewTaskService(harness, agentService, sessionIndex, catalog)
+	taskService := appservice.NewTaskService(harness, agentService, sessionIndex, sessionIndex, catalog)
 
 	app := application.New(application.Options{
 		Name:           instanceTitle(),

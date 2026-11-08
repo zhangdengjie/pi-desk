@@ -156,6 +156,53 @@ func TestImportLegacyIdempotentAndDryRun(t *testing.T) {
 	}
 }
 
+func TestTaskArchiveVisibility(t *testing.T) {
+	service, closeStore := newService(t)
+	defer closeStore()
+	ctx := context.Background()
+
+	created, err := service.CreateTask(ctx, task.CreateTaskInput{Title: "Archivable"})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	run, err := service.CreateRun(ctx, created.ID, "pi")
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if _, err := service.StartRun(ctx, run.ID); err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if _, err := service.SetArchived(ctx, created.ID, true); !errors.Is(err, task.ErrInvalidTransition) {
+		t.Fatalf("active task archive should be invalid, got %v", err)
+	}
+	if _, err := service.FinishRun(ctx, run.ID, task.StatusCompleted, ""); err != nil {
+		t.Fatalf("finish run: %v", err)
+	}
+	archived, err := service.SetArchived(ctx, created.ID, true)
+	if err != nil {
+		t.Fatalf("archive task: %v", err)
+	}
+	if archived.ArchivedAt == nil {
+		t.Fatalf("archived task = %+v", archived)
+	}
+	active, err := service.ListTasks(ctx, 10)
+	if err != nil || len(active) != 0 {
+		t.Fatalf("active tasks = %+v, %v", active, err)
+	}
+	hidden, err := service.ListArchivedTasks(ctx, 10)
+	if err != nil || len(hidden) != 1 || hidden[0].ID != created.ID {
+		t.Fatalf("archived tasks = %+v, %v", hidden, err)
+	}
+	restored, err := service.SetArchived(ctx, created.ID, false)
+	if err != nil || restored.ArchivedAt != nil {
+		t.Fatalf("unarchive task = %+v, %v", restored, err)
+	}
+	active, err = service.ListTasks(ctx, 10)
+	if err != nil || len(active) != 1 {
+		t.Fatalf("active after unarchive = %+v, %v", active, err)
+	}
+}
+
 func TestStateMachineRejectsTerminalTransitions(t *testing.T) {
 	if !task.CanTransitionTask(task.StatusCreated, task.StatusRunning) {
 		t.Fatal("created -> running should be allowed")

@@ -1136,6 +1136,7 @@ export interface TaskDetail {
     "createdAt": number;
     "updatedAt": number;
     "completedAt"?: number;
+    "archivedAt"?: number;
     "runs": TaskRunSummary[] | null;
 }
 
@@ -1208,6 +1209,7 @@ export interface TaskSummary {
     "createdAt": number;
     "updatedAt": number;
     "completedAt"?: number;
+    "archivedAt"?: number;
 }
 
 export interface TaskUsageSummary {

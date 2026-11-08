@@ -3,8 +3,8 @@
 
 /**
  * TaskService exposes the R1a Task/Run records to the Task Center and owns the
- * two write actions the UI needs: cancel the active run, or retry a failed /
- * cancelled task from its last user prompt.
+ * write actions the UI needs: cancel the active run, retry a failed / cancelled
+ * task from its last user prompt, and archive tasks without an active run.
  * @module
  */
 
@@ -15,6 +15,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
 import * as domain$0 from "../domain/models.js";
+
+export function ArchiveTask(request: domain$0.TaskRequest): $CancellablePromise<domain$0.TaskDetail> {
+    return $Call.ByID(2296088556, request);
+}
 
 export function CancelTask(request: domain$0.TaskRequest): $CancellablePromise<domain$0.TaskDetail> {
     return $Call.ByID(1274775818, request);
@@ -32,6 +36,10 @@ export function GetTask(request: domain$0.TaskRequest): $CancellablePromise<doma
     return $Call.ByID(1025850462, request);
 }
 
+export function ListArchivedTasks(): $CancellablePromise<domain$0.TaskSummary[] | null> {
+    return $Call.ByID(707013399);
+}
+
 export function ListRunEvents(request: domain$0.TaskEventsRequest): $CancellablePromise<domain$0.TaskEventView[] | null> {
     return $Call.ByID(431124555, request);
 }
@@ -42,4 +50,8 @@ export function ListTasks(): $CancellablePromise<domain$0.TaskSummary[] | null> 
 
 export function RetryTask(request: domain$0.TaskRequest): $CancellablePromise<domain$0.TaskDetail> {
     return $Call.ByID(984950200, request);
+}
+
+export function UnarchiveTask(request: domain$0.TaskRequest): $CancellablePromise<domain$0.TaskDetail> {
+    return $Call.ByID(3378216981, request);
 }

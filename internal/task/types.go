@@ -49,6 +49,7 @@ type Task struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	CompletedAt    *time.Time
+	ArchivedAt     *time.Time
 }
 
 // Run is one execution attempt of a Task.
@@ -108,6 +109,8 @@ type Store interface {
 	GetTask(ctx context.Context, id string) (Task, error)
 	FindTaskByLegacyThreadID(ctx context.Context, threadID string) (Task, error)
 	ListTasks(ctx context.Context, limit int) ([]Task, error)
+	ListArchivedTasks(ctx context.Context, limit int) ([]Task, error)
+	SetTaskArchived(ctx context.Context, id string, archivedAt *time.Time, updatedAt time.Time) error
 	UpdateTaskStatus(ctx context.Context, id string, status Status, updatedAt time.Time, completedAt *time.Time) error
 
 	CreateRun(ctx context.Context, run Run) error

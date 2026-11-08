@@ -71,6 +71,46 @@ func (s *Service) ListTasks(ctx context.Context, limit int) ([]Task, error) {
 	return s.store.ListTasks(ctx, limit)
 }
 
+func (s *Service) ListArchivedTasks(ctx context.Context, limit int) ([]Task, error) {
+	return s.store.ListArchivedTasks(ctx, limit)
+}
+
+// SetArchived hides a Task from the active list without deleting its Runs,
+// Events, or Usage. A Task with an active Run cannot be archived because that
+// would hide work that is still running.
+func (s *Service) SetArchived(ctx context.Context, id string, archived bool) (Task, error) {
+	value, err := s.store.GetTask(ctx, id)
+	if err != nil {
+		return Task{}, err
+	}
+	if archived {
+		runs, err := s.store.ListRuns(ctx, id)
+		if err != nil {
+			return Task{}, err
+		}
+		for _, run := range runs {
+			if run.Status == StatusQueued || run.Status == StatusRunning ||
+				run.Status == StatusWaitingApproval || run.Status == StatusWaitingInput {
+				return Task{}, ErrInvalidTransition
+			}
+		}
+	}
+	if (value.ArchivedAt != nil) == archived {
+		return value, nil
+	}
+	now := s.now().UTC()
+	var archivedAt *time.Time
+	if archived {
+		archivedAt = &now
+	}
+	if err := s.store.SetTaskArchived(ctx, id, archivedAt, now); err != nil {
+		return Task{}, err
+	}
+	value.ArchivedAt = archivedAt
+	value.UpdatedAt = now
+	return value, nil
+}
+
 func (s *Service) FindTaskByLegacyThreadID(ctx context.Context, threadID string) (Task, error) {
 	return s.store.FindTaskByLegacyThreadID(ctx, threadID)
 }
@@ -180,6 +220,13 @@ func (s *Service) EnsureChatTask(ctx context.Context, threadID, title string) (T
 	}
 	task, err := s.store.FindTaskByLegacyThreadID(ctx, threadID)
 	if err == nil {
+		if task.ArchivedAt != nil {
+			if restored, restoreErr := s.SetArchived(ctx, task.ID, false); restoreErr == nil {
+				task = restored
+			} else {
+				return Task{}, restoreErr
+			}
+		}
 		if task.Status == StatusFailed || task.Status == StatusCancelled {
 			if reopened, reopenErr := s.TransitionTask(ctx, task.ID, StatusQueued); reopenErr == nil {
 				return reopened, nil

@@ -3,21 +3,27 @@ import { createPinia, setActivePinia } from "pinia";
 import type { TaskDetail, TaskSummary } from "../../bindings/pi-desk/internal/domain";
 
 const listTasks = vi.fn();
+const listArchivedTasks = vi.fn();
 const getTask = vi.fn();
 const listRunEvents = vi.fn();
 const enabled = vi.fn();
 const cancelTask = vi.fn();
 const retryTask = vi.fn();
+const archiveTask = vi.fn();
+const unarchiveTask = vi.fn();
 
 vi.mock("../services/tasks", () => ({
   tasksService: {
     enabled: (...args: unknown[]) => enabled(...args),
     listTasks: (...args: unknown[]) => listTasks(...args),
+    listArchivedTasks: (...args: unknown[]) => listArchivedTasks(...args),
     getTask: (...args: unknown[]) => getTask(...args),
     listRunEvents: (...args: unknown[]) => listRunEvents(...args),
     getRunUsage: vi.fn(),
     cancelTask: (...args: unknown[]) => cancelTask(...args),
     retryTask: (...args: unknown[]) => retryTask(...args),
+    archiveTask: (...args: unknown[]) => archiveTask(...args),
+    unarchiveTask: (...args: unknown[]) => unarchiveTask(...args),
   },
 }));
 
@@ -59,9 +65,12 @@ describe("tasks store", () => {
     vi.clearAllMocks();
     enabled.mockResolvedValue(true);
     listTasks.mockResolvedValue([task]);
+    listArchivedTasks.mockResolvedValue([]);
     getTask.mockResolvedValue(detail);
     cancelTask.mockResolvedValue(detail);
     retryTask.mockResolvedValue(detail);
+    archiveTask.mockResolvedValue({ ...detail, archivedAt: 3 });
+    unarchiveTask.mockResolvedValue(detail);
     listRunEvents.mockResolvedValue([{
       id: "evt_1",
       runId: "run_1",
@@ -105,6 +114,28 @@ describe("tasks store", () => {
     await store.retrySelected();
     expect(retryTask).toHaveBeenCalledWith({ taskId: "task_1" });
     expect(listTasks).toHaveBeenCalledTimes(3);
+  });
+
+  it("switches to the archived view and lists archived tasks", async () => {
+    const archived = { ...task, archivedAt: 3 };
+    listArchivedTasks.mockResolvedValue([archived]);
+    getTask.mockResolvedValue({ ...detail, archivedAt: 3 });
+    const store = useTasksStore();
+    await store.refresh();
+    await store.setView("archived");
+    expect(store.view).toBe("archived");
+    expect(listArchivedTasks).toHaveBeenCalledOnce();
+    expect(store.tasks).toEqual([archived]);
+    expect(store.selectedTaskID).toBe("task_1");
+  });
+
+  it("archives and unarchives the selected task", async () => {
+    const store = useTasksStore();
+    await store.refresh();
+    await store.archiveSelected();
+    expect(archiveTask).toHaveBeenCalledWith({ taskId: "task_1" });
+    await store.unarchiveSelected();
+    expect(unarchiveTask).toHaveBeenCalledWith({ taskId: "task_1" });
   });
 
   it("reloads events when a different run is selected", async () => {

@@ -2,6 +2,7 @@ package appservice
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,18 +10,20 @@ import (
 	"time"
 
 	"pi-desk/internal/domain"
+	"pi-desk/internal/sessionindex"
 	"pi-desk/internal/task"
 	"pi-desk/internal/workspace"
 )
 
 // TaskService exposes the R1a Task/Run records to the Task Center and owns the
-// two write actions the UI needs: cancel the active run, or retry a failed /
-// cancelled task from its last user prompt.
+// write actions the UI needs: cancel the active run, retry a failed / cancelled
+// task from its last user prompt, and archive tasks without an active run.
 type TaskService struct {
 	service  *task.Service
 	store    task.Store
 	agent    TaskAgent
 	messages TaskMessageSource
+	images   TaskImageSource
 	threads  TaskThreadSource
 }
 
@@ -34,15 +37,21 @@ type TaskMessageSource interface {
 	Messages(path string) ([]json.RawMessage, error)
 }
 
+// TaskImageSource resolves the image references in a session snapshot back to
+// bytes. The snapshot deliberately strips base64, so retry must ask the index.
+type TaskImageSource interface {
+	Image(ref string) (sessionindex.ImageData, error)
+}
+
 type TaskThreadSource interface {
 	Desktop() (workspace.DesktopRecord, error)
 }
 
-func NewTaskService(harness *Harness, agent TaskAgent, messages TaskMessageSource, threads TaskThreadSource) *TaskService {
+func NewTaskService(harness *Harness, agent TaskAgent, messages TaskMessageSource, images TaskImageSource, threads TaskThreadSource) *TaskService {
 	if harness == nil {
-		return &TaskService{agent: agent, messages: messages, threads: threads}
+		return &TaskService{agent: agent, messages: messages, images: images, threads: threads}
 	}
-	return &TaskService{service: harness.service, store: harness.store, agent: agent, messages: messages, threads: threads}
+	return &TaskService{service: harness.service, store: harness.store, agent: agent, messages: messages, images: images, threads: threads}
 }
 
 func (service *TaskService) Enabled() bool {
@@ -50,12 +59,26 @@ func (service *TaskService) Enabled() bool {
 }
 
 func (service *TaskService) ListTasks() ([]domain.TaskSummary, error) {
+	return service.listTasks(false)
+}
+
+func (service *TaskService) ListArchivedTasks() ([]domain.TaskSummary, error) {
+	return service.listTasks(true)
+}
+
+func (service *TaskService) listTasks(archived bool) ([]domain.TaskSummary, error) {
 	if service.service == nil {
 		return []domain.TaskSummary{}, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	tasks, err := service.service.ListTasks(ctx, 200)
+	var tasks []task.Task
+	var err error
+	if archived {
+		tasks, err = service.service.ListArchivedTasks(ctx, 200)
+	} else {
+		tasks, err = service.service.ListTasks(ctx, 200)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +223,33 @@ func (service *TaskService) CancelTask(request domain.TaskRequest) (domain.TaskD
 	return service.GetTask(request)
 }
 
+func (service *TaskService) ArchiveTask(request domain.TaskRequest) (domain.TaskDetail, error) {
+	return service.setArchived(request, true)
+}
+
+func (service *TaskService) UnarchiveTask(request domain.TaskRequest) (domain.TaskDetail, error) {
+	return service.setArchived(request, false)
+}
+
+func (service *TaskService) setArchived(request domain.TaskRequest, archived bool) (domain.TaskDetail, error) {
+	if service.service == nil {
+		return domain.TaskDetail{}, errors.New("task data is disabled; start Pi Desk with PI_DESK_HARNESS=1")
+	}
+	taskID := strings.TrimSpace(request.TaskID)
+	if taskID == "" {
+		return domain.TaskDetail{}, errors.New("task id is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := service.service.SetArchived(ctx, taskID, archived); err != nil {
+		if errors.Is(err, task.ErrInvalidTransition) {
+			return domain.TaskDetail{}, errors.New("only tasks without an active run can be archived")
+		}
+		return domain.TaskDetail{}, err
+	}
+	return service.GetTask(request)
+}
+
 func (service *TaskService) RetryTask(request domain.TaskRequest) (domain.TaskDetail, error) {
 	if service.service == nil {
 		return domain.TaskDetail{}, errors.New("task data is disabled; start Pi Desk with PI_DESK_HARNESS=1")
@@ -245,9 +295,15 @@ func (service *TaskService) RetryTask(request domain.TaskRequest) (domain.TaskDe
 	if err != nil {
 		return domain.TaskDetail{}, err
 	}
-	prompt, err := lastUserPrompt(messages)
+	prompt, images, err := lastUserPrompt(messages, service.images)
 	if err != nil {
 		return domain.TaskDetail{}, err
+	}
+	if value.ArchivedAt != nil {
+		value, err = service.service.SetArchived(ctx, value.ID, false)
+		if err != nil {
+			return domain.TaskDetail{}, err
+		}
 	}
 
 	value, err = service.service.TransitionTask(ctx, value.ID, task.StatusQueued)
@@ -272,7 +328,7 @@ func (service *TaskService) RetryTask(request domain.TaskRequest) (domain.TaskDe
 	if _, err := service.service.StartRun(ctx, run.ID); err != nil {
 		return domain.TaskDetail{}, err
 	}
-	if _, err := service.agent.SendPrompt(domain.PromptRequest{ThreadID: thread.ID, Message: prompt}); err != nil {
+	if _, err := service.agent.SendPrompt(domain.PromptRequest{ThreadID: thread.ID, Message: prompt, Images: images}); err != nil {
 		service.failRetry(ctx, run.ID, value.ID, err)
 		return domain.TaskDetail{}, err
 	}
@@ -284,7 +340,7 @@ func (service *TaskService) failRetry(ctx context.Context, runID, taskID string,
 	_, _ = service.service.TransitionTask(ctx, taskID, task.StatusFailed)
 }
 
-func lastUserPrompt(messages []json.RawMessage) (string, error) {
+func lastUserPrompt(messages []json.RawMessage, images TaskImageSource) (string, []domain.ImageContent, error) {
 	for index := len(messages) - 1; index >= 0; index-- {
 		var envelope struct {
 			Role    string          `json:"role"`
@@ -293,32 +349,72 @@ func lastUserPrompt(messages []json.RawMessage) (string, error) {
 		if err := json.Unmarshal(messages[index], &envelope); err != nil || envelope.Role != "user" {
 			continue
 		}
-		if text := contentPlainText(envelope.Content); strings.TrimSpace(text) != "" {
-			return text, nil
+		text, promptImages, ok, err := promptContent(envelope.Content, images)
+		if err != nil {
+			return "", nil, err
+		}
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(text) != "" || len(promptImages) > 0 {
+			return text, promptImages, nil
 		}
 	}
-	return "", errors.New("no user prompt is available to retry")
+	return "", nil, errors.New("no user prompt is available to retry")
 }
 
-func contentPlainText(raw json.RawMessage) string {
+func promptContent(raw json.RawMessage, images TaskImageSource) (string, []domain.ImageContent, bool, error) {
 	var text string
 	if json.Unmarshal(raw, &text) == nil {
-		return text
+		return text, nil, true, nil
 	}
 	var parts []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+		Type     string `json:"type"`
+		Text     string `json:"text"`
+		Data     string `json:"data"`
+		MIMEType string `json:"mimeType"`
+		Ref      string `json:"ref"`
 	}
 	if json.Unmarshal(raw, &parts) != nil {
-		return ""
+		return "", nil, false, nil
 	}
 	var builder strings.Builder
+	result := make([]domain.ImageContent, 0)
 	for _, part := range parts {
-		if part.Type == "text" {
+		switch part.Type {
+		case "text":
 			builder.WriteString(part.Text)
+		case "image":
+			image, err := replayImage(part.Data, part.MIMEType, part.Ref, images)
+			if err != nil {
+				return "", nil, false, err
+			}
+			result = append(result, image)
 		}
 	}
-	return builder.String()
+	return builder.String(), result, true, nil
+}
+
+func replayImage(data, mimeType, ref string, images TaskImageSource) (domain.ImageContent, error) {
+	if strings.TrimSpace(data) != "" {
+		if strings.TrimSpace(mimeType) == "" {
+			return domain.ImageContent{}, errors.New("session image is missing its mime type")
+		}
+		return domain.ImageContent{Type: "image", Data: data, MIMEType: mimeType}, nil
+	}
+	if strings.TrimSpace(ref) == "" || images == nil {
+		return domain.ImageContent{}, errors.New("session image is unavailable for retry")
+	}
+	image, err := images.Image(ref)
+	if err != nil {
+		return domain.ImageContent{}, fmt.Errorf("read session image: %w", err)
+	}
+	if strings.TrimSpace(image.MIMEType) == "" {
+		return domain.ImageContent{}, errors.New("session image is missing its mime type")
+	}
+	return domain.ImageContent{
+		Type: "image", Data: base64.StdEncoding.EncodeToString(image.Data), MIMEType: image.MIMEType,
+	}, nil
 }
 
 func isThreadNotRunning(err error) bool {
@@ -334,6 +430,9 @@ func taskSummary(value task.Task) domain.TaskSummary {
 	}
 	if value.CompletedAt != nil {
 		summary.CompletedAt = value.CompletedAt.UnixMilli()
+	}
+	if value.ArchivedAt != nil {
+		summary.ArchivedAt = value.ArchivedAt.UnixMilli()
 	}
 	return summary
 }

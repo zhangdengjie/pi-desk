@@ -7,8 +7,11 @@ function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
+export type TaskView = "active" | "archived";
+
 export const useTasksStore = defineStore("tasks", () => {
   const enabled = ref(false);
+  const view = ref<TaskView>("active");
   const tasks = ref<TaskSummary[]>([]);
   const selectedTaskID = ref("");
   const detail = ref<TaskDetail | null>(null);
@@ -72,13 +75,16 @@ export const useTasksStore = defineStore("tasks", () => {
     await refreshEvents();
   }
 
-  async function runAction(action: "cancel" | "retry") {
+  async function runAction(action: "cancel" | "retry" | "archive" | "unarchive") {
     if (!selectedTaskID.value || actionLoading.value) return;
     actionLoading.value = true;
     actionError.value = "";
     try {
-      if (action === "cancel") await tasksService.cancelTask({ taskId: selectedTaskID.value });
-      else await tasksService.retryTask({ taskId: selectedTaskID.value });
+      const request = { taskId: selectedTaskID.value };
+      if (action === "cancel") await tasksService.cancelTask(request);
+      else if (action === "retry") await tasksService.retryTask(request);
+      else if (action === "archive") await tasksService.archiveTask(request);
+      else await tasksService.unarchiveTask(request);
       await refresh();
     } catch (cause) {
       actionError.value = errorMessage(cause);
@@ -95,6 +101,22 @@ export const useTasksStore = defineStore("tasks", () => {
     await runAction("retry");
   }
 
+  async function archiveSelected() {
+    await runAction("archive");
+  }
+
+  async function unarchiveSelected() {
+    await runAction("unarchive");
+  }
+
+  async function setView(next: TaskView) {
+    if (view.value === next) return;
+    view.value = next;
+    selectedTaskID.value = "";
+    clearDetail();
+    await refresh();
+  }
+
   async function refresh() {
     loading.value = true;
     error.value = "";
@@ -106,7 +128,7 @@ export const useTasksStore = defineStore("tasks", () => {
         clearDetail();
         return;
       }
-      tasks.value = (await tasksService.listTasks()) ?? [];
+      tasks.value = (view.value === "archived" ? await tasksService.listArchivedTasks() : await tasksService.listTasks()) ?? [];
       const stillPresent = tasks.value.some((task) => task.id === selectedTaskID.value);
       if (!stillPresent) {
         selectedTaskID.value = tasks.value.length ? tasks.value[0].id : "";
@@ -125,6 +147,7 @@ export const useTasksStore = defineStore("tasks", () => {
 
   return {
     enabled,
+    view,
     tasks,
     selectedTaskID,
     detail,
@@ -143,5 +166,8 @@ export const useTasksStore = defineStore("tasks", () => {
     refreshEvents,
     cancelSelected,
     retrySelected,
+    archiveSelected,
+    unarchiveSelected,
+    setView,
   };
 });

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted } from "vue";
-import { RefreshCw, RotateCcw, Square } from "lucide-vue-next";
+import { Archive, ArchiveRestore, RefreshCw, RotateCcw, Square } from "lucide-vue-next";
 import type { TaskRunSummary, TaskUsageSummary } from "../../bindings/pi-desk/internal/domain";
 import { tr } from "../i18n";
 import { useTasksStore } from "../stores/tasks";
@@ -9,8 +9,13 @@ import { vSpin } from "../utils/spin";
 const tasksStore = useTasksStore();
 const detail = computed(() => tasksStore.detail);
 const selectedRun = computed(() => tasksStore.selectedRun);
+const activeRunStatuses = new Set(["queued", "running", "waiting_approval", "waiting_input"]);
 const canCancel = computed(() => Boolean(detail.value && ["running", "queued", "waiting_approval", "waiting_input"].includes(detail.value.status)));
 const canRetry = computed(() => Boolean(detail.value && ["failed", "cancelled"].includes(detail.value.status)));
+const canArchive = computed(() => Boolean(
+  detail.value && !detail.value.archivedAt && !(detail.value.runs ?? []).some((run) => activeRunStatuses.has(run.status)),
+));
+const canUnarchive = computed(() => Boolean(detail.value?.archivedAt));
 
 const statusKeys: Record<string, string> = {
   created: "taskCenter.status.created",
@@ -70,10 +75,34 @@ onMounted(() => {
         <h1>{{ tr("taskCenter.title") }}</h1>
         <p>{{ tr("taskCenter.subtitle") }}</p>
       </div>
-      <button class="tc-button" type="button" :disabled="tasksStore.loading" @click="tasksStore.refresh()">
-        <RefreshCw :size="15" v-spin="tasksStore.loading" :class="{ 'is-spinning': tasksStore.loading }" />
-        <span>{{ tr("taskCenter.refresh") }}</span>
-      </button>
+      <div class="task-center-tools">
+        <div class="task-view-tabs" role="tablist" :aria-label="tr('taskCenter.title')">
+          <button
+            class="task-view-tab"
+            :class="{ 'is-active': tasksStore.view === 'active' }"
+            type="button"
+            role="tab"
+            :aria-selected="tasksStore.view === 'active'"
+            @click="tasksStore.setView('active')"
+          >
+            {{ tr("taskCenter.active") }}
+          </button>
+          <button
+            class="task-view-tab"
+            :class="{ 'is-active': tasksStore.view === 'archived' }"
+            type="button"
+            role="tab"
+            :aria-selected="tasksStore.view === 'archived'"
+            @click="tasksStore.setView('archived')"
+          >
+            {{ tr("taskCenter.archived") }}
+          </button>
+        </div>
+        <button class="tc-button" type="button" :disabled="tasksStore.loading" @click="tasksStore.refresh()">
+          <RefreshCw :size="15" v-spin="tasksStore.loading" :class="{ 'is-spinning': tasksStore.loading }" />
+          <span>{{ tr("taskCenter.refresh") }}</span>
+        </button>
+      </div>
     </header>
 
     <p v-if="tasksStore.error" class="tc-error">{{ tasksStore.error }}</p>
@@ -97,7 +126,9 @@ onMounted(() => {
           </span>
           <span class="task-row-time">{{ time(task.updatedAt) }}</span>
         </button>
-        <p v-if="!tasksStore.tasks.length" class="tc-empty">{{ tr("taskCenter.empty") }}</p>
+        <p v-if="!tasksStore.tasks.length" class="tc-empty">
+          {{ tasksStore.view === "archived" ? tr("taskCenter.emptyArchived") : tr("taskCenter.empty") }}
+        </p>
       </aside>
 
       <article class="task-detail">
@@ -116,6 +147,14 @@ onMounted(() => {
               <button v-if="canRetry" class="tc-button" type="button" :disabled="tasksStore.actionLoading" @click="tasksStore.retrySelected()">
                 <RotateCcw :size="13" />
                 <span>{{ tasksStore.actionLoading ? tr("taskCenter.working") : tr("taskCenter.retry") }}</span>
+              </button>
+              <button v-if="canArchive" class="tc-button" type="button" :disabled="tasksStore.actionLoading" @click="tasksStore.archiveSelected()">
+                <Archive :size="13" />
+                <span>{{ tasksStore.actionLoading ? tr("taskCenter.working") : tr("taskCenter.archive") }}</span>
+              </button>
+              <button v-if="canUnarchive" class="tc-button" type="button" :disabled="tasksStore.actionLoading" @click="tasksStore.unarchiveSelected()">
+                <ArchiveRestore :size="13" />
+                <span>{{ tasksStore.actionLoading ? tr("taskCenter.working") : tr("taskCenter.unarchive") }}</span>
               </button>
             </div>
           </header>
@@ -194,6 +233,35 @@ onMounted(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.task-center-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.task-view-tabs {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border, #333);
+  border-radius: 7px;
+}
+
+.task-view-tab {
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-small, 12px);
+}
+
+.task-view-tab.is-active {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text);
 }
 
 .task-center-title h1 {

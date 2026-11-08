@@ -29,6 +29,7 @@ type TaskSummary struct {
 	CreatedAt      int64  `json:"createdAt"`
 	UpdatedAt      int64  `json:"updatedAt"`
 	CompletedAt    int64  `json:"completedAt,omitempty"`
+	ArchivedAt     int64  `json:"archivedAt,omitempty"`
 }
 
 // TaskRunSummary is one execution attempt. Usage is nil until a message_end
