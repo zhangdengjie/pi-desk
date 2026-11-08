@@ -110,6 +110,7 @@ type Store interface {
 	FindTaskByLegacyThreadID(ctx context.Context, threadID string) (Task, error)
 	ListTasks(ctx context.Context, limit int) ([]Task, error)
 	ListArchivedTasks(ctx context.Context, limit int) ([]Task, error)
+	UpdateTaskTitle(ctx context.Context, id, title string) error
 	SetTaskArchived(ctx context.Context, id string, archivedAt *time.Time, updatedAt time.Time) error
 	UpdateTaskStatus(ctx context.Context, id string, status Status, updatedAt time.Time, completedAt *time.Time) error
 

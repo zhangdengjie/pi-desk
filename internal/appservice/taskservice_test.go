@@ -115,6 +115,39 @@ func TestTaskServiceAdoptsThreadManually(t *testing.T) {
 	}
 }
 
+func TestTaskServiceRepairsLegacyTitles(t *testing.T) {
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "pi-desk.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	workspaceService := task.NewService(store)
+	created, err := workspaceService.CreateTask(context.Background(), task.CreateTaskInput{
+		Title: "thread-readable", Origin: task.OriginChat, LegacyThreadID: "thread-readable",
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	service := &TaskService{
+		service: workspaceService, store: store,
+		threads: fakeThreads{desktop: workspace.DesktopRecord{Threads: []workspace.ThreadRecord{{
+			ID: "thread-readable", Title: "Readable session title",
+		}}}},
+	}
+	tasks, err := service.ListTasks()
+	if err != nil || len(tasks) != 1 || tasks[0].Title != "Readable session title" {
+		t.Fatalf("tasks = %+v, %v", tasks, err)
+	}
+	detail, err := service.GetTask(domain.TaskRequest{TaskID: created.ID})
+	if err != nil || detail.Title != "Readable session title" {
+		t.Fatalf("detail = %+v, %v", detail, err)
+	}
+	stored, err := workspaceService.GetTask(context.Background(), created.ID)
+	if err != nil || stored.Title != "Readable session title" {
+		t.Fatalf("stored = %+v, %v", stored, err)
+	}
+}
+
 func TestTaskServiceDisabled(t *testing.T) {
 	service := NewTaskService(nil, nil, nil, nil, nil)
 	if service.Enabled() {

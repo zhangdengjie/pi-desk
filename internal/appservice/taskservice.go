@@ -82,6 +82,7 @@ func (service *TaskService) listTasks(archived bool) ([]domain.TaskSummary, erro
 	if err != nil {
 		return nil, err
 	}
+	tasks = service.syncTitles(ctx, tasks)
 	result := make([]domain.TaskSummary, 0, len(tasks))
 	for _, value := range tasks {
 		result = append(result, taskSummary(value))
@@ -162,6 +163,9 @@ func (service *TaskService) GetTask(request domain.TaskRequest) (domain.TaskDeta
 	value, err := service.service.GetTask(ctx, taskID)
 	if err != nil {
 		return domain.TaskDetail{}, err
+	}
+	if synced := service.syncTitles(ctx, []task.Task{value}); len(synced) == 1 {
+		value = synced[0]
 	}
 	runs, err := service.service.ListRuns(ctx, taskID)
 	if err != nil {
@@ -479,6 +483,33 @@ func replayImage(data, mimeType, ref string, images TaskImageSource) (domain.Ima
 
 func isThreadNotRunning(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "not running")
+}
+
+// syncTitles repairs legacy Tasks whose title was the raw thread id. A
+// user-renamed title is never overwritten; only the empty/raw-id fallback is.
+func (service *TaskService) syncTitles(ctx context.Context, tasks []task.Task) []task.Task {
+	if service.threads == nil || len(tasks) == 0 {
+		return tasks
+	}
+	desktop, err := service.threads.Desktop()
+	if err != nil {
+		return tasks
+	}
+	titles := make(map[string]string, len(desktop.Threads))
+	for _, thread := range desktop.Threads {
+		titles[thread.ID] = strings.TrimSpace(thread.Title)
+	}
+	for index := range tasks {
+		current := strings.TrimSpace(tasks[index].Title)
+		threadTitle := titles[tasks[index].LegacyThreadID]
+		if threadTitle == "" || current == threadTitle || (current != "" && current != tasks[index].LegacyThreadID) {
+			continue
+		}
+		if updated, updateErr := service.service.UpdateTitle(ctx, tasks[index].ID, threadTitle); updateErr == nil {
+			tasks[index] = updated
+		}
+	}
+	return tasks
 }
 
 func taskSummary(value task.Task) domain.TaskSummary {

@@ -75,6 +75,27 @@ func (s *Service) ListArchivedTasks(ctx context.Context, limit int) ([]Task, err
 	return s.store.ListArchivedTasks(ctx, limit)
 }
 
+// UpdateTitle replaces only a display label. It deliberately does not touch
+// UpdatedAt: a title sync is metadata repair, not task activity.
+func (s *Service) UpdateTitle(ctx context.Context, id, title string) (Task, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return Task{}, errors.New("task title is required")
+	}
+	value, err := s.store.GetTask(ctx, id)
+	if err != nil {
+		return Task{}, err
+	}
+	if value.Title == title {
+		return value, nil
+	}
+	if err := s.store.UpdateTaskTitle(ctx, id, title); err != nil {
+		return Task{}, err
+	}
+	value.Title = title
+	return value, nil
+}
+
 // SetArchived hides a Task from the active list without deleting its Runs,
 // Events, or Usage. A Task with an active Run cannot be archived because that
 // would hide work that is still running.

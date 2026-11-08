@@ -99,6 +99,19 @@ func (store *Store) ListArchivedTasks(ctx context.Context, limit int) ([]task.Ta
 	return result, nil
 }
 
+func (store *Store) UpdateTaskTitle(ctx context.Context, id, title string) error {
+	result, err := store.write.ExecContext(ctx, `UPDATE tasks SET title = ? WHERE id = ?`, title, id)
+	if err != nil {
+		return fmt.Errorf("update task title: %w", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("update task title: %w", err)
+	} else if affected == 0 {
+		return task.ErrNotFound
+	}
+	return nil
+}
+
 func (store *Store) SetTaskArchived(ctx context.Context, id string, archivedAt *time.Time, updatedAt time.Time) error {
 	result, err := store.write.ExecContext(ctx,
 		`UPDATE tasks SET archived_at = ?, updated_at = ? WHERE id = ?`,

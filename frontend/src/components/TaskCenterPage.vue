@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { Archive, ArchiveRestore, RefreshCw, RotateCcw, Square } from "lucide-vue-next";
 import type { TaskRunSummary, TaskUsageSummary } from "../../bindings/pi-desk/internal/domain";
 import { tr } from "../i18n";
@@ -7,6 +7,7 @@ import { useTasksStore } from "../stores/tasks";
 import { vSpin } from "../utils/spin";
 
 const tasksStore = useTasksStore();
+const payloadPreview = ref<{ text: string; x: number; y: number } | null>(null);
 const detail = computed(() => tasksStore.detail);
 const selectedRun = computed(() => tasksStore.selectedRun);
 const activeRunStatuses = new Set(["queued", "running", "waiting_approval", "waiting_input"]);
@@ -61,6 +62,25 @@ function runLabel(run: TaskRunSummary): string {
 function previewPayload(payload: string): string {
   const compact = payload.replace(/\s+/g, " ").trim();
   return compact.length > 160 ? `${compact.slice(0, 160)}…` : compact;
+}
+
+function showPayloadPreview(event: MouseEvent, payload: string) {
+  if (!payload.trim()) return;
+  payloadPreview.value = {
+    text: payload,
+    x: Math.min(event.clientX + 14, window.innerWidth - 440),
+    y: Math.min(event.clientY + 14, window.innerHeight - 260),
+  };
+}
+
+function movePayloadPreview(event: MouseEvent) {
+  if (!payloadPreview.value) return;
+  payloadPreview.value.x = Math.min(event.clientX + 14, window.innerWidth - 440);
+  payloadPreview.value.y = Math.min(event.clientY + 14, window.innerHeight - 260);
+}
+
+function hidePayloadPreview() {
+  payloadPreview.value = null;
 }
 
 onMounted(() => {
@@ -204,7 +224,14 @@ onMounted(() => {
                 <span class="event-type">{{ event.type }}</span>
                 <span class="event-seq">#{{ event.seq }}</span>
                 <time class="event-time">{{ time(event.createdAt) }}</time>
-                <code v-if="event.payload && event.payload !== '{}'" class="event-payload">{{ previewPayload(event.payload) }}</code>
+                <code
+                  v-if="event.payload && event.payload !== '{}'"
+                  class="event-payload"
+                  :aria-label="event.payload"
+                  @mouseenter="showPayloadPreview($event, event.payload)"
+                  @mousemove="movePayloadPreview"
+                  @mouseleave="hidePayloadPreview"
+                >{{ previewPayload(event.payload) }}</code>
               </li>
             </ol>
             <p v-if="!tasksStore.eventsLoading && !tasksStore.events.length" class="tc-empty">{{ tr("taskCenter.noEvents") }}</p>
@@ -213,6 +240,12 @@ onMounted(() => {
         <p v-else class="tc-empty">{{ tr("taskCenter.select") }}</p>
       </article>
     </div>
+
+    <pre
+      v-if="payloadPreview"
+      class="event-payload-tooltip"
+      :style="{ left: `${payloadPreview.x}px`, top: `${payloadPreview.y}px` }"
+    >{{ payloadPreview.text }}</pre>
   </section>
 </template>
 
@@ -571,7 +604,29 @@ onMounted(() => {
 }
 
 .event-payload {
+  cursor: help;
   font-family: var(--font-mono, monospace);
+}
+
+.event-payload-tooltip {
+  position: fixed;
+  z-index: 30;
+  width: min(420px, calc(100vw - 28px));
+  max-height: 46vh;
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border, #333);
+  border-radius: 7px;
+  background: var(--bg-panel, #20242a);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  color: var(--text, #ddd);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  line-height: 1.45;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .tc-empty {
