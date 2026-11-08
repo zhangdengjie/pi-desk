@@ -34,6 +34,10 @@ type BootstrapState struct {
 	// NormalizedEventsDisabled is the explicit raw override
 	// (PI_DESK_NORMALIZED_EVENTS=0).
 	NormalizedEventsDisabled bool `json:"normalizedEventsDisabled,omitempty"`
+	// R2Worktree / R2Scheduler expose the independent rollback switches for the
+	// second refactor stage. Both are opt-in until their UI path is verified.
+	R2Worktree  bool `json:"r2Worktree,omitempty"`
+	R2Scheduler bool `json:"r2Scheduler,omitempty"`
 	// ProviderEnvIssues is the startup precheck: providers whose `$VAR` API key never reached this
 	// process. A .app opened from Finder does not read ~/.zshrc, so Pi silently drops them.
 	ProviderEnvIssues []ProviderEnvIssue `json:"providerEnvIssues,omitempty"`
