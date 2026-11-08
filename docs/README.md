@@ -8,15 +8,15 @@
 
 | 维度 | 事实 | 怎么复算 |
 |---|---|---|
-| 规模 | Go **276 文件 / 63,697 行**（含测试；剔掉 `_test.go` = 165 / 39,737） | `find . -name '*.go' \| wc -l`（再加 `-not -name '*_test.go'` 得前者） |
-| 前端 | 手写 TS（排除 test）**85 / 14,603**；components **53 个 `.vue` / 18,339 行**；CSS **6 / 14,386**；生成绑定 **154 个函数** | `find frontend/src -name '*.ts' -not -name '*.test.ts' \| wc -l`；`ls frontend/src/components/*.vue \| wc -l` |
+| 规模 | Go **276 文件 / 63,730 行**（含测试；剔掉 `_test.go` = 165 / 39,770） | `find . -name '*.go' \| wc -l`（再加 `-not -name '*_test.go'` 得前者） |
+| 前端 | 手写 TS（排除 test）**85 / 14,610**；components **53 个 `.vue` / 18,339 行**；CSS **6 / 14,386**；生成绑定 **154 个函数** | `find frontend/src -name '*.ts' -not -name '*.test.ts' \| wc -l`；`ls frontend/src/components/*.vue \| wc -l` |
 | 提交史 | 386 个 commit，HEAD `abc2726` | `git rev-list --count HEAD` |
 | 桌面框架 | `github.com/wailsapp/wails/v3 v3.1.0`（stable 线） | `grep wails go.mod` |
 | Go / Node | `go 1.26.0` · CI 钉 `node 22.19.0` | `head -3 go.mod`；`.github/workflows/verify.yml` |
 | 前端栈 | Vue 3.5.41 + pinia 4.0.2 + vue-i18n 11.4.8 + Tailwind 4.3.3 + Vite 8.0.5 + Vitest 4.1.10 | `cat frontend/package.json` |
 | 对外接口 | **154 个绑定函数 / 166 个生成方法 / 15 个自家 service + `notifications` = 16**；事件通道 `pi:event` + R1a `agent:event` | `grep -h 'export function' frontend/bindings/pi-desk/internal/appservice/*.ts \| wc -l` |
 | 状态文件 | `state.json`（version 6）**整文件覆盖写**；R1a 只读导入到 SQLite | `internal/workspace/catalog.go:20` `:632` |
-| 上帝文件 | `frontend/src/stores/app.ts` **5,127 行 / 252 个 action** | `wc -l frontend/src/stores/app.ts` |
+| 上帝文件 | `frontend/src/stores/app.ts` **5,134 行 / 252 个 action** | `wc -l frontend/src/stores/app.ts` |
 | 测试 | **111** 个 `*_test.go` + **109** 个 `frontend/src/**/*.test.ts`（另 3 个 fuzz target 在 CI 各跑 10s） | `find . -name '*_test.go' \| wc -l`；`find frontend/src -name '*.test.ts' \| wc -l` |
 
 ## 文档索引

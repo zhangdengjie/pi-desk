@@ -164,10 +164,22 @@ state stores
 ## 真机 A/B（2026-11-08）
 
 ```text
-A: PI_DESK_HARNESS=1
-B: PI_DESK_HARNESS=1 PI_DESK_NORMALIZED_EVENTS=1
+A: PI_DESK_HARNESS=1 PI_DESK_NORMALIZED_EVENTS=0   （强制 raw）
+B: PI_DESK_HARNESS=1                               （auto：本地 normalized）
 同一条带 bash 工具的 prompt，各新建一个任务
 
 结果：工具卡、流式消息、run 状态无异常；B 未出现重复/缺失
-开关：BootstrapState.NormalizedEvents，启动时读取，reload 不够
+开关：BootstrapState.HarnessEnabled / NormalizedEventsDisabled，启动时读取
+```
+
+## Auto 默认策略
+
+```text
+本地 + harness on   → normalized
+远程 + harness on   → raw（未接入 remote tap）
+harness off         → raw
+显式 env=0          → raw（A/B 用）
+
+normalized display payload 上限 256KB；SQLite 仍存 16KB 摘要。
+队列 8192；message.delta / run / tool 终态在满队列时最多等待 100ms。
 ```
