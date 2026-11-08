@@ -13,6 +13,7 @@ import {
   Folder,
   FolderOpen,
   GitBranch,
+  ListTodo,
   MessageCirclePlus,
   MoreHorizontal,
   PanelLeftOpen,
@@ -415,6 +416,18 @@ onBeforeUnmount(() => {
       >
         <CalendarClock :size="20" :stroke-width="1.7" />
         <span>{{ tr("sidebar.scheduledTasks") }}</span>
+      </button>
+      <button
+        v-if="!collapsed"
+        class="flex h-8 w-full items-center gap-2 whitespace-nowrap rounded-md border border-transparent bg-transparent px-2.5 text-[var(--font-size-body)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text)] active:bg-[var(--bg-active)] aria-pressed:bg-[var(--bg-active)] aria-pressed:text-[var(--text)] focus-visible:outline-2 focus-visible:outline-[var(--focus)]"
+        type="button"
+        :title="tr('taskCenter.title')"
+        :aria-label="tr('taskCenter.title')"
+        :aria-pressed="appStore.activePage === 'tasks'"
+        @click="appStore.openTasks"
+      >
+        <ListTodo :size="20" :stroke-width="1.7" />
+        <span>{{ tr("taskCenter.title") }}</span>
       </button>
       <button
         v-if="!collapsed"
