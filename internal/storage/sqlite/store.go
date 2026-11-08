@@ -70,7 +70,7 @@ func Open(path string) (*Store, error) {
 }
 
 func dsn(path string, readOnly bool) string {
-	uri := url.URL{Scheme: "file", Path: path}
+	uri := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
 	params := []string{"_pragma=busy_timeout(5000)"}
 	if readOnly {
 		params = append(params, "mode=ro", "_pragma=query_only(1)")

@@ -2,6 +2,7 @@ package appservice_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -46,6 +47,10 @@ func TestStartHarnessImportsLegacyThreads(t *testing.T) {
 	}
 	if len(tasks) != 1 || tasks[0].LegacyThreadID != "thread_1" || tasks[0].Title != "Legacy Thread" {
 		t.Fatalf("imported tasks = %+v", tasks)
+	}
+	backups, err := os.ReadDir(filepath.Join(directory, "backup"))
+	if err != nil || len(backups) != 1 {
+		t.Fatalf("backup files = %v, %v", backups, err)
 	}
 }
 

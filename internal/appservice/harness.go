@@ -2,10 +2,12 @@ package appservice
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"pi-desk/internal/eventbus"
 	"pi-desk/internal/piruntime"
@@ -35,9 +37,16 @@ func StartHarness(ctx context.Context, dataDir string, catalog *workspace.Catalo
 	if !HarnessEnabled() {
 		return nil, nil
 	}
-	store, err := sqlite.Open(filepath.Join(dataDir, "pi-desk.db"))
+	dbPath := filepath.Join(dataDir, "pi-desk.db")
+	_, statErr := os.Stat(dbPath)
+	store, err := sqlite.Open(dbPath)
 	if err != nil {
 		return nil, err
+	}
+	if errors.Is(statErr, os.ErrNotExist) {
+		if err := backupLegacyState(dataDir); err != nil {
+			log.Printf("harness: backup state.json: %v", err)
+		}
 	}
 	service := task.NewService(store)
 	report, importErr := task.ImportLegacy(ctx, service, catalogLegacySource{catalog: catalog}, false)
@@ -70,6 +79,26 @@ func (harness *Harness) Close() {
 
 type catalogLegacySource struct {
 	catalog *workspace.Catalog
+}
+
+// backupLegacyState copies state.json beside the DB before the first import.
+// Import itself is read-only, but the backup makes a failed migration
+// recoverable without asking the user to find the original file.
+func backupLegacyState(dataDir string) error {
+	source := filepath.Join(dataDir, "state.json")
+	body, err := os.ReadFile(source)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	backupDir := filepath.Join(dataDir, "backup")
+	if err := os.MkdirAll(backupDir, 0o700); err != nil {
+		return err
+	}
+	name := "state-" + time.Now().UTC().Format("20060102T150405Z") + ".json"
+	return os.WriteFile(filepath.Join(backupDir, name), body, 0o600)
 }
 
 func (source catalogLegacySource) LegacyThreads() ([]task.LegacyThread, error) {
