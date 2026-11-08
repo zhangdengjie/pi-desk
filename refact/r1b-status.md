@@ -250,3 +250,22 @@ frontend typecheck                        ✅
 frontend test 109 files / 1290 tests      ✅
 frontend build                            ✅
 ```
+
+## 第十一刀：修复扩展状态事件生成孤儿 Run
+
+```text
+根因
+  tap 在 currentRun 为空时，对任意事件都会 StartRunForThread
+  session-clock 扩展每 20s 发 extension_ui_request(setStatus)
+  → 在两次 agent 回合之间创建了一个没有 agent_start 的 Run
+  → Run 永远停在 running，Task 也一直显示运行中
+
+修复
+  currentRun 为空时，只有 rawType == agent_start 才创建 Run
+  其他状态事件没有活动 Run 时直接忽略
+  启动时 ReconcileInterruptedRuns：把上一次进程遗留的 active Run 标 failed
+
+验证
+  TestTapIgnoresStatusEventsBetweenRuns
+  TestReconcileInterruptedRuns
+```
