@@ -1,3 +1,4 @@
+import { useRepositoryStore } from "../stores/repository";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { nextTick } from "vue";
@@ -289,7 +290,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({activeThreadId: "tree", repositoryByWorkspace: { "d:/repo": { files: [{ path: "main.py", name: "main.py" }], git: { isRepository: false, files: [] } } }});
+    store.$patch({activeThreadId: "tree"});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": { files: [{ path: "main.py", name: "main.py" }], git: { isRepository: false, files: [] } } };;
     useWorkspaceStore().threads = [{ id: "tree", title: "Tree", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
@@ -369,14 +371,15 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({activeThreadId: "thread-1", repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-1"});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": {
         files: [{ path: "README.md", name: "README.md" }, { path: "src/main.go", name: "main.go" }],
         git: {
           isRepository: true,
           branch: "feature/repo-view",
           files: [{ path: "src/main.go", indexStatus: " ", worktreeStatus: "M" }],
         },
-      } }});
+      } };;
     useWorkspaceStore().threads = [{
         id: "thread-1", title: "Audit", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -445,14 +448,15 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({activeThreadId: "thread-2", repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-2"});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": {
         files: [{ path: "new.png", name: "new.png" }],
         git: {
           isRepository: true,
           branch: "main",
           files: [{ path: "new.png", originalPath: "old.png", indexStatus: "R", worktreeStatus: " " }],
         },
-      } }});
+      } };;
     useWorkspaceStore().threads = [{
         id: "thread-2", title: "Assets", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -724,10 +728,11 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({activeThreadId: "thread-rollback", repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-rollback", sessionChangesByThread: { "thread-rollback": [{ path: "src/main.go", editCalls: 1, writeCalls: 0, plan: "revert-edits" }] }});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": {
         files: [{ path: "src/main.go", name: "main.go" }],
         git: { isRepository: true, branch: "main", files: [{ path: "src/main.go", indexStatus: " ", worktreeStatus: "M" }] },
-      } }, sessionChangesByThread: { "thread-rollback": [{ path: "src/main.go", editCalls: 1, writeCalls: 0, plan: "revert-edits" }] }});
+      } };;
     useWorkspaceStore().threads = [{
         id: "thread-rollback", title: "Rollback", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -753,10 +758,11 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({activeThreadId: "thread-created", repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-created", sessionChangesByThread: { "thread-created": [{ path: "notes.md", editCalls: 0, writeCalls: 1, plan: "delete" }] }});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": {
         files: [{ path: "notes.md", name: "notes.md" }],
         git: { isRepository: true, branch: "main", files: [{ path: "notes.md", indexStatus: "?", worktreeStatus: "?" }] },
-      } }, sessionChangesByThread: { "thread-created": [{ path: "notes.md", editCalls: 0, writeCalls: 1, plan: "delete" }] }});
+      } };;
     useWorkspaceStore().threads = [{
         id: "thread-created", title: "Created", workspace: "repo", workspacePath: "D:\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -782,7 +788,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const owned = useAppStore();
-    owned.$patch({activeThreadId: "thread-expand", repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } }});
+    owned.$patch({activeThreadId: "thread-expand"});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } };;
     useWorkspaceStore().threads = [{ id: "thread-expand", title: "Tree", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     owned.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     owned.scheduleDesktopStateSave = vi.fn();
@@ -820,7 +827,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const owned = useAppStore();
-    owned.$patch({activeThreadId: "thread-bulk", repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } }});
+    owned.$patch({activeThreadId: "thread-bulk"});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } };;
     useWorkspaceStore().threads = [{ id: "thread-bulk", title: "Bulk", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     owned.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     owned.scheduleDesktopStateSave = vi.fn();
@@ -849,7 +857,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({activeThreadId: "thread-cap", repositoryByWorkspace: { "d:/repo": { files: paths.map((path) => ({ path, name: path.split("/").pop() ?? path })), git: { isRepository: true, files: [] } } }});
+    store.$patch({activeThreadId: "thread-cap"});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": { files: paths.map((path) => ({ path, name: path.split("/").pop() ?? path })), git: { isRepository: true, files: [] } } };;
     useWorkspaceStore().threads = [{ id: "thread-cap", title: "Cap", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
@@ -865,7 +874,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({activeThreadId: "thread-ignored", repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-ignored"});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": {
         files: [
           { path: "README.md", name: "README.md" },
           { path: ".pi/settings.json", name: "settings.json" },
@@ -873,7 +883,7 @@ describe("InspectorPanel", () => {
           { path: ".pi/plans/2026-09-24.md", name: "2026-09-24.md", ignored: true },
         ],
         git: { isRepository: true, files: [] },
-      } }});
+      } };;
     useWorkspaceStore().threads = [{ id: "thread-ignored", title: "Ignored", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
@@ -907,7 +917,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({activeThreadId: "thread-filter", repositoryByWorkspace: { "d:/repo": { files: paths.map((path) => ({ path, name: path.split("/").pop() ?? path })), git: { isRepository: true, files: [] } } }});
+    store.$patch({activeThreadId: "thread-filter"});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": { files: paths.map((path) => ({ path, name: path.split("/").pop() ?? path })), git: { isRepository: true, files: [] } } };;
     useWorkspaceStore().threads = [{ id: "thread-filter", title: "Filter", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
@@ -935,14 +946,15 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({activeThreadId: "thread-deep", repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-deep"});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": {
         files: [
           "src/main/java/com/iot/platform/service/WearCaliberService.java",
           "src/main/resources/mapper/WearCaliberMapper.xml",
           "src/main/java/com/iot/platform/service/OrderService.java",
         ].map((path) => ({ path, name: path.split("/").pop() ?? path })),
         git: { isRepository: true, files: [] },
-      } }});
+      } };;
     useWorkspaceStore().threads = [{ id: "thread-deep", title: "Deep", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
@@ -1278,10 +1290,11 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({activeThreadId: "thread-scroll", repositoryByWorkspace: { "d:/repo": {
+    store.$patch({activeThreadId: "thread-scroll"});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": {
         files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }],
         git: { isRepository: true, files: [] },
-      } }});
+      } };;
     useWorkspaceStore().threads = [{ id: "thread-scroll", title: "Scroll", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();
@@ -1309,7 +1322,8 @@ describe("InspectorPanel", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const store = useAppStore();
-    store.$patch({activeThreadId: "thread-late", repositoryByWorkspace: { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } }, inspectorByThread: { "thread-late": { tabs: [{ id: "late-diff", kind: "diff", title: "diff", path: "", treeOpen: false, scroll: { ".panel-file-tree": [0, 1200] } }], activeId: "late-diff", open: true, width: 600, expanded: false } }});
+    store.$patch({activeThreadId: "thread-late", inspectorByThread: { "thread-late": { tabs: [{ id: "late-diff", kind: "diff", title: "diff", path: "", treeOpen: false, scroll: { ".panel-file-tree": [0, 1200] } }], activeId: "late-diff", open: true, width: 600, expanded: false } }});
+    useRepositoryStore().repositoryByWorkspace = { "d:/repo": { files: [{ path: "src/index.ts", name: "index.ts" }, { path: "src/deep/nested.ts", name: "nested.ts" }], git: { isRepository: true, files: [] } } };;
     useWorkspaceStore().threads = [{ id: "thread-late", title: "Late", workspace: "repo", workspacePath: "D:\\repo", trust: "approve", status: "idle", started: false, generation: 0 }];;
     store.refreshActiveRepository = vi.fn().mockResolvedValue(undefined);
     store.scheduleDesktopStateSave = vi.fn();

@@ -112,6 +112,29 @@ describe("normalized agent events", () => {
     expect(message.tools).toHaveLength(0);
   });
 
+  it("applies message.started/delta/completed", () => {
+    const { store } = fixture();
+    store.messagesByThread["thread-1"] = [];
+    delete store.activeAssistantByThread["thread-1"];
+    store.useNormalizedEvents = true;
+    store.handleAgentEvent({
+      id: "message-start", seq: 1, type: "message.started", threadId: "thread-1",
+      ts: 1, payload: { message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
+    });
+    expect(store.messagesByThread["thread-1"]).toHaveLength(1);
+    expect(store.messagesByThread["thread-1"][0].text).toBe("hi");
+    store.handleAgentEvent({
+      id: "message-delta", seq: 2, type: "message.delta", threadId: "thread-1",
+      ts: 2, payload: { assistantMessageEvent: { type: "text_delta", delta: "!" } },
+    });
+    expect(store.messagesByThread["thread-1"][0].text).toBe("hi!");
+    store.handleAgentEvent({
+      id: "message-end", seq: 3, type: "message.completed", threadId: "thread-1",
+      ts: 3, payload: { message: { role: "assistant", content: [{ type: "text", text: "done" }] } },
+    });
+    expect(store.messagesByThread["thread-1"][0].text).toBe("done");
+  });
+
   it("accepts a JSON-string payload from the Wails event bridge", () => {
     const { store, message } = fixture();
     store.useNormalizedEvents = true;

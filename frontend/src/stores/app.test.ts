@@ -1,3 +1,4 @@
+import { useComposerStore } from "./composer";
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RuntimeState } from "../../bindings/pi-desk/internal/domain";
@@ -4890,7 +4891,8 @@ describe("app store", () => {
 
   it("keeps the draft untouched when the file picker is cancelled", async () => {
     const store = useAppStore();
-    store.$patch({activeThreadId: "thread-mention", draftsByThread: { "thread-mention": "Keep this " }});
+    store.$patch({activeThreadId: "thread-mention"});
+    useComposerStore().draftsByThread = { "thread-mention": "Keep this " };;
     useWorkspaceStore().threads = [{
         id: "thread-mention", title: "Mention", workspace: "repo", workspacePath: "D:\\work\\repo", trust: "approve",
         status: "idle", started: false, generation: 0,
@@ -5044,7 +5046,9 @@ describe("app store", () => {
 
   it("persists image references and restores queues paused until explicit resume", async () => {
     const store = useAppStore();
-    store.$patch({catalogReady: true, activeThreadId: "t", attachmentsByThread: { t: [{ id: "a", name: "draft.png", mimeType: "image/png", data: "YQ==", previewUrl: "data:image/png;base64,YQ==" }] }, pendingPromptsByThread: { t: [{ id: "p", text: "queued text", createdAt: "now", images: [{ id: "b", name: "queue.png", mimeType: "image/png", data: "Yg==", previewUrl: "data:image/png;base64,Yg==" }] }] }});
+    store.$patch({catalogReady: true, activeThreadId: "t"});
+    useComposerStore().attachmentsByThread = { t: [{ id: "a", name: "draft.png", mimeType: "image/png", data: "YQ==", previewUrl: "data:image/png;base64,YQ==" }] };
+    useComposerStore().pendingPromptsByThread = { t: [{ id: "p", text: "queued text", createdAt: "now", images: [{ id: "b", name: "queue.png", mimeType: "image/png", data: "Yg==", previewUrl: "data:image/png;base64,Yg==" }] }] };;
     useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: false, generation: 0 }];;
     await store.persistDesktopState();
     const metadata = mocks.saveDesktopState.mock.calls.at(-1)![0].threads[0].composerJson;
@@ -5122,7 +5126,8 @@ describe("app store", () => {
 
   it("retains a queued prompt on disk until Pi acknowledges it", async () => {
     const store = useAppStore();
-    store.$patch({catalogReady: true, activeThreadId: "t", pendingPromptsByThread: { t: [{ id: "p", text: "still awaiting acknowledgement", images: [], createdAt: "now" }] }});
+    store.$patch({catalogReady: true, activeThreadId: "t"});
+    useComposerStore().pendingPromptsByThread = { t: [{ id: "p", text: "still awaiting acknowledgement", images: [], createdAt: "now" }] };;
     useWorkspaceStore().threads = [{ id: "t", title: "Task", workspace: "repo", workspacePath: "D:/repo", trust: "deny", status: "idle", started: true, generation: 4 }];;
     let acknowledge!: (value: { command: string }) => void;
     mocks.sendPrompt.mockReturnValueOnce(new Promise(resolve => { acknowledge = resolve; }));

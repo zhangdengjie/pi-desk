@@ -1,6 +1,9 @@
 import { defineStore } from "pinia";
 import { useSessionStore } from "./session";
 import { useWorkspaceStore } from "./workspace";
+import { useRepositoryStore } from "./repository";
+import { useUsageStore } from "./usage";
+import { useComposerStore } from "./composer";
 import { createID, formatMessageTime, nowLabel } from "../utils/ids";
 import { RuntimeState, type BootstrapState, type DesktopState, type ProviderEnvIssue, type SessionSnapshot, type UserConfigView, type WorkspaceApplication, type WorkspaceSummary as HostWorkspaceSummary } from "../../bindings/pi-desk/internal/domain";
 import { agentService, onPiEvent, type PiSessionEvent, type SessionBranches } from "../services/agent";
@@ -1141,53 +1144,31 @@ export const useAppStore = defineStore("app", {
     searchBodyLoading: false,
     transcriptEntriesByThread: {} as Record<string, Array<Record<string, unknown>>>,
     transcriptReloadGenerationByThread: {} as Record<string, number>,
-    draftsByThread: {} as Record<string, string>,
-    attachmentsByThread: {} as Record<string, PreparedImage[]>,
     sessionStateByThread: {} as Record<string, PiSessionState>,
-    sessionStatsByThread: {} as Record<string, SessionStats>,
-    promptCacheByThread: {} as Record<string, PromptCacheStatus | undefined>,
-    sessionStatsRefreshGenerationByThread: {} as Record<string, number>,
-    compactionEstimatesByThread: {} as Record<string, Record<string, number>>,
-    compactionDurationsByThread: {} as Record<string, Record<string, number>>,
     // When `compaction_start` arrived, per thread. Consumed by the matching `compaction_end`.
-    compactionStartByThread: {} as Record<string, number>,
-    latestCompactionEstimateByThread: {} as Record<string, number | undefined>,
     modelsByThread: {} as Record<string, PiModel[]>,
     configuredModels: [] as PiModel[],
     accountModelProviders: [] as string[],
     knownRuntimeModels: [] as PiModel[],
-    pendingModelByThread: {} as Record<string, PiModel | undefined>,
     // Reasoning level a *not yet started* thread should adopt. Levels can only be set on a live Pi
     // process, so this waits for `applyPendingThinking` right after the model is applied.
-    pendingThinkingByThread: {} as Record<string, string | undefined>,
     modelSelectionGenerationByThread: {} as Record<string, number>,
     sessionStateRefreshGenerationByThread: {} as Record<string, number>,
     modelCatalogError: "",
     thinkingLevelsByThread: {} as Record<string, string[]>,
     thinkingLevelsRefreshGenerationByThread: {} as Record<string, number>,
     commandsByThread: {} as Record<string, SlashCommand[]>,
-    queueByThread: {} as Record<string, QueuedMessages>,
-    pendingPromptsByThread: {} as Record<string, PendingPrompt[]>,
-    pendingPromptsPausedByThread: {} as Record<string, boolean>,
-    pendingPromptDispatchByThread: {} as Record<string, string>,
     retryByThread: {} as Record<string, RetryInfo | undefined>,
     bashMessageByThread: {} as Record<string, string | undefined>,
     bashRunningByThread: {} as Record<string, boolean | undefined>,
     autoRetryEnabledByThread: {} as Record<string, boolean | undefined>,
-    repositoryByWorkspace: {} as Record<string, RepositorySnapshot | undefined>,
-    repositoryLoadingByWorkspace: {} as Record<string, boolean>,
-    repositoryErrorByWorkspace: {} as Record<string, string>,
-    repositoryStaleByWorkspace: {} as Record<string, boolean>,
     // Which repository directories the user has opened, per workspace. Upstream's panel keeps one
     // `expanded` record per file tab, which would force every tab of the same repository to be
     // opened again - so the bucket stays here and feeds FileTreeNode's `expanded` prop.
     // In-memory like `repositoryByWorkspace`; the tab's own scroll/selection state stays upstream's.
-    repositoryTreeExpandedByWorkspace: {} as Record<string, Record<string, boolean>>,
     // Whether the file tree shows paths Git excludes. On by default: those paths are real files in
     // the workspace (`pi` keeps its own notes under `.pi/plans/`, excluded via `.git/info/exclude`),
     // and hiding them made the listing look broken.
-    repositoryShowIgnoredFiles: true,
-    repositoryRefreshGenerationByWorkspace: {} as Record<string, number>,
     sessionChangesByThread: {} as Record<string, SessionFileChange[] | undefined>,
     sessionChangesErrorByThread: {} as Record<string, string>,
     workspaceTrustUpdatingPath: "",
@@ -1257,6 +1238,28 @@ export const useAppStore = defineStore("app", {
     updateCheckResult: null as import("../../bindings/pi-desk/internal/domain").UpdateCheckResult | null,
   }),
   getters: {
+    repositoryByWorkspace(): Record<string, RepositorySnapshot | undefined> { return useRepositoryStore().repositoryByWorkspace; },
+    repositoryLoadingByWorkspace(): Record<string, boolean> { return useRepositoryStore().repositoryLoadingByWorkspace; },
+    repositoryErrorByWorkspace(): Record<string, string> { return useRepositoryStore().repositoryErrorByWorkspace; },
+    repositoryStaleByWorkspace(): Record<string, boolean> { return useRepositoryStore().repositoryStaleByWorkspace; },
+    repositoryTreeExpandedByWorkspace(): Record<string, Record<string, boolean>> { return useRepositoryStore().repositoryTreeExpandedByWorkspace; },
+    repositoryShowIgnoredFiles(): boolean { return useRepositoryStore().repositoryShowIgnoredFiles; },
+    repositoryRefreshGenerationByWorkspace(): Record<string, number> { return useRepositoryStore().repositoryRefreshGenerationByWorkspace; },
+    sessionStatsByThread(): Record<string, SessionStats> { return useUsageStore().sessionStatsByThread; },
+    promptCacheByThread(): Record<string, PromptCacheStatus | undefined> { return useUsageStore().promptCacheByThread; },
+    sessionStatsRefreshGenerationByThread(): Record<string, number> { return useUsageStore().sessionStatsRefreshGenerationByThread; },
+    compactionEstimatesByThread(): Record<string, Record<string, number>> { return useUsageStore().compactionEstimatesByThread; },
+    compactionDurationsByThread(): Record<string, Record<string, number>> { return useUsageStore().compactionDurationsByThread; },
+    compactionStartByThread(): Record<string, number> { return useUsageStore().compactionStartByThread; },
+    latestCompactionEstimateByThread(): Record<string, number | undefined> { return useUsageStore().latestCompactionEstimateByThread; },
+    draftsByThread(): Record<string, string> { return useComposerStore().draftsByThread; },
+    attachmentsByThread(): Record<string, PreparedImage[]> { return useComposerStore().attachmentsByThread; },
+    pendingPromptsByThread(): Record<string, PendingPrompt[]> { return useComposerStore().pendingPromptsByThread; },
+    pendingPromptsPausedByThread(): Record<string, boolean> { return useComposerStore().pendingPromptsPausedByThread; },
+    pendingPromptDispatchByThread(): Record<string, string> { return useComposerStore().pendingPromptDispatchByThread; },
+    pendingModelByThread(): Record<string, PiModel | undefined> { return useComposerStore().pendingModelByThread; },
+    pendingThinkingByThread(): Record<string, string | undefined> { return useComposerStore().pendingThinkingByThread; },
+    queueByThread(): Record<string, QueuedMessages> { return useComposerStore().queueByThread; },
     threads(): ThreadSummary[] {
       return useWorkspaceStore().threads;
     },
@@ -1311,19 +1314,19 @@ export const useAppStore = defineStore("app", {
       return Boolean(useSessionStore().waitingForOutputByThread[state.activeThreadId]);
     },
     activeDraft(state): string {
-      return state.draftsByThread[state.activeThreadId] ?? "";
+      return useComposerStore().draftsByThread[state.activeThreadId] ?? "";
     },
     activeAttachments(state): PreparedImage[] {
-      return state.attachmentsByThread[state.activeThreadId] ?? [];
+      return useComposerStore().attachmentsByThread[state.activeThreadId] ?? [];
     },
     activeSessionState(state): PiSessionState | undefined {
       return state.sessionStateByThread[state.activeThreadId];
     },
     activeSessionStats(state): SessionStats | undefined {
-      return state.sessionStatsByThread[state.activeThreadId];
+      return useUsageStore().sessionStatsByThread[state.activeThreadId];
     },
     activePromptCache(state): PromptCacheStatus | undefined {
-      return state.promptCacheByThread[state.activeThreadId];
+      return useUsageStore().promptCacheByThread[state.activeThreadId];
     },
     activeModels(state): PiModel[] {
       const thread = useWorkspaceStore().threads.find((candidate) => candidate.id === state.activeThreadId);
@@ -1346,7 +1349,7 @@ export const useAppStore = defineStore("app", {
       );
     },
     activeModelPending(state): boolean {
-      return Boolean(state.pendingModelByThread[state.activeThreadId]);
+      return Boolean(useComposerStore().pendingModelByThread[state.activeThreadId]);
     },
     activeThinkingLevels(state): string[] {
       return state.thinkingLevelsByThread[state.activeThreadId] ?? [];
@@ -1358,10 +1361,10 @@ export const useAppStore = defineStore("app", {
       return [...new Set(normalizeSlashCommandList(state.hiddenSlashCommands))];
     },
     activeQueue(state): QueuedMessages {
-      return state.queueByThread[state.activeThreadId] ?? { steering: [], followUp: [] };
+      return useComposerStore().queueByThread[state.activeThreadId] ?? { steering: [], followUp: [] };
     },
     activePendingPrompts(state): PendingPrompt[] {
-      return state.pendingPromptsByThread[state.activeThreadId] ?? [];
+      return useComposerStore().pendingPromptsByThread[state.activeThreadId] ?? [];
     },
     activeRetry(state): RetryInfo | undefined {
       return state.retryByThread[state.activeThreadId];
@@ -1397,7 +1400,7 @@ export const useAppStore = defineStore("app", {
     },
     activeRepository(state): RepositorySnapshot | undefined {
       const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
-      return thread ? state.repositoryByWorkspace[repositoryKey(thread)] : undefined;
+      return thread ? useRepositoryStore().repositoryByWorkspace[repositoryKey(thread)] : undefined;
     },
     activeRepositoryTreeKey(state): string {
       const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
@@ -1405,19 +1408,19 @@ export const useAppStore = defineStore("app", {
     },
     activeRepositoryTreeExpanded(state): Record<string, boolean> {
       const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
-      return (thread && state.repositoryTreeExpandedByWorkspace[repositoryKey(thread)]) || {};
+      return (thread && useRepositoryStore().repositoryTreeExpandedByWorkspace[repositoryKey(thread)]) || {};
     },
     activeRepositoryLoading(state): boolean {
       const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
-      return thread ? Boolean(state.repositoryLoadingByWorkspace[repositoryKey(thread)]) : false;
+      return thread ? Boolean(useRepositoryStore().repositoryLoadingByWorkspace[repositoryKey(thread)]) : false;
     },
     activeRepositoryError(state): string {
       const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
-      return thread ? state.repositoryErrorByWorkspace[repositoryKey(thread)] ?? "" : "";
+      return thread ? useRepositoryStore().repositoryErrorByWorkspace[repositoryKey(thread)] ?? "" : "";
     },
     activeRepositoryStale(state): boolean {
       const thread = useWorkspaceStore().threads.find((item) => item.id === state.activeThreadId);
-      return thread ? Boolean(state.repositoryStaleByWorkspace[repositoryKey(thread)]) : false;
+      return thread ? Boolean(useRepositoryStore().repositoryStaleByWorkspace[repositoryKey(thread)]) : false;
     },
     activePanel(state): ThreadPanel | undefined {
       return state.inspectorByThread[state.activeThreadId];
@@ -2222,7 +2225,7 @@ export const useAppStore = defineStore("app", {
       return { path: normalized, external: !inside };
     },
     setRepositoryShowIgnoredFiles(value: boolean) {
-      this.repositoryShowIgnoredFiles = value;
+      useRepositoryStore().repositoryShowIgnoredFiles = value;
     },
     setRepositoryTreeExpanded(directory: string, value: boolean) {
       const key = this.activeRepositoryTreeKey;
@@ -4308,6 +4311,18 @@ export const useAppStore = defineStore("app", {
         this.applyRuntimeExit(thread, event.error || "Pi process exited", event.generation ?? 0);
         return;
       }
+      if (event.type === "message.started") {
+        this.applyMessageStart(thread, payload);
+        return;
+      }
+      if (event.type === "message.delta") {
+        this.applyMessageUpdate(thread, payload);
+        return;
+      }
+      if (event.type === "message.completed") {
+        this.applyMessageEnd(thread, payload);
+        return;
+      }
       if (event.type === "tool.started") {
         this.applyToolStart(thread, payload);
       } else if (event.type === "tool.updated") {
@@ -4315,6 +4330,67 @@ export const useAppStore = defineStore("app", {
       } else if (event.type === "tool.completed" || event.type === "tool.failed") {
         this.applyToolProgress(thread, event.type === "tool.failed" ? { ...payload, isError: true } : payload, true);
       }
+    },
+    applyMessageStart(thread: ThreadSummary, payload: Record<string, unknown>) {
+      const message = payload.message as Record<string, unknown> | undefined;
+      if (message?.role !== "assistant") return;
+      const id = typeof message.id === "string" ? message.id : createID("assistant");
+      const parts = messageStartParts(message);
+      this.activeAssistantByThread[thread.id] = id;
+      const messages = this.messagesByThread[thread.id] ?? (this.messagesByThread[thread.id] = []);
+      messages.push({
+        id, role: "assistant", text: parts.text, thinking: parts.thinking, timestamp: nowLabel(), timestampMs: Date.now(), streaming: true, tools: [],
+        activeExecution: parts.activeExecution,
+      });
+      if (parts.text || parts.thinking) this.waitingForOutputByThread[thread.id] = false;
+    },
+    applyMessageUpdate(thread: ThreadSummary, payload: Record<string, unknown>) {
+      const update = payload.assistantMessageEvent as Record<string, unknown> | undefined;
+      const assistant = this.currentAssistant(thread.id, true);
+      if (!update || !assistant) return;
+      if (update.type === "text_delta" && typeof update.delta === "string") {
+        assistant.text += update.delta;
+        assistant.activeExecution = "text";
+        if (update.delta) this.waitingForOutputByThread[thread.id] = false;
+      }
+      if (update.type === "thinking_delta" && typeof update.delta === "string") {
+        assistant.thinking += update.delta;
+        assistant.activeExecution = "thinking";
+        if (update.delta) this.waitingForOutputByThread[thread.id] = false;
+      }
+    },
+    applyMessageEnd(thread: ThreadSummary, payload: Record<string, unknown>) {
+      const message = payload.message as Record<string, unknown> | undefined;
+      const messages = this.messagesByThread[thread.id] ?? (this.messagesByThread[thread.id] = []);
+      const assistant = this.currentAssistant(thread.id, false);
+      if (assistant && message?.role === "assistant") {
+        const ended = messageEndParts(message);
+        if (ended.text) assistant.text = ended.text;
+        if (ended.thinking) assistant.thinking = ended.thinking;
+        assistant.activeExecution = undefined;
+        if (ended.text || ended.thinking || ended.error) this.waitingForOutputByThread[thread.id] = false;
+        if (ended.error) {
+          assistant.error = ended.error;
+          assistant.runNotice = { status: "failed", error: ended.error };
+        }
+        const endedAt = ended.timestampMs ?? Date.now();
+        assistant.timestampMs = endedAt;
+        assistant.timestamp = formatMessageTime(new Date(endedAt));
+      }
+      if (message?.role === "toolResult") {
+        const parent = messages.map((item) => findTool(item.tools, String(message.toolCallId ?? ""))).find(Boolean);
+        if (parent) {
+          parent.children ??= nestedToolHistory(message.nestedCalls);
+          parent.nestedCallsIncomplete = !!message.nestedCalls && (message.nestedCalls as Record<string, unknown>).complete === false;
+        }
+      }
+      if (message?.role === "assistant") {
+        this.promptCacheByThread[thread.id] = promptCacheStatus(
+          message,
+          this.promptCacheByThread[thread.id]?.cacheObserved,
+        ) ?? this.promptCacheByThread[thread.id];
+      }
+      void this.refreshStats(thread.id).catch(() => undefined);
     },
     handlePiEvent(sessionEvent: PiSessionEvent) {
       const thread = this.threads.find((item) => item.id === sessionEvent.threadId);
@@ -4357,71 +4433,15 @@ export const useAppStore = defineStore("app", {
           message.text = output.text;
           break;
         }
-        case "message_start": {
-          const message = payload.message as Record<string, unknown> | undefined;
-          if (message?.role !== "assistant") break;
-          const id = typeof message.id === "string" ? message.id : createID("assistant");
-          const parts = messageStartParts(message);
-          this.activeAssistantByThread[thread.id] = id;
-          messages.push({
-            id, role: "assistant", text: parts.text, thinking: parts.thinking, timestamp: nowLabel(), timestampMs: Date.now(), streaming: true, tools: [],
-            activeExecution: parts.activeExecution,
-          });
-          if (parts.text || parts.thinking) this.waitingForOutputByThread[thread.id] = false;
+        case "message_start":
+          if (!this.useNormalizedEvents) this.applyMessageStart(thread, payload);
           break;
-        }
-        case "message_update": {
-          const update = payload.assistantMessageEvent as Record<string, unknown> | undefined;
-          const assistant = this.currentAssistant(thread.id, true);
-          if (!update || !assistant) break;
-          // The store always holds the complete text as far as Pi has sent it: search,
-          // previews, grouping and the virtualizer all read these fields, so smoothing
-          // belongs to the renderer (MarkdownBody / ToolCallPanel), never here.
-          if (update.type === "text_delta" && typeof update.delta === "string") {
-            assistant.text += update.delta;
-            assistant.activeExecution = "text";
-            if (update.delta) this.waitingForOutputByThread[thread.id] = false;
-          }
-          if (update.type === "thinking_delta" && typeof update.delta === "string") {
-            assistant.thinking += update.delta;
-            assistant.activeExecution = "thinking";
-            if (update.delta) this.waitingForOutputByThread[thread.id] = false;
-          }
+        case "message_update":
+          if (!this.useNormalizedEvents) this.applyMessageUpdate(thread, payload);
           break;
-        }
-        case "message_end": {
-          const message = payload.message as Record<string, unknown> | undefined;
-          const assistant = this.currentAssistant(thread.id, false);
-          if (assistant && message?.role === "assistant") {
-            const ended = messageEndParts(message);
-            if (ended.text) assistant.text = ended.text;
-            if (ended.thinking) assistant.thinking = ended.thinking;
-            assistant.activeExecution = undefined;
-            if (ended.text || ended.thinking || ended.error) this.waitingForOutputByThread[thread.id] = false;
-            if (ended.error) {
-              assistant.error = ended.error;
-              assistant.runNotice = { status: "failed", error: ended.error };
-            }
-            const endedAt = ended.timestampMs ?? Date.now();
-            assistant.timestampMs = endedAt;
-            assistant.timestamp = formatMessageTime(new Date(endedAt));
-          }
-          if (message?.role === "toolResult") {
-            const parent = messages.map((item) => findTool(item.tools, String(message.toolCallId ?? ""))).find(Boolean);
-            if (parent) {
-              parent.children ??= nestedToolHistory(message.nestedCalls);
-              parent.nestedCallsIncomplete = !!message.nestedCalls && (message.nestedCalls as Record<string, unknown>).complete === false;
-            }
-          }
-          if (message?.role === "assistant") {
-            this.promptCacheByThread[thread.id] = promptCacheStatus(
-              message,
-              this.promptCacheByThread[thread.id]?.cacheObserved,
-            ) ?? this.promptCacheByThread[thread.id];
-          }
-          void this.refreshStats(thread.id).catch(() => undefined);
+        case "message_end":
+          if (!this.useNormalizedEvents) this.applyMessageEnd(thread, payload);
           break;
-        }
         case "tool_execution_start":
           if (!this.useNormalizedEvents) this.applyToolStart(thread, payload);
           break;
