@@ -1107,6 +1107,100 @@ export interface StartTerminalRequest {
     "rows": number;
 }
 
+export interface TaskDetail {
+    "id": string;
+    "title": string;
+    "status": string;
+    "origin": string;
+    "workspaceId"?: string;
+    "priority": number;
+    "legacyThreadId"?: string;
+    "createdAt": number;
+    "updatedAt": number;
+    "completedAt"?: number;
+    "runs": TaskRunSummary[] | null;
+}
+
+export interface TaskEventView {
+    "id": string;
+    "runId": string;
+    "type": string;
+    "seq": number;
+    "payload"?: string;
+    "redacted": boolean;
+    "truncated": boolean;
+    "createdAt": number;
+}
+
+/**
+ * TaskEventsRequest pages through persisted Run events.
+ */
+export interface TaskEventsRequest {
+    "runId": string;
+    "afterSeq": number;
+    "limit": number;
+}
+
+/**
+ * TaskRequest addresses one Task.
+ */
+export interface TaskRequest {
+    "taskId": string;
+}
+
+/**
+ * TaskRunRequest addresses one Run.
+ */
+export interface TaskRunRequest {
+    "runId": string;
+}
+
+/**
+ * TaskRunSummary is one execution attempt. Usage is nil until a message_end
+ * event with token counts has been observed.
+ */
+export interface TaskRunSummary {
+    "id": string;
+    "taskId": string;
+    "runtime": string;
+    "status": string;
+    "sessionPath"?: string;
+    "modelProvider"?: string;
+    "modelId"?: string;
+    "error"?: string;
+    "attempt": number;
+    "generation": number;
+    "createdAt": number;
+    "startedAt"?: number;
+    "finishedAt"?: number;
+    "usage"?: TaskUsageSummary | null;
+}
+
+/**
+ * TaskSummary is the list-row projection.
+ */
+export interface TaskSummary {
+    "id": string;
+    "title": string;
+    "status": string;
+    "origin": string;
+    "workspaceId"?: string;
+    "priority": number;
+    "legacyThreadId"?: string;
+    "createdAt": number;
+    "updatedAt": number;
+    "completedAt"?: number;
+}
+
+export interface TaskUsageSummary {
+    "inputTokens": number;
+    "outputTokens": number;
+    "cacheReadTokens": number;
+    "cacheWriteTokens": number;
+    "estimatedCost": number;
+    "createdAt"?: number;
+}
+
 export interface TerminalRequest {
     "threadId": string;
     "sessionId"?: string;

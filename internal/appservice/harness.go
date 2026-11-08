@@ -30,6 +30,7 @@ func HarnessEnabled() bool {
 type Harness struct {
 	store     *sqlite.Store
 	tap       *eventbus.Tap
+	service   *task.Service
 	closeOnce sync.Once
 }
 
@@ -57,7 +58,7 @@ func StartHarness(ctx context.Context, dataDir string, catalog *workspace.Catalo
 	}
 	tap := eventbus.NewTap(service, store)
 	tap.Start(ctx)
-	return &Harness{store: store, tap: tap}, nil
+	return &Harness{store: store, tap: tap, service: service}, nil
 }
 
 func (harness *Harness) SetEmitter(emitter func(eventbus.Event)) {

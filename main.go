@@ -282,6 +282,7 @@ func main() {
 	}()
 	piMaintenanceService := appservice.NewPiMaintenanceService(locator, agentService)
 	catalogService := appservice.NewCatalogService(catalog, sessionIndex, remoteCatalog)
+	taskService := appservice.NewTaskService(harness)
 
 	app := application.New(application.Options{
 		Name:           instanceTitle(),
@@ -298,6 +299,7 @@ func main() {
 			application.NewService(piExtensionService),
 			application.NewService(mcpConfigService),
 			application.NewService(catalogService),
+			application.NewService(taskService),
 			application.NewService(remoteWorkspaceService),
 			application.NewService(orphanSessionService),
 			application.NewService(repositoryService),
