@@ -451,3 +451,54 @@ func TestDocumentPoolDefaultClampAndRoundTrip(t *testing.T) {
 		t.Fatalf("created file lost the pool size:\n%s", raw)
 	}
 }
+
+func TestWorktreeBootstrapRoundTripAndLookup(t *testing.T) {
+	isolate(t)
+	workspacePath := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(workspacePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := Defaults()
+	config.WorktreeBootstrap = map[string]WorktreeBootstrap{
+		workspacePath: {Mode: "copy", Copy: []string{".env.example"}},
+	}
+	if _, err := Save(config); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := loaded.WorktreeBootstrapFor(workspacePath + string(os.PathSeparator))
+	if value.Mode != "copy" || len(value.Copy) != 1 || value.Copy[0] != ".env.example" {
+		t.Fatalf("bootstrap lookup = %#v", value)
+	}
+	if missing := loaded.WorktreeBootstrapFor(filepath.Join(workspacePath, "missing")); missing.Mode != "none" {
+		t.Fatalf("missing workspace bootstrap = %#v", missing)
+	}
+}
+
+func TestWorktreeBootstrapInvalidModeFallsBackToNone(t *testing.T) {
+	isolate(t)
+	path, err := Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"worktreeBootstrap":{"/tmp/repo":{"mode":"nonsense"}}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config, _, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value := config.WorktreeBootstrapFor("/tmp/repo"); value.Mode != "none" {
+		t.Fatalf("invalid mode = %#v", value)
+	}
+	if len(config.Notes()) == 0 {
+		t.Fatal("invalid mode should be reported in Notes")
+	}
+}

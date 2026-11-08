@@ -21,7 +21,7 @@ func TestWorktreeServiceCreateListAndRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewWorktreeService(worktree.New(nil), catalog)
+	service := NewWorktreeService(worktree.New(nil), catalog, noWorktreeBootstrap)
 	created, err := service.Create(domain.WorktreeCreateRequest{WorkspaceID: parent.ID, TaskID: "task_isolated"})
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestWorktreeServiceCreateListAndRemove(t *testing.T) {
 func TestWorktreeServiceDisabled(t *testing.T) {
 	t.Setenv(R2WorktreeEnv, "0")
 	catalog := workspace.NewCatalog(filepath.Join(t.TempDir(), "state.json"))
-	service := NewWorktreeService(worktree.New(nil), catalog)
+	service := NewWorktreeService(worktree.New(nil), catalog, noWorktreeBootstrap)
 	if service.Enabled() {
 		t.Fatal("worktree service should be disabled")
 	}
@@ -84,9 +84,37 @@ func TestWorktreeServiceRejectsRemoteAndNonRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewWorktreeService(worktree.New(nil), catalog)
+	service := NewWorktreeService(worktree.New(nil), catalog, noWorktreeBootstrap)
 	if _, err := service.Create(domain.WorktreeCreateRequest{WorkspaceID: parent.ID, TaskID: "task_not_repo"}); err == nil {
 		t.Fatal("non-git workspace should fail")
+	}
+}
+
+func noWorktreeBootstrap(string) worktree.Bootstrap {
+	return worktree.Bootstrap{Mode: worktree.BootstrapNone}
+}
+
+func TestWorktreeServiceAppliesConfiguredBootstrap(t *testing.T) {
+	t.Setenv(R2WorktreeEnv, "1")
+	root := initWorktreeRepository(t)
+	if err := os.WriteFile(filepath.Join(root, ".env.example"), []byte("SAFE=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	catalog := workspace.NewCatalog(filepath.Join(t.TempDir(), "state.json"))
+	parent, err := catalog.Add(root, "approve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewWorktreeService(worktree.New(nil), catalog, func(string) worktree.Bootstrap {
+		return worktree.Bootstrap{Mode: worktree.BootstrapCopy, Copy: []string{".env.example"}}
+	})
+	created, err := service.Create(domain.WorktreeCreateRequest{WorkspaceID: parent.ID, TaskID: "task_bootstrap"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(created.Path, ".env.example"))
+	if err != nil || string(body) != "SAFE=1\n" {
+		t.Fatalf("bootstrap copy was not applied: %q, %v", body, err)
 	}
 }
 

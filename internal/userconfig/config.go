@@ -122,6 +122,13 @@ type Scroll struct {
 
 // Config is the file's content. Unknown keys are preserved on save so a newer
 // build's settings do not vanish when an older one writes the file back.
+type WorktreeBootstrap struct {
+	Mode    string   `json:"mode,omitempty"`
+	Share   []string `json:"share,omitempty"`
+	Copy    []string `json:"copy,omitempty"`
+	Command string   `json:"command,omitempty"`
+}
+
 type Config struct {
 	// StreamPanels decides whether reasoning and tool-call panels open on their own.
 	StreamPanels string `json:"streamPanels"`
@@ -132,6 +139,9 @@ type Config struct {
 	// DocumentPool is how many document readers (PDF/EPUB) stay mounted across tab and
 	// thread switches. Out-of-range values fall back to DefaultDocumentPool.
 	DocumentPool int `json:"documentPool"`
+	// WorktreeBootstrap maps a canonical workspace path to the dependency setup used
+	// after `git worktree add`. Missing entries mean mode "none".
+	WorktreeBootstrap map[string]WorktreeBootstrap `json:"worktreeBootstrap,omitempty"`
 
 	// notes records values that were rejected and replaced by their default.
 	notes []string
@@ -243,6 +253,33 @@ func (config *Config) normalise() {
 	if config.DocumentPool < 1 || config.DocumentPool > maxDocumentPool {
 		config.note("documentPool", config.DocumentPool, DefaultDocumentPool)
 		config.DocumentPool = DefaultDocumentPool
+	}
+	config.normaliseWorktreeBootstrap()
+}
+
+func (config *Config) normaliseWorktreeBootstrap() {
+	for path, value := range config.WorktreeBootstrap {
+		if strings.TrimSpace(path) == "" {
+			delete(config.WorktreeBootstrap, path)
+			config.note("worktreeBootstrap.path", path, "removed")
+			continue
+		}
+		mode := strings.ToLower(strings.TrimSpace(value.Mode))
+		if mode == "" {
+			mode = "none"
+		}
+		switch mode {
+		case "none", "copy", "symlink", "command":
+		default:
+			config.note("worktreeBootstrap."+path+".mode", value.Mode, "none")
+			mode = "none"
+		}
+		if mode == "command" && strings.TrimSpace(value.Command) == "" {
+			config.note("worktreeBootstrap."+path+".command", value.Command, "none")
+			mode = "none"
+		}
+		value.Mode = mode
+		config.WorktreeBootstrap[path] = value
 	}
 }
 
@@ -358,6 +395,13 @@ func Load() (Config, string, error) {
 				config.note("documentPool", string(value), DefaultDocumentPool)
 				config.DocumentPool = DefaultDocumentPool
 			}
+		case "worktreeBootstrap":
+			var bootstrap map[string]WorktreeBootstrap
+			if err := json.Unmarshal(value, &bootstrap); err != nil {
+				config.note("worktreeBootstrap", string(value), "none")
+			} else {
+				config.WorktreeBootstrap = bootstrap
+			}
 		default:
 			config.extra[key] = value
 		}
@@ -367,6 +411,34 @@ func Load() (Config, string, error) {
 	}
 	config.normalise()
 	return config, path, nil
+}
+
+// WorktreeBootstrapFor returns the per-workspace setup, or mode none.
+func (config Config) WorktreeBootstrapFor(workspacePath string) WorktreeBootstrap {
+	target := configPathKey(workspacePath)
+	if target == "" {
+		return WorktreeBootstrap{Mode: "none"}
+	}
+	for key, value := range config.WorktreeBootstrap {
+		if configPathKey(key) == target {
+			return value
+		}
+	}
+	return WorktreeBootstrap{Mode: "none"}
+}
+
+func configPathKey(path string) string {
+	path = appdirs.ExpandHome(strings.TrimSpace(path))
+	if path == "" {
+		return ""
+	}
+	if absolute, err := filepath.Abs(path); err == nil {
+		path = absolute
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	return filepath.Clean(path)
 }
 
 // Save writes the config atomically, keeping any key this build does not model.
@@ -402,6 +474,13 @@ func Save(config Config) (string, error) {
 		return "", fmt.Errorf("encode document pool: %w", err)
 	}
 	fields["documentPool"] = documentPool
+	if len(config.WorktreeBootstrap) > 0 {
+		worktreeBootstrap, err := json.Marshal(config.WorktreeBootstrap)
+		if err != nil {
+			return "", fmt.Errorf("encode worktree bootstrap: %w", err)
+		}
+		fields["worktreeBootstrap"] = worktreeBootstrap
+	}
 	// Go sorts map keys, so the layout is stable and a hand edit never shuffles.
 	encoded, err := json.MarshalIndent(fields, "", "  ")
 	if err != nil {

@@ -19,12 +19,13 @@ import (
 // write actions the UI needs: cancel the active run, retry a failed / cancelled
 // task from its last user prompt, and archive tasks without an active run.
 type TaskService struct {
-	service  *task.Service
-	store    task.Store
-	agent    TaskAgent
-	messages TaskMessageSource
-	images   TaskImageSource
-	threads  TaskThreadSource
+	service   *task.Service
+	store     task.Store
+	agent     TaskAgent
+	messages  TaskMessageSource
+	images    TaskImageSource
+	threads   TaskThreadSource
+	worktrees *WorktreeService
 }
 
 type TaskAgent interface {
@@ -47,11 +48,15 @@ type TaskThreadSource interface {
 	Desktop() (workspace.DesktopRecord, error)
 }
 
-func NewTaskService(harness *Harness, agent TaskAgent, messages TaskMessageSource, images TaskImageSource, threads TaskThreadSource) *TaskService {
-	if harness == nil {
-		return &TaskService{agent: agent, messages: messages, images: images, threads: threads}
+func NewTaskService(harness *Harness, agent TaskAgent, messages TaskMessageSource, images TaskImageSource, threads TaskThreadSource, worktrees ...*WorktreeService) *TaskService {
+	var cleaner *WorktreeService
+	if len(worktrees) > 0 {
+		cleaner = worktrees[0]
 	}
-	return &TaskService{service: harness.service, store: harness.store, agent: agent, messages: messages, images: images, threads: threads}
+	if harness == nil {
+		return &TaskService{agent: agent, messages: messages, images: images, threads: threads, worktrees: cleaner}
+	}
+	return &TaskService{service: harness.service, store: harness.store, agent: agent, messages: messages, images: images, threads: threads, worktrees: cleaner}
 }
 
 func (service *TaskService) Enabled() bool {
@@ -288,7 +293,16 @@ func (service *TaskService) CancelTask(request domain.TaskRequest) (domain.TaskD
 }
 
 func (service *TaskService) ArchiveTask(request domain.TaskRequest) (domain.TaskDetail, error) {
-	return service.setArchived(request, true)
+	detail, err := service.setArchived(request, true)
+	if err != nil {
+		return detail, err
+	}
+	if service.worktrees != nil && strings.TrimSpace(detail.LegacyThreadID) != "" {
+		// Dirty/unmerged worktrees are reported as orphaned by the manager and
+		// intentionally left on disk; a clean one is removed with its branch.
+		_, _, _ = service.worktrees.removeForThread(detail.LegacyThreadID)
+	}
+	return detail, nil
 }
 
 func (service *TaskService) UnarchiveTask(request domain.TaskRequest) (domain.TaskDetail, error) {

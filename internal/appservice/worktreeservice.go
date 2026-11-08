@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"pi-desk/internal/domain"
+	"pi-desk/internal/userconfig"
 	"pi-desk/internal/workspace"
 	"pi-desk/internal/worktree"
 )
@@ -18,12 +19,26 @@ const worktreeTimeout = 30 * time.Second
 // WorktreeService exposes the git worktree manager to the desktop UI. Task
 // execution and Run records stay in TaskService/ScheduledRunner.
 type WorktreeService struct {
-	manager *worktree.Manager
-	catalog *workspace.Catalog
+	manager   *worktree.Manager
+	catalog   *workspace.Catalog
+	bootstrap func(string) worktree.Bootstrap
 }
 
-func NewWorktreeService(manager *worktree.Manager, catalog *workspace.Catalog) *WorktreeService {
-	return &WorktreeService{manager: manager, catalog: catalog}
+func NewWorktreeService(manager *worktree.Manager, catalog *workspace.Catalog, resolvers ...func(string) worktree.Bootstrap) *WorktreeService {
+	resolver := loadWorktreeBootstrap
+	if len(resolvers) > 0 && resolvers[0] != nil {
+		resolver = resolvers[0]
+	}
+	return &WorktreeService{manager: manager, catalog: catalog, bootstrap: resolver}
+}
+
+func loadWorktreeBootstrap(workspacePath string) worktree.Bootstrap {
+	config, _, err := userconfig.Load()
+	if err != nil {
+		return worktree.Bootstrap{Mode: worktree.BootstrapNone}
+	}
+	value := config.WorktreeBootstrapFor(workspacePath)
+	return worktree.Bootstrap{Mode: value.Mode, Share: value.Share, Copy: value.Copy, Command: value.Command}
 }
 
 func (service *WorktreeService) Enabled() bool {
@@ -47,6 +62,7 @@ func (service *WorktreeService) Create(request domain.WorktreeCreateRequest) (do
 		Repository: parent.Path,
 		TaskID:     request.TaskID,
 		BaseRef:    request.BaseRef,
+		Bootstrap:  service.bootstrap(parent.Path),
 	})
 	if err != nil {
 		return domain.WorktreeSummary{}, err
@@ -129,6 +145,38 @@ func (service *WorktreeService) Remove(request domain.WorktreeRequest) (domain.W
 		_ = service.catalog.Remove(childID)
 	}
 	return result, nil
+}
+
+// removeForThread cleans the worktree bound to a thread, if that thread lives in
+// a worktree child workspace. It is used when a Task is archived.
+func (service *WorktreeService) removeForThread(threadID string) (domain.WorktreeRemoveResult, bool, error) {
+	if !service.Enabled() || service.catalog == nil {
+		return domain.WorktreeRemoveResult{}, false, nil
+	}
+	desktop, err := service.catalog.Desktop()
+	if err != nil {
+		return domain.WorktreeRemoveResult{}, false, err
+	}
+	var thread *workspace.ThreadRecord
+	for index := range desktop.Threads {
+		if desktop.Threads[index].ID == threadID {
+			thread = &desktop.Threads[index]
+			break
+		}
+	}
+	if thread == nil || strings.TrimSpace(thread.WorkspaceID) == "" {
+		return domain.WorktreeRemoveResult{}, false, nil
+	}
+	child, err := service.catalog.ResolveID(thread.WorkspaceID)
+	if err != nil || child.ParentWorkspaceID == "" {
+		return domain.WorktreeRemoveResult{}, false, nil
+	}
+	parent, err := service.catalog.ResolveID(child.ParentWorkspaceID)
+	if err != nil {
+		return domain.WorktreeRemoveResult{}, false, err
+	}
+	result, err := service.Remove(domain.WorktreeRequest{WorkspaceID: parent.ID, TaskID: child.WorktreeTaskID})
+	return result, true, err
 }
 
 func (service *WorktreeService) Prune(request domain.WorktreeListRequest) (domain.WorktreePruneResult, error) {

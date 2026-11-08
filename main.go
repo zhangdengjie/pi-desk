@@ -284,13 +284,13 @@ func main() {
 	}()
 	piMaintenanceService := appservice.NewPiMaintenanceService(locator, agentService)
 	catalogService := appservice.NewCatalogService(catalog, sessionIndex, remoteCatalog)
-	taskService := appservice.NewTaskService(harness, agentService, sessionIndex, sessionIndex, catalog)
+	worktreeService := appservice.NewWorktreeService(worktree.New(nil), catalog)
+	taskService := appservice.NewTaskService(harness, agentService, sessionIndex, sessionIndex, catalog, worktreeService)
 	var scheduledRunner *appservice.ScheduledRunner
 	if harness != nil {
 		scheduledRunner = appservice.NewScheduledRunner(harness.Tasks(), catalog, catalog, agentService)
 	}
 	scheduleService := appservice.NewScheduleService(harness.Schedules(), harness.Tasks(), scheduledRunner)
-	worktreeService := appservice.NewWorktreeService(worktree.New(nil), catalog)
 	if harness != nil && appservice.R2SchedulerEnabled() && scheduledRunner != nil {
 		taskScheduler := scheduler.New(harness.Schedules(), scheduledRunner, scheduler.Options{})
 		schedulerCtx, schedulerCancel := context.WithCancel(context.Background())
