@@ -44,6 +44,7 @@ go.work.sum
 
 # Editors and operating systems
 .idea/
+.openidea/
 .vscode/
 .vs/
 *.swp
