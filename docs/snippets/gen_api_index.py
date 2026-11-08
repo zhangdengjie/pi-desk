@@ -24,6 +24,7 @@ SVC = {
     "remoteworkspaceservice.ts": "RemoteWorkspaceService",
     "repositoryservice.ts": "RepositoryService",
     "terminalservice.ts": "TerminalService",
+    "taskservice.ts": "TaskService",
 }
 
 # 1) 扫描非 test 的 Go 文件，建 (Type, Method) -> (relpath, line)
