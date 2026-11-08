@@ -16,9 +16,12 @@ import (
 )
 
 const (
-	maxQueuedEvents  = 2048
-	maxEventsPerRun  = 10000
-	eventWriteBudget = 5 * time.Second
+	maxQueuedEvents   = 8192
+	maxDisplayPayload = 256 << 10
+	maxPersistPayload = 16 << 10
+	maxEventsPerRun   = 10000
+	eventWriteBudget  = 5 * time.Second
+	criticalQueueWait = 100 * time.Millisecond
 )
 
 // Tap is the R1a bridge: it observes the existing pi:event stream, creates
@@ -28,15 +31,14 @@ type Tap struct {
 	service *task.Service
 	store   task.Store
 
-	queue      chan piruntime.SessionEvent
-	ctx        context.Context
-	cancel     context.CancelFunc
-	waitGroup  sync.WaitGroup
-	mu         sync.Mutex
-	closed     bool
-	emitter    func(Event)
-	now        func() time.Time
-	maxPayload int
+	queue     chan piruntime.SessionEvent
+	ctx       context.Context
+	cancel    context.CancelFunc
+	waitGroup sync.WaitGroup
+	mu        sync.Mutex
+	closed    bool
+	emitter   func(Event)
+	now       func() time.Time
 
 	runs      map[string]task.Run
 	tasks     map[string]string
@@ -48,17 +50,16 @@ type Tap struct {
 
 func NewTap(service *task.Service, store task.Store) *Tap {
 	return &Tap{
-		service:    service,
-		store:      store,
-		queue:      make(chan piruntime.SessionEvent, maxQueuedEvents),
-		now:        time.Now,
-		maxPayload: DefaultMaxPayloadBytes,
-		runs:       make(map[string]task.Run),
-		tasks:      make(map[string]string),
-		seq:        make(map[string]uint64),
-		counts:     make(map[string]int),
-		truncated:  make(map[string]bool),
-		usage:      usage.NewAccumulator(),
+		service:   service,
+		store:     store,
+		queue:     make(chan piruntime.SessionEvent, maxQueuedEvents),
+		now:       time.Now,
+		runs:      make(map[string]task.Run),
+		tasks:     make(map[string]string),
+		seq:       make(map[string]uint64),
+		counts:    make(map[string]int),
+		truncated: make(map[string]bool),
+		usage:     usage.NewAccumulator(),
 	}
 }
 
@@ -92,9 +93,18 @@ func (tap *Tap) Handle(sessionEvent piruntime.SessionEvent) {
 	}
 	select {
 	case tap.queue <- sessionEvent:
+		return
 	default:
-		log.Printf("eventbus: queue full, dropped %s for thread %s", sessionEvent.Event.Type, sessionEvent.ThreadID)
 	}
+	if criticalEvent(sessionEvent.Event.Type) {
+		select {
+		case tap.queue <- sessionEvent:
+		case <-time.After(criticalQueueWait):
+			log.Printf("eventbus: queue full, dropped critical %s for thread %s", sessionEvent.Event.Type, sessionEvent.ThreadID)
+		}
+		return
+	}
+	log.Printf("eventbus: queue full, dropped %s for thread %s", sessionEvent.Event.Type, sessionEvent.ThreadID)
 }
 
 func (tap *Tap) Close() {
@@ -162,7 +172,8 @@ func (tap *Tap) handle(parent context.Context, sessionEvent piruntime.SessionEve
 	}
 
 	normalized := NormalizeType(rawType, payload)
-	sanitized, digest, size, redacted, truncated := sanitizePayload(payload, tap.maxPayload)
+	sanitized, digest, size, _, _ := sanitizePayload(payload, maxDisplayPayload)
+	persisted, _, _, persistedRedacted, persistedTruncated := sanitizePayload(payload, maxPersistPayload)
 	count := tap.counts[run.ID]
 	if count >= maxEventsPerRun {
 		if !isEssentialEvent(normalized) {
@@ -198,11 +209,11 @@ func (tap *Tap) handle(parent context.Context, sessionEvent piruntime.SessionEve
 		RunID:         run.ID,
 		Seq:           event.Seq,
 		Type:          event.Type,
-		Payload:       event.Payload,
+		Payload:       persisted,
 		PayloadSHA256: digest,
 		PayloadBytes:  size,
-		Redacted:      redacted,
-		Truncated:     truncated,
+		Redacted:      persistedRedacted,
+		Truncated:     persistedTruncated,
 		CreatedAt:     now,
 	}); err != nil {
 		log.Printf("eventbus: append event %s: %v", event.Type, err)
@@ -292,4 +303,14 @@ func rawPayload(event pirpc.Event) json.RawMessage {
 		return json.RawMessage(event.Record)
 	}
 	return json.RawMessage(`{}`)
+}
+
+func criticalEvent(eventType string) bool {
+	switch eventType {
+	case "message_delta", "agent_start", "agent_end", "agent_settled", "runtime_exit",
+		"tool_execution_start", "tool_execution_end":
+		return true
+	default:
+		return false
+	}
 }

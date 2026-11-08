@@ -88,7 +88,9 @@ func (service *DesktopService) GetBootstrapState() domain.BootstrapState {
 			State:   domain.RuntimeChecking,
 			Message: "Pi runtime check is pending",
 		},
-		NormalizedEvents: os.Getenv("PI_DESK_NORMALIZED_EVENTS") == "1",
+		NormalizedEvents:         os.Getenv("PI_DESK_NORMALIZED_EVENTS") == "1",
+		HarnessEnabled:           HarnessEnabled(),
+		NormalizedEventsDisabled: os.Getenv("PI_DESK_NORMALIZED_EVENTS") == "0",
 	}
 	if service.catalog != nil {
 		if window, err := service.catalog.Window(); err == nil {

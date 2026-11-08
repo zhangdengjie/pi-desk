@@ -396,6 +396,23 @@ describe("app store", () => {
     expect(store.inspectorOpen).toBe(false);
   });
 
+  it("auto-enables normalized events only when the harness is enabled", async () => {
+    const store = useAppStore();
+    localStorage.removeItem("pidesk.useNormalizedEvents");
+    const bootstrap = {
+      productName: "Pi Desk", appVersion: "0.1.0", wailsVersion: "v3.1.0",
+      workingDirectory: "D:\\work\\repo", runtime: { state: "checking", message: "" },
+      harnessEnabled: true, normalizedEventsDisabled: false,
+    };
+    mocks.getBootstrapState.mockResolvedValueOnce(bootstrap);
+    await store.loadBootstrapState();
+    expect(store.useNormalizedEvents).toBe(true);
+
+    mocks.getBootstrapState.mockResolvedValueOnce({ ...bootstrap, harnessEnabled: false });
+    await store.loadBootstrapState();
+    expect(store.useNormalizedEvents).toBe(false);
+  });
+
   it("searches unopened session bodies and caches their text", async () => {
     const store = useAppStore();
     store.$patch({searchQuery: "hidden semaphore"});

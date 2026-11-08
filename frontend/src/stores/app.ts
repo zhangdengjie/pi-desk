@@ -492,9 +492,9 @@ let unsubscribePiEvents: (() => void) | undefined;
 let unsubscribeAgentEvents: (() => void) | undefined;
 let unsubscribeTerminalEvents: (() => void) | undefined;
 
-function normalizedEventsEnabled(): boolean {
+function normalizedEventsForcedOff(): boolean {
   try {
-    return globalThis.localStorage?.getItem("pidesk.useNormalizedEvents") === "1";
+    return globalThis.localStorage?.getItem("pidesk.useNormalizedEvents") === "0";
   } catch {
     return false;
   }
@@ -1089,7 +1089,7 @@ export const useAppStore = defineStore("app", {
   state: () => ({
     sidebarCollapsed: false,
     activePage: "task" as AppPage,
-    useNormalizedEvents: normalizedEventsEnabled(),
+    useNormalizedEvents: false,
     sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
     /** See `setPaneResizing`: true only while a resizer is being dragged. */
     paneResizing: false,
@@ -2524,6 +2524,9 @@ export const useAppStore = defineStore("app", {
       if (!thread.workspaceId) return undefined;
       const workspace = this.workspaces.find((item) => item.id === thread.workspaceId);
       return workspace?.kind === "ssh" ? workspace : undefined;
+    },
+    useNormalizedForThread(thread: ThreadSummary): boolean {
+      return this.useNormalizedEvents && !this.remoteWorkspaceForThread(thread);
     },
     requestRemoteReconnect(thread: ThreadSummary, intent: RemoteReconnectIntent): boolean {
       const workspace = this.remoteWorkspaceForThread(thread);
@@ -4293,7 +4296,7 @@ export const useAppStore = defineStore("app", {
     handleAgentEvent(event: AgentEvent) {
       if (!this.useNormalizedEvents) return;
       const thread = event.threadId ? this.threads.find((item) => item.id === event.threadId) : undefined;
-      if (!thread) return;
+      if (!thread || !this.useNormalizedForThread(thread)) return;
       const payload = agentPayload(event.payload);
       if (event.type === "run.started") {
         this.applyRunStarted(thread);
@@ -4409,13 +4412,13 @@ export const useAppStore = defineStore("app", {
 
       switch (sessionEvent.event.type) {
         case "agent_start":
-          if (!this.useNormalizedEvents) this.applyRunStarted(thread);
+          if (!this.useNormalizedForThread(thread)) this.applyRunStarted(thread);
           break;
         case "agent_end":
-          if (!this.useNormalizedEvents) this.applyRunUpdated(thread, payload);
+          if (!this.useNormalizedForThread(thread)) this.applyRunUpdated(thread, payload);
           break;
         case "agent_settled":
-          if (!this.useNormalizedEvents) this.applyRunSettled(thread, payload, payload.aborted === true);
+          if (!this.useNormalizedForThread(thread)) this.applyRunSettled(thread, payload, payload.aborted === true);
           break;
         case "queue_update": {
           const steering = Array.isArray(payload.steering) ? payload.steering.filter((item): item is string => typeof item === "string") : [];
@@ -4434,20 +4437,20 @@ export const useAppStore = defineStore("app", {
           break;
         }
         case "message_start":
-          if (!this.useNormalizedEvents) this.applyMessageStart(thread, payload);
+          if (!this.useNormalizedForThread(thread)) this.applyMessageStart(thread, payload);
           break;
         case "message_update":
-          if (!this.useNormalizedEvents) this.applyMessageUpdate(thread, payload);
+          if (!this.useNormalizedForThread(thread)) this.applyMessageUpdate(thread, payload);
           break;
         case "message_end":
-          if (!this.useNormalizedEvents) this.applyMessageEnd(thread, payload);
+          if (!this.useNormalizedForThread(thread)) this.applyMessageEnd(thread, payload);
           break;
         case "tool_execution_start":
-          if (!this.useNormalizedEvents) this.applyToolStart(thread, payload);
+          if (!this.useNormalizedForThread(thread)) this.applyToolStart(thread, payload);
           break;
         case "tool_execution_update":
         case "tool_execution_end":
-          if (!this.useNormalizedEvents) this.applyToolProgress(thread, payload, sessionEvent.event.type === "tool_execution_end");
+          if (!this.useNormalizedForThread(thread)) this.applyToolProgress(thread, payload, sessionEvent.event.type === "tool_execution_end");
           break;
         case "compaction_start":
           // Pi writes the durable compaction entry only when compaction succeeds.
@@ -4599,7 +4602,7 @@ export const useAppStore = defineStore("app", {
           break;
         }
         case "runtime_exit":
-          if (!this.useNormalizedEvents) this.applyRuntimeExit(thread, sessionEvent.event.error || "Pi process exited", sessionEvent.event.generation);
+          if (!this.useNormalizedForThread(thread)) this.applyRuntimeExit(thread, sessionEvent.event.error || "Pi process exited", sessionEvent.event.generation);
           break;
       }
     },
@@ -4614,7 +4617,9 @@ export const useAppStore = defineStore("app", {
       this.bootstrapError = "";
       try {
         const bootstrap = await getBootstrapState();
-        if (bootstrap.normalizedEvents) this.useNormalizedEvents = true;
+        this.useNormalizedEvents = Boolean(bootstrap.harnessEnabled)
+          && !bootstrap.normalizedEventsDisabled
+          && !normalizedEventsForcedOff();
         this.bootstrap = bootstrap;
       } catch (error) {
         this.bootstrapError = errorMessage(error) || "Desktop service is unavailable";

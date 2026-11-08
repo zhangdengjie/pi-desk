@@ -43,6 +43,18 @@ export interface BootstrapState {
     "normalizedEvents"?: boolean;
 
     /**
+     * HarnessEnabled says whether the R1a event tap is running. Normalized
+     * events are only safe when it is true.
+     */
+    "harnessEnabled"?: boolean;
+
+    /**
+     * NormalizedEventsDisabled is the explicit raw override
+     * (PI_DESK_NORMALIZED_EVENTS=0).
+     */
+    "normalizedEventsDisabled"?: boolean;
+
+    /**
      * ProviderEnvIssues is the startup precheck: providers whose `$VAR` API key never reached this
      * process. A .app opened from Finder does not read ~/.zshrc, so Pi silently drops them.
      */

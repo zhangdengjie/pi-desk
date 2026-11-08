@@ -135,6 +135,31 @@ describe("normalized agent events", () => {
     expect(store.messagesByThread["thread-1"][0].text).toBe("done");
   });
 
+  it("keeps remote threads on raw events in auto mode", () => {
+    const { store } = fixture();
+    const workspace = useWorkspaceStore();
+    workspace.workspaces = [{ id: "remote", name: "remote", path: "", kind: "ssh", trust: "approve", targetId: "target", remoteRoot: "/srv" }];
+    const remoteMessage = assistant();
+    workspace.threads.push({
+      id: "thread-remote", title: "Remote", workspace: "remote", workspaceId: "remote", workspacePath: "",
+      trust: "approve", status: "running", started: true, generation: 1,
+    });
+    store.messagesByThread["thread-remote"] = [remoteMessage];
+    store.activeAssistantByThread["thread-remote"] = remoteMessage.id;
+    store.useNormalizedEvents = true;
+    store.handleAgentEvent({
+      id: "normalized-remote", seq: 1, type: "tool.started", threadId: "thread-remote",
+      ts: 1, payload: { toolCallId: "normalized-1", toolName: "bash" },
+    });
+    expect(remoteMessage.tools).toHaveLength(0);
+    store.handlePiEvent({
+      threadId: "thread-remote",
+      event: { type: "tool_execution_start", generation: 1, payload: { toolCallId: "raw-1", toolName: "bash" } },
+    });
+    expect(remoteMessage.tools).toHaveLength(1);
+    expect(remoteMessage.tools[0].id).toBe("raw-1");
+  });
+
   it("accepts a JSON-string payload from the Wails event bridge", () => {
     const { store, message } = fixture();
     store.useNormalizedEvents = true;
